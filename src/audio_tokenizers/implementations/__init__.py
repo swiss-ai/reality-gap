@@ -1,0 +1,20 @@
+"""
+Audio tokenizer implementations.
+
+Each tokenizer here is automatically registered when imported.
+"""
+
+# Import all tokenizer implementations
+# This triggers their registration via the metaclass
+
+from .neucodec import NeuCodecTokenizer, DistilledNeuCodecTokenizer
+
+# Add more tokenizers as they're implemented:
+# from .encodec import EncodecTokenizer
+# from .dac import DACTokenizer
+# from .soundstream import SoundStreamTokenizer
+
+__all__ = [
+    'NeuCodecTokenizer',
+    'DistilledNeuCodecTokenizer',
+]

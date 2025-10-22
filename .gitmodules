@@ -1,0 +1,3 @@
+[submodule "src/repos/neucodec"]
+	path = src/repos/neucodec
+	url = https://github.com/neuphonic/neucodec.git

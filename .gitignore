@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Claude Code
+.claude/
+
+# Keep important source directories
+!src/audio_tokenizers/base/
