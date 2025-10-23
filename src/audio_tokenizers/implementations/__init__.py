@@ -8,6 +8,7 @@ Each tokenizer here is automatically registered when imported.
 # This triggers their registration via the metaclass
 
 from .neucodec import NeuCodecTokenizer, DistilledNeuCodecTokenizer
+from .tadicodec import TaDiCodecTokenizer
 
 # Add more tokenizers as they're implemented:
 # from .encodec import EncodecTokenizer
@@ -17,4 +18,5 @@ from .neucodec import NeuCodecTokenizer, DistilledNeuCodecTokenizer
 __all__ = [
     'NeuCodecTokenizer',
     'DistilledNeuCodecTokenizer',
+    'TaDiCodecTokenizer',
 ]

@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Tuple, Dict, Any, Optional, Union, List
 import logging
 
+# Import config for repo paths
+from ..config import get_repo_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,10 +85,12 @@ class BaseAudioTokenizer(ABC, metaclass=RegisteredTokenizerMeta):
         
         # Add repo to path if specified
         if self.repo_path:
-            repo_full_path = Path(__file__).parent / "repos" / self.repo_path
+            repo_full_path = get_repo_path(self.repo_path)
             if repo_full_path.exists() and str(repo_full_path) not in sys.path:
                 sys.path.insert(0, str(repo_full_path))
                 logger.debug(f"Added {repo_full_path} to sys.path")
+            elif not repo_full_path.exists():
+                logger.warning(f"Repo path does not exist: {repo_full_path}")
         
         # Initialize model
         self.model = None
@@ -116,13 +121,14 @@ class BaseAudioTokenizer(ABC, metaclass=RegisteredTokenizerMeta):
         pass
     
     @abstractmethod
-    def decode_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+    def decode_tokens(self, tokens: torch.Tensor, **kwargs) -> torch.Tensor:
         """
         Decode tokens back to audio.
-        
+
         Args:
             tokens: Token codes
-            
+            **kwargs: Additional arguments (e.g., text for text-aware decoding)
+
         Returns:
             Audio tensor (B, C, T)
         """
@@ -215,17 +221,21 @@ class BaseAudioTokenizer(ABC, metaclass=RegisteredTokenizerMeta):
         
         return tokens, info
     
-    def decode(self, tokens: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def decode(self, tokens: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
         Full decoding pipeline.
-        
+
+        Args:
+            tokens: Token tensor to decode
+            **kwargs: Additional arguments passed to decode_tokens (e.g., text for TaDiCodec)
+
         Returns:
             audio: Decoded audio
             info: Decoding information
         """
         start_time = time.time()
         with torch.no_grad():
-            audio = self.decode_tokens(tokens)
+            audio = self.decode_tokens(tokens, **kwargs)
         decode_time = time.time() - start_time
         
         info = {
