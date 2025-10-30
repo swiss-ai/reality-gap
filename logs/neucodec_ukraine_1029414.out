@@ -1,0 +1,42 @@
+PyTorch version: 2.9.0+cpu
+CUDA available: False
+Using device: cpu
+============================================================
+NeuCodec Tokenizer Evaluation on EuroSpeech Dataset
+============================================================
+Languages to evaluate: ukraine
+
+Loading NeuCodec tokenizer...
+Tokenizer loaded: NeuCodecTokenizer(checkpoint='neuphonic/neucodec', device='cpu', sample_rate=16000)
+  Input sample rate: 16000 Hz
+  Output sample rate: 24000 Hz
+  Codebook size: 65,536
+  Downsample rate: 320x
+
+============================================================
+Processing language: ukraine
+============================================================
+Loaded 100 samples for ukraine
+
+============================================================
+Summary for ukraine:
+============================================================
+Samples processed: 100
+
+Reconstruction Metrics:
+  MSE:         0.037075 ± 0.018922
+  SNR (dB):    -1.96 ± 1.73 (min: -5.58, max: 1.74)
+  SDR (dB):    -1.93 ± 1.66 (min: -5.37, max: 1.23)
+  PESQ:        1.703 ± 0.188 (min: 1.306, max: 2.187)
+  STOI:        0.7599 ± 0.0787 (min: 0.3804, max: 0.8550)
+  ESTOI:       0.6284 ± 0.0836 (min: 0.2895, max: 0.7708)
+
+Tokenization Statistics:
+  Tokens/sec:        50.0 ± 0.0
+  Compression ratio: 320.2x ± 0.1x
+
+Results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_ukraine_results.json
+
+============================================================
+Combined results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_all_languages_summary.json
+Evaluation complete!

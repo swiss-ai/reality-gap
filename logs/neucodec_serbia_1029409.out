@@ -1,0 +1,42 @@
+PyTorch version: 2.9.0+cpu
+CUDA available: False
+Using device: cpu
+============================================================
+NeuCodec Tokenizer Evaluation on EuroSpeech Dataset
+============================================================
+Languages to evaluate: serbia
+
+Loading NeuCodec tokenizer...
+Tokenizer loaded: NeuCodecTokenizer(checkpoint='neuphonic/neucodec', device='cpu', sample_rate=16000)
+  Input sample rate: 16000 Hz
+  Output sample rate: 24000 Hz
+  Codebook size: 65,536
+  Downsample rate: 320x
+
+============================================================
+Processing language: serbia
+============================================================
+Loaded 100 samples for serbia
+
+============================================================
+Summary for serbia:
+============================================================
+Samples processed: 100
+
+Reconstruction Metrics:
+  MSE:         0.021269 ± 0.013971
+  SNR (dB):    -1.21 ± 1.89 (min: -5.04, max: 1.62)
+  SDR (dB):    -1.18 ± 1.91 (min: -5.03, max: 1.78)
+  PESQ:        1.969 ± 0.169 (min: 1.311, max: 2.308)
+  STOI:        0.7584 ± 0.0692 (min: 0.2234, max: 0.8504)
+  ESTOI:       0.5752 ± 0.0607 (min: 0.1612, max: 0.6784)
+
+Tokenization Statistics:
+  Tokens/sec:        50.0 ± 0.0
+  Compression ratio: 320.1x ± 0.2x
+
+Results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_serbia_results.json
+
+============================================================
+Combined results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_all_languages_summary.json
+Evaluation complete!

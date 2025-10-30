@@ -1,0 +1,42 @@
+PyTorch version: 2.9.0+cpu
+CUDA available: False
+Using device: cpu
+============================================================
+NeuCodec Tokenizer Evaluation on EuroSpeech Dataset
+============================================================
+Languages to evaluate: iceland
+
+Loading NeuCodec tokenizer...
+Tokenizer loaded: NeuCodecTokenizer(checkpoint='neuphonic/neucodec', device='cpu', sample_rate=16000)
+  Input sample rate: 16000 Hz
+  Output sample rate: 24000 Hz
+  Codebook size: 65,536
+  Downsample rate: 320x
+
+============================================================
+Processing language: iceland
+============================================================
+Loaded 100 samples for iceland
+
+============================================================
+Summary for iceland:
+============================================================
+Samples processed: 100
+
+Reconstruction Metrics:
+  MSE:         0.017423 ± 0.006822
+  SNR (dB):    -2.79 ± 0.94 (min: -4.83, max: -0.79)
+  SDR (dB):    -2.75 ± 0.92 (min: -4.78, max: -0.72)
+  PESQ:        1.833 ± 0.149 (min: 1.455, max: 2.203)
+  STOI:        0.7952 ± 0.0457 (min: 0.6636, max: 0.8612)
+  ESTOI:       0.5934 ± 0.0403 (min: 0.4805, max: 0.6692)
+
+Tokenization Statistics:
+  Tokens/sec:        50.0 ± 0.0
+  Compression ratio: 320.2x ± 0.1x
+
+Results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_iceland_results.json
+
+============================================================
+Combined results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_all_languages_summary.json
+Evaluation complete!

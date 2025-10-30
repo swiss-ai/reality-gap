@@ -1,0 +1,42 @@
+PyTorch version: 2.9.0+cpu
+CUDA available: False
+Using device: cpu
+============================================================
+NeuCodec Tokenizer Evaluation on EuroSpeech Dataset
+============================================================
+Languages to evaluate: lithuania
+
+Loading NeuCodec tokenizer...
+Tokenizer loaded: NeuCodecTokenizer(checkpoint='neuphonic/neucodec', device='cpu', sample_rate=16000)
+  Input sample rate: 16000 Hz
+  Output sample rate: 24000 Hz
+  Codebook size: 65,536
+  Downsample rate: 320x
+
+============================================================
+Processing language: lithuania
+============================================================
+Loaded 100 samples for lithuania
+
+============================================================
+Summary for lithuania:
+============================================================
+Samples processed: 100
+
+Reconstruction Metrics:
+  MSE:         0.027299 ± 0.016356
+  SNR (dB):    -1.50 ± 1.29 (min: -4.46, max: 0.96)
+  SDR (dB):    -1.56 ± 1.29 (min: -5.30, max: 0.93)
+  PESQ:        1.898 ± 0.187 (min: 1.247, max: 2.483)
+  STOI:        0.8333 ± 0.0776 (min: 0.4291, max: 0.8956)
+  ESTOI:       0.7140 ± 0.0949 (min: 0.2514, max: 0.7968)
+
+Tokenization Statistics:
+  Tokens/sec:        50.0 ± 0.0
+  Compression ratio: 320.2x ± 0.1x
+
+Results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_lithuania_results.json
+
+============================================================
+Combined results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_all_languages_summary.json
+Evaluation complete!

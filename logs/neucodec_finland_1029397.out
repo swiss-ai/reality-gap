@@ -1,0 +1,42 @@
+PyTorch version: 2.9.0+cpu
+CUDA available: False
+Using device: cpu
+============================================================
+NeuCodec Tokenizer Evaluation on EuroSpeech Dataset
+============================================================
+Languages to evaluate: finland
+
+Loading NeuCodec tokenizer...
+Tokenizer loaded: NeuCodecTokenizer(checkpoint='neuphonic/neucodec', device='cpu', sample_rate=16000)
+  Input sample rate: 16000 Hz
+  Output sample rate: 24000 Hz
+  Codebook size: 65,536
+  Downsample rate: 320x
+
+============================================================
+Processing language: finland
+============================================================
+Loaded 100 samples for finland
+
+============================================================
+Summary for finland:
+============================================================
+Samples processed: 100
+
+Reconstruction Metrics:
+  MSE:         0.036477 ± 0.021176
+  SNR (dB):    -1.31 ± 2.11 (min: -10.81, max: 1.59)
+  SDR (dB):    -1.34 ± 2.08 (min: -10.85, max: 1.69)
+  PESQ:        1.795 ± 0.195 (min: 1.140, max: 2.205)
+  STOI:        0.7758 ± 0.1301 (min: 0.1412, max: 0.8727)
+  ESTOI:       0.6062 ± 0.1198 (min: 0.1249, max: 0.7526)
+
+Tokenization Statistics:
+  Tokens/sec:        50.0 ± 0.0
+  Compression ratio: 320.2x ± 0.2x
+
+Results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_finland_results.json
+
+============================================================
+Combined results saved to: /users/mrieff/benchmark-audio-tokenizer/metrics/neucodec_all_languages_summary.json
+Evaluation complete!
