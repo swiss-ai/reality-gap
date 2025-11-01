@@ -24,7 +24,6 @@ joblib==1.5.2
 lazy_loader==0.4
 librosa==0.11.0
 llvmlite==0.45.1
-meson @ file:///tmp/bcumming/spack-stage/spack-stage-meson-1.5.1-ogdgqf4soiidgdm32uzni7xachqnm6ry/spack-src
 msgpack==1.1.2
 multidict==6.7.0
 multiprocess==0.70.16
