@@ -13,4 +13,4 @@ for i, sample in enumerate(stream):
         break
     print(f"Sample {i+1}: Got it")
 
-print("✓ SUCCESS")
+print("SUCCESS")

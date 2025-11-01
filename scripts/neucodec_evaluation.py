@@ -19,30 +19,64 @@ from pesq import pesq
 from pystoi import stoi
 import museval
 
+# Base directories
 SCRATCH_DIR = os.path.expandvars("$SCRATCH/benchmark-audio-tokenizer/datasets")
-CACHE_DIR = os.path.join(SCRATCH_DIR, "eurospeech_cache")
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 RESULTS_DIR = os.path.join(project_root, "metrics")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
-
-ALL_LANGUAGES = [
-    "bosnia-herzegovina", "bulgaria", "croatia", "denmark", "estonia", "finland",
-    "france", "germany", "greece", "iceland", "italy", "latvia", "lithuania",
-    "malta", "norway", "portugal", "serbia", "slovakia", "slovenia",
-    "sweden", "uk", "ukraine"
-]
+# Dataset configurations
+DATASETS = {
+    'eurospeech': {
+        'cache_dir': os.path.join(SCRATCH_DIR, "eurospeech_cache"),
+        'languages': [
+            "bosnia-herzegovina", "bulgaria", "croatia", "denmark", "estonia", "finland",
+            "france", "germany", "greece", "iceland", "italy", "latvia", "lithuania",
+            "malta", "norway", "portugal", "serbia", "slovakia", "slovenia",
+            "sweden", "uk", "ukraine"
+        ]
+    },
+    'fleurs': {
+        'cache_dir': os.path.join(SCRATCH_DIR, "fleurs_cache"),
+        'languages': [
+            # Western Europe
+            "ast_es", "ca_es", "nl_nl", "en_us", "gl_es", "hu_hu", "ga_ie", 
+            "kea_cv", "lb_lu", "oc_fr", "es_419", "cy_gb",
+            # Eastern Europe
+            "hy_am", "be_by", "cs_cz", "ka_ge", "mk_mk", "pl_pl", "ro_ro", "ru_ru",
+            # Asia - CJK
+            "cmn_hans_cn", "yue_hant_hk", "ja_jp", "ko_kr",
+            # Asia - South Asia
+            "hi_in", "bn_in", "ta_in", "te_in",
+            # Asia - Southeast Asia
+            "th_th", "vi_vn", "id_id",
+            # Africa
+            "af_za", "sw_ke", "am_et", "yo_ng",
+            # Middle East
+            "ar_eg", "tr_tr", "he_il", "fa_ir"
+        ]
+    }
+}
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"PyTorch version: {torch.__version__}")
 print(f"CUDA available: {torch.cuda.is_available()}")
 print(f"Using device: {device}")
 
+def get_dataset_for_language(language):
+    """
+    Determine which dataset a language belongs to and return dataset name and cache dir.
+    Returns: (dataset_name, cache_dir, language) or (None, None, None) if not found
+    """
+    for dataset_name, config in DATASETS.items():
+        if language in config['languages']:
+            return dataset_name, config['cache_dir'], language
+    
+    # Language not found in any dataset
+    return None, None, None
+
 def resample_audio(audio, orig_sr, target_sr):
-    """
-    Resample audio to target sample rate using scipy.
-    """
     if orig_sr == target_sr:
         return audio
 
@@ -54,10 +88,6 @@ def resample_audio(audio, orig_sr, target_sr):
     
 
 def calculate_sdr(reference, estimated):
-    """
-    Calculate Signal-to-Distortion Ratio (SDR) in dB.
-    Uses the BSS Eval metrics implementation.
-    """
     try:
         min_len = min(len(reference), len(estimated))
         reference = reference[:min_len]
@@ -77,12 +107,8 @@ def calculate_sdr(reference, estimated):
         return None
 
 def calculate_reconstruction_metrics(original, reconstructed, original_sr, reconstructed_sr):
-    """
-    Calculate comprehensive reconstruction quality metrics.
-    """
     metrics = {}
     
-
     if reconstructed_sr != original_sr:
         reconstructed_resampled = resample_audio(reconstructed, reconstructed_sr, original_sr)
     else:
@@ -112,7 +138,7 @@ def calculate_reconstruction_metrics(original, reconstructed, original_sr, recon
     
     # 4. PESQ (Perceptual Evaluation of Speech Quality)
     try:
-        if original_sr != 16000: # Resample both to 16kHz for PESQ
+        if original_sr != 16000:
             original_16k = resample_audio(original, original_sr, 16000)
             reconstructed_16k = resample_audio(reconstructed, reconstructed_sr, 16000)
         else:
@@ -134,7 +160,6 @@ def calculate_reconstruction_metrics(original, reconstructed, original_sr, recon
     
     # 5. STOI (Short-Time Objective Intelligibility)
     try:
-        # STOI works with original sample rate
         stoi_score = stoi(original_normalized, reconstructed_normalized, original_sr, extended=False)
         metrics['stoi'] = float(stoi_score)
         
@@ -147,15 +172,15 @@ def calculate_reconstruction_metrics(original, reconstructed, original_sr, recon
     
     return metrics
 
-def process_language(language, tokenizer):
+def process_language(language, tokenizer, dataset_name, cache_dir):
     """
     Process all samples for a given language and return summary statistics.
     """
     print(f"\n{'='*60}")
-    print(f"Processing language: {language}")
+    print(f"Processing: {language} (dataset: {dataset_name})")
     print(f"{'='*60}")
     
-    lang_dir = os.path.join(CACHE_DIR, language)
+    lang_dir = os.path.join(cache_dir, language)
     if not os.path.exists(lang_dir):
         print(f"Dataset not found for {language} at {lang_dir}")
         return None
@@ -223,6 +248,7 @@ def process_language(language, tokenizer):
     
     summary = {
         'language': language,
+        'dataset': dataset_name,
         'num_samples': len(all_metrics),
         'metrics': {
             'mse': compute_stats('mse'),
@@ -245,11 +271,8 @@ def process_language(language, tokenizer):
     return summary
 
 def print_summary(summary):
-    """
-    Pretty print summary statistics.
-    """
     print(f"\n{'='*60}")
-    print(f"Summary for {summary['language']}:")
+    print(f"Summary for {summary['language']} ({summary['dataset']})")
     print(f"{'='*60}")
     print(f"Samples processed: {summary['num_samples']}")
     print(f"\nReconstruction Metrics:")
@@ -284,24 +307,39 @@ def print_summary(summary):
     print(f"  Compression ratio: {summary['compression_ratio']['mean']:.1f}x ± {summary['compression_ratio']['std']:.1f}x")
 
 def main():
-    parser = argparse.ArgumentParser(description='Evaluate NeuCodec tokenizer on EuroSpeech dataset')
+    parser = argparse.ArgumentParser(description='Evaluate NeuCodec tokenizer on multiple datasets')
+    parser.add_argument('--dataset', type=str, choices=['eurospeech', 'fleurs', 'all'], default=None,
+                        help='Dataset to evaluate: eurospeech, fleurs, or all. If not specified with --language, evaluates all datasets.')
     parser.add_argument('--language', type=str, default=None,
-                        help='Specific language to evaluate (e.g., germany, france). If not specified, evaluates all languages.')
+                        help='Specific language to evaluate (e.g., germany, en_us). Auto-detects dataset.')
     parser.add_argument('--languages', nargs='+', default=None,
-                        help='Multiple languages to evaluate (e.g., --languages germany france italy)')
+                        help='Multiple languages to evaluate (e.g., --languages germany en_us). Auto-detects datasets.')
     args = parser.parse_args()
- 
+    
+    languages_to_evaluate = []
+    
     if args.language:
         languages_to_evaluate = [args.language]
     elif args.languages:
         languages_to_evaluate = args.languages
+    elif args.dataset:
+        if args.dataset == 'all':
+            for dataset_config in DATASETS.values():
+                languages_to_evaluate.extend(dataset_config['languages'])
+        else:
+            languages_to_evaluate = DATASETS[args.dataset]['languages']
     else:
-        languages_to_evaluate = ALL_LANGUAGES
+        for dataset_config in DATASETS.values():
+            languages_to_evaluate.extend(dataset_config['languages'])
     
     print("="*60)
-    print("NeuCodec Tokenizer Evaluation on EuroSpeech Dataset")
+    print("NeuCodec Tokenizer Evaluation")
     print("="*60)
-    print(f"Languages to evaluate: {', '.join(languages_to_evaluate)}")
+    print(f"Total languages to evaluate: {len(languages_to_evaluate)}")
+    if len(languages_to_evaluate) <= 10:
+        print(f"Languages: {', '.join(languages_to_evaluate)}")
+    else:
+        print(f"Languages: {', '.join(languages_to_evaluate[:10])}... (+{len(languages_to_evaluate)-10} more)")
     
     print("\nLoading NeuCodec tokenizer...")
     tokenizer = get_tokenizer('neucodec', device=device)
@@ -312,24 +350,49 @@ def main():
     print(f"  Downsample rate: {tokenizer.downsample_rate}x")
     
     all_results = []
+    failed_languages = []
+    
     for language in languages_to_evaluate:
-        summary = process_language(language, tokenizer)
+        dataset_name, cache_dir, _ = get_dataset_for_language(language)
+        
+        if dataset_name is None:
+            print(f"Warning: Language '{language}' not found in any dataset. Skipping.")
+            failed_languages.append(language)
+            continue
+        
+        summary = process_language(language, tokenizer, dataset_name, cache_dir)
         if summary:
             all_results.append(summary)
             print_summary(summary)
             
-            output_file = os.path.join(RESULTS_DIR, f"neucodec_{language}_results.json")
+            output_file = os.path.join(RESULTS_DIR, f"neucodec_{dataset_name}_{language}_results.json")
             with open(output_file, 'w') as f:
                 json.dump(summary, f, indent=2)
             print(f"\nResults saved to: {output_file}")
+        else:
+            failed_languages.append(language)
     
     if all_results:
-        combined_output = os.path.join(RESULTS_DIR, "neucodec_all_languages_summary.json")
+        combined_output = os.path.join(RESULTS_DIR, "neucodec_all_results.json")
         with open(combined_output, 'w') as f:
             json.dump(all_results, f, indent=2)
+        
+        for dataset_name in DATASETS.keys():
+            dataset_results = [r for r in all_results if r['dataset'] == dataset_name]
+            if dataset_results:
+                dataset_output = os.path.join(RESULTS_DIR, f"neucodec_{dataset_name}_summary.json")
+                with open(dataset_output, 'w') as f:
+                    json.dump(dataset_results, f, indent=2)
+                print(f"\n{dataset_name.upper()} results saved to: {dataset_output}")
+        
         print(f"\n{'='*60}")
         print(f"Combined results saved to: {combined_output}")
+        print(f"Successfully evaluated: {len(all_results)}/{len(languages_to_evaluate)} languages")
+        if failed_languages:
+            print(f"Failed languages: {', '.join(failed_languages)}")
         print(f"Evaluation complete!")
+    else:
+        print("No languages were successfully evaluated.")
 
 if __name__ == "__main__":
     main()
