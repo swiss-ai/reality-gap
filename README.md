@@ -15,15 +15,16 @@ This repository provides tools and scripts for systematically evaluating audio t
 ├── logs/                          # Execution logs (.out and .err files per language)
 ├── metrics/                       # Evaluation results and metrics (JSON output)
 ├── scripts/                       # All Python scripts and shell scripts
-│   ├── download_eurospeech.py    # Dataset download script
-│   ├── neucodec_evaluation.py    # NeuCodec evaluation script
-│   ├── test_minimal.py           # Minimal testing script
-│   ├── verify_eurospeech.py      # Dataset verification script
-│   └── run_eurospeech.sh         # Shell script for compute node execution
+│   ├── download_eurospeech.py     # Download of EuroSpeech
+│   ├── download_fleurs.py         # Download of FLEURS
+│   ├── neucodec_evaluation.py     # NeuCodec evaluation script
+│   ├── test_minimal.py            # Minimal testing script
+│   ├── verify_eurospeech.py       # Dataset verification script
+│   └── run_eurospeech.sh          # Shell script for compute node execution
 ├── src/
-│   ├── audio_tokenizers/         # Tokenizer implementations and wrappers
-│   └── repos/                    # External repository dependencies
-├── venv/                          # Virtual environment for login node scripts
+│   ├── audio_tokenizers/          # Tokenizer implementations and wrappers
+│   └── repos/                     # External repository dependencies
+├── venv/                          # Virtual environment for download_[dataset] scripts
 ├── neucodec-venv/                 # Virtual environment for NeuCodec evaluation
 ├── requirements_venv.txt          # Dependencies for login node environment
 └── requirements_neucodec-venv.txt # Dependencies for NeuCodec environment
@@ -32,10 +33,15 @@ This repository provides tools and scripts for systematically evaluating audio t
 ## Current Status
 
 **Datasets:**
-- ✅ EuroSpeech (downloaded to `$SCRATCH/benchmark-audio-tokenizer/datasets`)
-  - 22 languages
+- ✅ EuroSpeech 
+  - 22 languages: bosnia-herzegovina, bulgaria, croatia, denmark, estonia, finland, france, germany, greece, iceland, italy, latvia, lithuania, malta, norway, portugal, serbia, slovakia, slovenia, sweden, uk, ukraine
   - 100 samples per language
   - Cached in `$SCRATCH/benchmark-audio-tokenizer/datasets/eurospeech_cache`
+
+- ✅ FLEURS 
+  - 102 languages available
+  - 100 samples per language
+  - Cached in `$SCRATCH/benchmark-audio-tokenizer/datasets/fleurs_cache`  
 
 **Tokenizers Evaluated:**
 - ✅ NeuCodec
@@ -70,7 +76,9 @@ source neucodec-venv/bin/activate
 pip install -r requirements_neucodec-venv.txt
 ```
 
-### Downloading the Dataset
+### Downloading the Datasets
+
+#### EuroSpeech
 
 The EuroSpeech dataset is automatically downloaded to your scratch directory:
 
@@ -85,6 +93,13 @@ $SCRATCH/benchmark-audio-tokenizer/datasets/eurospeech_cache/
 ```
 
 Supported languages: bosnia-herzegovina, bulgaria, croatia, denmark, estonia, finland, france, germany, greece, iceland, italy, latvia, lithuania, malta, norway, portugal, serbia, slovakia, slovenia, sweden, uk, ukraine.
+
+
+#### FLEURS
+Edit scripts/download_fleurs.py to select languages.
+```bash
+python scripts/download_fleurs.py
+```
 
 ### Running Evaluations
 
