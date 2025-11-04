@@ -7,3 +7,6 @@
 [submodule "src/repos/tadicodec"]
 	path = src/repos/tadicodec
 	url = https://github.com/AmphionTeam/TaDiCodec.git
+[submodule "src/repos/xcodec2"]
+	path = src/repos/xcodec2
+	url = https://github.com/zhenye234/X-Codec-2.0.git
