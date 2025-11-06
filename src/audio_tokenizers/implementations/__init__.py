@@ -9,6 +9,7 @@ Each tokenizer here is automatically registered when imported.
 
 from .neucodec import NeuCodecTokenizer, DistilledNeuCodecTokenizer
 from .tadicodec import TaDiCodecTokenizer
+from .xcodec2 import XCodec2Tokenizer
 
 # Add more tokenizers as they're implemented:
 # from .encodec import EncodecTokenizer
@@ -19,4 +20,5 @@ __all__ = [
     'NeuCodecTokenizer',
     'DistilledNeuCodecTokenizer',
     'TaDiCodecTokenizer',
+    'XCodec2Tokenizer',
 ]
