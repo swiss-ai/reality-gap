@@ -3,6 +3,9 @@
 *.out
 *.err
 *.log
+.venv*/
+*.wav
+hidden-*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
