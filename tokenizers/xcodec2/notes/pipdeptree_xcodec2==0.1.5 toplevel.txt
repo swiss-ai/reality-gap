@@ -1,0 +1,9 @@
+xcodec2==0.1.5
+├── numpy [required: >=2.0.2, installed: 2.3.4]
+├── einops [required: ==0.8.0, installed: 0.8.0]
+├── torch [required: ==2.5.0, installed: 2.5.0]
+├── torchao [required: >=0.5.0, installed: 0.14.1]
+├── torchaudio [required: ==2.5.0, installed: 2.5.0]
+├── torchtune [required: >=0.3.1, installed: 0.6.1]
+├── transformers [required: >=4.45.2, installed: 4.57.1]
+└── vector-quantize-pytorch [required: ==1.17.8, installed: 1.17.8]
