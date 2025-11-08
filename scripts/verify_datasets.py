@@ -11,7 +11,7 @@ for lang in ["germany"]:
     print(f"{lang}: {len(ds)} samples, audio shape: {len(sample['audio']['array'])}") 
 
 
-for lang in ["af_za"]:
+for lang in ["sw_ke", "he_il", "en_us"]:
     ds = load_from_disk(os.path.join(cache_dir2, lang))
     sample = ds[0]
     print(sample)
