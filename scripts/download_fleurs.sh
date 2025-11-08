@@ -29,7 +29,7 @@ LANGUAGES=(
 for lang in "${LANGUAGES[@]}"; do
     sbatch <<EOF
 #!/bin/bash
-#SBATCH --account=infra01
+#SBATCH --account=root
 #SBATCH --job-name=download_fleurs_${lang}
 #SBATCH --output=/users/mrieff/benchmark-audio-tokenizer/logs/download_fleurs_${lang}_%j.out
 #SBATCH --error=/users/mrieff/benchmark-audio-tokenizer/logs/download_fleurs_${lang}_%j.err
