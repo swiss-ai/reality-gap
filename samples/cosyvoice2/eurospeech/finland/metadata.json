@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "finland",
+    "sample_id": "0001",
+    "dataset_index": 39,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 17.44,
+    "reconstructed_duration": 17.44,
+    "num_tokens": 436,
+    "token_shape": [
+      1,
+      436
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "finland",
+    "sample_id": "0002",
+    "dataset_index": 12,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 16.848,
+    "reconstructed_duration": 16.84,
+    "num_tokens": 421,
+    "token_shape": [
+      1,
+      421
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "finland",
+    "sample_id": "0003",
+    "dataset_index": 93,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 15.728,
+    "reconstructed_duration": 15.72,
+    "num_tokens": 393,
+    "token_shape": [
+      1,
+      393
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "finland",
+    "sample_id": "0004",
+    "dataset_index": 9,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 14.144,
+    "reconstructed_duration": 14.16,
+    "num_tokens": 354,
+    "token_shape": [
+      1,
+      354
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "finland",
+    "sample_id": "0005",
+    "dataset_index": 87,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/finland/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 16.048,
+    "reconstructed_duration": 16.04,
+    "num_tokens": 401,
+    "token_shape": [
+      1,
+      401
+    ]
+  }
+]

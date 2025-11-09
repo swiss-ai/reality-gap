@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "fleurs",
+    "language": "am_et",
+    "sample_id": "0001",
+    "dataset_index": 3,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 9.0,
+    "reconstructed_duration": 9.0,
+    "num_tokens": 225,
+    "token_shape": [
+      1,
+      225
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "am_et",
+    "sample_id": "0002",
+    "dataset_index": 15,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 17.7,
+    "reconstructed_duration": 17.72,
+    "num_tokens": 443,
+    "token_shape": [
+      1,
+      443
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "am_et",
+    "sample_id": "0003",
+    "dataset_index": 81,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.46,
+    "reconstructed_duration": 11.48,
+    "num_tokens": 287,
+    "token_shape": [
+      1,
+      287
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "am_et",
+    "sample_id": "0004",
+    "dataset_index": 24,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 7.56,
+    "reconstructed_duration": 7.56,
+    "num_tokens": 189,
+    "token_shape": [
+      1,
+      189
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "am_et",
+    "sample_id": "0005",
+    "dataset_index": 77,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/fleurs/am_et/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 12.36,
+    "reconstructed_duration": 12.36,
+    "num_tokens": 309,
+    "token_shape": [
+      1,
+      309
+    ]
+  }
+]

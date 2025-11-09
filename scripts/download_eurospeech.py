@@ -2,8 +2,10 @@ import os
 from datasets import load_dataset, Dataset, Audio, Features, Value
 import json
 
-scratch_dir = os.path.expandvars("$SCRATCH/benchmark-audio-tokenizer/datasets")
-cache_dir = os.path.join(scratch_dir, "eurospeech_cache")
+# scratch_dir = os.path.expandvars("$SCRATCH/benchmark-audio-tokenizer/datasets")
+# cache_dir = os.path.join(scratch_dir, "eurospeech_cache")
+# Modified to use capstor for xyixuan
+cache_dir = "/capstor/store/cscs/swissai/infra01/audio-datasets/eurospeech_cache"
 os.makedirs(cache_dir, exist_ok=True)
 
 languages = [
@@ -23,13 +25,35 @@ def download_language(lang, n=100, split="train"):
         print(f"Already exists, skipping...")
         return 0
     
-    stream = load_dataset("disco-eth/EuroSpeech", lang, split=split, streaming=True)
+    # Use num_proc for parallel downloading
+    # Use split slicing to only load n samples (e.g., "train[:100]")
+    dataset = load_dataset("disco-eth/EuroSpeech", lang, split=f"{split}[:{n}]", num_proc=32)
+
+    # Use map with batch processing for better performance
+    def process_batch(examples, indices):
+        """Process a batch of examples efficiently"""
+        batch_size = len(examples["audio"])
+        processed = {
+            "audio": examples["audio"],
+            "text": examples.get("text", [""] * batch_size),
+            "language": [lang] * batch_size,
+            "sample_id": indices
+        }
+        return processed
+
+    # Apply batch processing with multiple workers
+    dataset = dataset.map(
+        process_batch,
+        batched=True,
+        batch_size=100,
+        num_proc=4,  # Use 4 processes for mapping
+        with_indices=True,
+        desc=f"Processing {lang}"
+    )
+
+    # Convert to list format for compatibility
     samples = []
-    
-    for i, sample in enumerate(stream):
-        if i >= n:
-            break
-        
+    for i, sample in enumerate(dataset):
         audio_data = sample["audio"]
         samples.append({
             "audio": {
@@ -37,13 +61,10 @@ def download_language(lang, n=100, split="train"):
                 "sampling_rate": audio_data["sampling_rate"],
                 "path": audio_data.get("path", f"{lang}_{i}")
             },
-            "text": sample.get("text", ""),
-            "language": lang,
-            "sample_id": i
+            "text": sample["text"],
+            "language": sample["language"],
+            "sample_id": sample["sample_id"]
         })
-        
-        if (i + 1) % 10 == 0:
-            print(f"  {i + 1}/{n}...")
     
     print(f"Saving {len(samples)} samples...")
     

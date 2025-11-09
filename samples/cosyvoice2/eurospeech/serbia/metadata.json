@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "serbia",
+    "sample_id": "0001",
+    "dataset_index": 15,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 18.56,
+    "reconstructed_duration": 18.56,
+    "num_tokens": 464,
+    "token_shape": [
+      1,
+      464
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "serbia",
+    "sample_id": "0002",
+    "dataset_index": 70,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 18.528,
+    "reconstructed_duration": 18.52,
+    "num_tokens": 463,
+    "token_shape": [
+      1,
+      463
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "serbia",
+    "sample_id": "0003",
+    "dataset_index": 42,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.68,
+    "reconstructed_duration": 11.68,
+    "num_tokens": 292,
+    "token_shape": [
+      1,
+      292
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "serbia",
+    "sample_id": "0004",
+    "dataset_index": 69,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 18.448,
+    "reconstructed_duration": 18.44,
+    "num_tokens": 461,
+    "token_shape": [
+      1,
+      461
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "serbia",
+    "sample_id": "0005",
+    "dataset_index": 26,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/serbia/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 14.208,
+    "reconstructed_duration": 14.2,
+    "num_tokens": 355,
+    "token_shape": [
+      1,
+      355
+    ]
+  }
+]

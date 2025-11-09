@@ -4,8 +4,10 @@ import json
 import time
 import argparse
 
-scratch_dir = os.path.expandvars("$SCRATCH/benchmark-audio-tokenizer/datasets")
-cache_dir = os.path.join(scratch_dir, "fleurs_cache")
+# scratch_dir = os.path.expandvars("$SCRATCH/benchmark-audio-tokenizer/datasets")
+# cache_dir = os.path.join(scratch_dir, "fleurs_cache")
+# Modified to use capstor for xyixuan
+cache_dir = "/capstor/store/cscs/swissai/infra01/audio-datasets/fleurs_cache"
 os.makedirs(cache_dir, exist_ok=True)
 
 # FLEURS language codes - manually curate this list as needed
@@ -214,13 +216,40 @@ def download_language(lang, n=100, split="train"):
         return 0
     
     try:
-        stream = load_dataset("google/fleurs", lang, split=split, streaming=True, trust_remote_code=True)
+        # Load without streaming to avoid torchcodec issues and remove deprecated trust_remote_code
+        # Use num_proc for parallel downloading
+        # Use split slicing to only load n samples (e.g., "train[:100]")
+        dataset = load_dataset("google/fleurs", lang, split=f"{split}[:{n}]", num_proc=32)
+
+        # Use map with batch processing for better performance
+        def process_batch(examples, indices):
+            """Process a batch of examples efficiently"""
+            batch_size = len(examples["audio"])
+            processed = {
+                "audio": examples["audio"],
+                "text": examples.get("transcription", [""] * batch_size),
+                "raw_text": examples.get("raw_transcription", [""] * batch_size),
+                "language": [lang] * batch_size,
+                "lang_id": examples.get("lang_id", [-1] * batch_size),
+                "lang_group_id": examples.get("lang_group_id", [-1] * batch_size),
+                "gender": examples.get("gender", [-1] * batch_size),
+                "sample_id": indices
+            }
+            return processed
+
+        # Apply batch processing with multiple workers
+        dataset = dataset.map(
+            process_batch,
+            batched=True,
+            batch_size=100,
+            num_proc=4,  # Use 4 processes for mapping
+            with_indices=True,
+            desc=f"Processing {lang}"
+        )
+
+        # Convert to list format for compatibility
         samples = []
-        
-        for i, sample in enumerate(stream):
-            if i >= n:
-                break
-            
+        for i, sample in enumerate(dataset):
             audio_data = sample["audio"]
             samples.append({
                 "audio": {
@@ -228,17 +257,14 @@ def download_language(lang, n=100, split="train"):
                     "sampling_rate": audio_data["sampling_rate"],
                     "path": audio_data.get("path", f"{lang}_{i}")
                 },
-                "text": sample.get("transcription", ""),
-                "raw_text": sample.get("raw_transcription", ""),
-                "language": sample.get("language", lang),
-                "lang_id": sample.get("lang_id", -1),
-                "lang_group_id": sample.get("lang_group_id", -1),
-                "gender": sample.get("gender", -1),
-                "sample_id": sample.get("id", i)
+                "text": sample["text"],
+                "raw_text": sample["raw_text"],
+                "language": sample["language"],
+                "lang_id": sample["lang_id"],
+                "lang_group_id": sample["lang_group_id"],
+                "gender": sample["gender"],
+                "sample_id": sample["sample_id"]
             })
-            
-            if (i + 1) % 10 == 0:
-                print(f"  {i + 1}/{n}...")
         
         if not samples:
             print(f"No samples downloaded for {lang}")

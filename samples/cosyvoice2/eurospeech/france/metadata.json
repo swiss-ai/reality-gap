@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "france",
+    "sample_id": "0001",
+    "dataset_index": 42,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 10.944,
+    "reconstructed_duration": 10.96,
+    "num_tokens": 274,
+    "token_shape": [
+      1,
+      274
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "france",
+    "sample_id": "0002",
+    "dataset_index": 60,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.8080625,
+    "reconstructed_duration": 11.8,
+    "num_tokens": 295,
+    "token_shape": [
+      1,
+      295
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "france",
+    "sample_id": "0003",
+    "dataset_index": 71,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.904,
+    "reconstructed_duration": 11.92,
+    "num_tokens": 298,
+    "token_shape": [
+      1,
+      298
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "france",
+    "sample_id": "0004",
+    "dataset_index": 12,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 17.2479375,
+    "reconstructed_duration": 17.24,
+    "num_tokens": 431,
+    "token_shape": [
+      1,
+      431
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "france",
+    "sample_id": "0005",
+    "dataset_index": 45,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/france/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 16.432,
+    "reconstructed_duration": 16.44,
+    "num_tokens": 411,
+    "token_shape": [
+      1,
+      411
+    ]
+  }
+]

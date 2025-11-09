@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "estonia",
+    "sample_id": "0001",
+    "dataset_index": 32,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 19.5995,
+    "reconstructed_duration": 19.6,
+    "num_tokens": 490,
+    "token_shape": [
+      1,
+      490
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "estonia",
+    "sample_id": "0002",
+    "dataset_index": 68,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 19.527,
+    "reconstructed_duration": 19.52,
+    "num_tokens": 488,
+    "token_shape": [
+      1,
+      488
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "estonia",
+    "sample_id": "0003",
+    "dataset_index": 90,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.776,
+    "reconstructed_duration": 11.8,
+    "num_tokens": 295,
+    "token_shape": [
+      1,
+      295
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "estonia",
+    "sample_id": "0004",
+    "dataset_index": 77,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 16.688,
+    "reconstructed_duration": 16.64,
+    "num_tokens": 417,
+    "token_shape": [
+      1,
+      417
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "estonia",
+    "sample_id": "0005",
+    "dataset_index": 18,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/estonia/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 16.064,
+    "reconstructed_duration": 16.08,
+    "num_tokens": 402,
+    "token_shape": [
+      1,
+      402
+    ]
+  }
+]

@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "norway",
+    "sample_id": "0001",
+    "dataset_index": 11,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 18.656,
+    "reconstructed_duration": 18.68,
+    "num_tokens": 467,
+    "token_shape": [
+      1,
+      467
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "norway",
+    "sample_id": "0002",
+    "dataset_index": 10,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 15.5843125,
+    "reconstructed_duration": 15.6,
+    "num_tokens": 390,
+    "token_shape": [
+      1,
+      390
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "norway",
+    "sample_id": "0003",
+    "dataset_index": 40,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 12.48,
+    "reconstructed_duration": 12.48,
+    "num_tokens": 312,
+    "token_shape": [
+      1,
+      312
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "norway",
+    "sample_id": "0004",
+    "dataset_index": 65,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.2,
+    "reconstructed_duration": 11.2,
+    "num_tokens": 280,
+    "token_shape": [
+      1,
+      280
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "norway",
+    "sample_id": "0005",
+    "dataset_index": 62,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/norway/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 16.464,
+    "reconstructed_duration": 16.48,
+    "num_tokens": 412,
+    "token_shape": [
+      1,
+      412
+    ]
+  }
+]

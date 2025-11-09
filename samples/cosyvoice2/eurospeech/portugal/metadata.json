@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "portugal",
+    "sample_id": "0001",
+    "dataset_index": 13,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 13.66825,
+    "reconstructed_duration": 13.68,
+    "num_tokens": 342,
+    "token_shape": [
+      1,
+      342
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "portugal",
+    "sample_id": "0002",
+    "dataset_index": 38,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 18.260125,
+    "reconstructed_duration": 18.28,
+    "num_tokens": 457,
+    "token_shape": [
+      1,
+      457
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "portugal",
+    "sample_id": "0003",
+    "dataset_index": 70,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 12.192,
+    "reconstructed_duration": 12.2,
+    "num_tokens": 305,
+    "token_shape": [
+      1,
+      305
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "portugal",
+    "sample_id": "0004",
+    "dataset_index": 37,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 19.056125,
+    "reconstructed_duration": 19.08,
+    "num_tokens": 477,
+    "token_shape": [
+      1,
+      477
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "portugal",
+    "sample_id": "0005",
+    "dataset_index": 90,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/portugal/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 13.024,
+    "reconstructed_duration": 13.04,
+    "num_tokens": 326,
+    "token_shape": [
+      1,
+      326
+    ]
+  }
+]
