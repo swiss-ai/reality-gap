@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0001",
+    "dataset_index": 76,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 15.04,
+    "reconstructed_duration": 15.034920634920635,
+    "num_tokens": 188,
+    "token_shape": [
+      1,
+      188
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0002",
+    "dataset_index": 90,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 14.112,
+    "reconstructed_duration": 14.152562358276644,
+    "num_tokens": 177,
+    "token_shape": [
+      1,
+      177
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0003",
+    "dataset_index": 32,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 15.696,
+    "reconstructed_duration": 15.754739229024944,
+    "num_tokens": 197,
+    "token_shape": [
+      1,
+      197
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0004",
+    "dataset_index": 30,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 17.84,
+    "reconstructed_duration": 17.832925170068027,
+    "num_tokens": 223,
+    "token_shape": [
+      1,
+      223
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0005",
+    "dataset_index": 89,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/latvia/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 15.52,
+    "reconstructed_duration": 15.51092970521542,
+    "num_tokens": 194,
+    "token_shape": [
+      1,
+      194
+    ]
+  }
+]

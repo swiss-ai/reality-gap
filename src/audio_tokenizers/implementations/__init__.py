@@ -12,14 +12,15 @@ from .tadicodec import TaDiCodecTokenizer
 from .cosyvoice2 import CosyVoice2Tokenizer
 
 # Add more tokenizers as they're implemented:
+from .glm4voice import GLM4VoiceTokenizer
 # from .encodec import EncodecTokenizer
 # from .dac import DACTokenizer
 # from .soundstream import SoundStreamTokenizer
-# from .glm4voice import GLM4VoiceTokenizer
 
 __all__ = [
     'NeuCodecTokenizer',
     'DistilledNeuCodecTokenizer',
     'TaDiCodecTokenizer',
     'CosyVoice2Tokenizer',
+    'GLM4VoiceTokenizer',
 ]

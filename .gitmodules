@@ -13,3 +13,6 @@
 [submodule "src/repos/GLM-4-Voice"]
 	path = src/repos/GLM-4-Voice
 	url = https://github.com/THUDM/GLM-4-Voice.git
+[submodule "src/repos/glm4voice"]
+	path = src/repos/glm4voice
+	url = https://github.com/THUDM/GLM-4-Voice.git

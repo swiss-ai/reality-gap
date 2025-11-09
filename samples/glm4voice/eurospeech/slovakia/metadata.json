@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "slovakia",
+    "sample_id": "0001",
+    "dataset_index": 44,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 18.7370625,
+    "reconstructed_duration": 18.796553287981858,
+    "num_tokens": 235,
+    "token_shape": [
+      1,
+      235
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "slovakia",
+    "sample_id": "0002",
+    "dataset_index": 37,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 13.4419375,
+    "reconstructed_duration": 13.514013605442177,
+    "num_tokens": 169,
+    "token_shape": [
+      1,
+      169
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "slovakia",
+    "sample_id": "0003",
+    "dataset_index": 0,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 15.114875,
+    "reconstructed_duration": 15.116190476190477,
+    "num_tokens": 189,
+    "token_shape": [
+      1,
+      189
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "slovakia",
+    "sample_id": "0004",
+    "dataset_index": 47,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 10.6733125,
+    "reconstructed_duration": 10.716009070294785,
+    "num_tokens": 134,
+    "token_shape": [
+      1,
+      134
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "slovakia",
+    "sample_id": "0005",
+    "dataset_index": 78,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/slovakia/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 19.5105625,
+    "reconstructed_duration": 19.51637188208617,
+    "num_tokens": 244,
+    "token_shape": [
+      1,
+      244
+    ]
+  }
+]

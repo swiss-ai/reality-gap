@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "italy",
+    "sample_id": "0001",
+    "dataset_index": 63,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 16.0473125,
+    "reconstructed_duration": 16.07981859410431,
+    "num_tokens": 201,
+    "token_shape": [
+      1,
+      201
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "italy",
+    "sample_id": "0002",
+    "dataset_index": 39,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 16.3848125,
+    "reconstructed_duration": 16.39328798185941,
+    "num_tokens": 205,
+    "token_shape": [
+      1,
+      205
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "italy",
+    "sample_id": "0003",
+    "dataset_index": 22,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 13.8570625,
+    "reconstructed_duration": 13.908752834467121,
+    "num_tokens": 174,
+    "token_shape": [
+      1,
+      174
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "italy",
+    "sample_id": "0004",
+    "dataset_index": 91,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 16.511625,
+    "reconstructed_duration": 16.555827664399093,
+    "num_tokens": 207,
+    "token_shape": [
+      1,
+      207
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "italy",
+    "sample_id": "0005",
+    "dataset_index": 45,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/italy/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 14.767,
+    "reconstructed_duration": 14.79111111111111,
+    "num_tokens": 185,
+    "token_shape": [
+      1,
+      185
+    ]
+  }
+]

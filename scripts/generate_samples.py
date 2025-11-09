@@ -175,7 +175,8 @@ def sample_and_reconstruct(
                 audio_tensor = audio_tensor.to(device)
 
                 try:
-                    # Encode
+                    # Encode and decode separately
+                    # Note: GLM-4-Voice has minimal voice cloning effect, so we don't use reconstruct
                     tokens, encode_info = tokenizer.encode(audio_tensor, sr=sr)
 
                     # Decode

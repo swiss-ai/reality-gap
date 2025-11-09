@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "germany",
+    "sample_id": "0001",
+    "dataset_index": 33,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 13.856,
+    "reconstructed_duration": 13.908752834467121,
+    "num_tokens": 174,
+    "token_shape": [
+      1,
+      174
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "germany",
+    "sample_id": "0002",
+    "dataset_index": 78,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 12.081,
+    "reconstructed_duration": 12.1556462585034,
+    "num_tokens": 152,
+    "token_shape": [
+      1,
+      152
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "germany",
+    "sample_id": "0003",
+    "dataset_index": 75,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 10.752,
+    "reconstructed_duration": 10.797278911564625,
+    "num_tokens": 135,
+    "token_shape": [
+      1,
+      135
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "germany",
+    "sample_id": "0004",
+    "dataset_index": 17,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 19.12,
+    "reconstructed_duration": 19.11002267573696,
+    "num_tokens": 239,
+    "token_shape": [
+      1,
+      239
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "germany",
+    "sample_id": "0005",
+    "dataset_index": 29,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/germany/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 18.272,
+    "reconstructed_duration": 18.308934240362813,
+    "num_tokens": 229,
+    "token_shape": [
+      1,
+      229
+    ]
+  }
+]

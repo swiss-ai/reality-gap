@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "iceland",
+    "sample_id": "0001",
+    "dataset_index": 22,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 12.832,
+    "reconstructed_duration": 12.87546485260771,
+    "num_tokens": 161,
+    "token_shape": [
+      1,
+      161
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "iceland",
+    "sample_id": "0002",
+    "dataset_index": 61,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 19.408,
+    "reconstructed_duration": 19.435102040816325,
+    "num_tokens": 243,
+    "token_shape": [
+      1,
+      243
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "iceland",
+    "sample_id": "0003",
+    "dataset_index": 69,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 19.312,
+    "reconstructed_duration": 19.353832199546485,
+    "num_tokens": 242,
+    "token_shape": [
+      1,
+      242
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "iceland",
+    "sample_id": "0004",
+    "dataset_index": 53,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 11.776,
+    "reconstructed_duration": 11.830566893424036,
+    "num_tokens": 148,
+    "token_shape": [
+      1,
+      148
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "iceland",
+    "sample_id": "0005",
+    "dataset_index": 99,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/iceland/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 11.968,
+    "reconstructed_duration": 11.993106575963719,
+    "num_tokens": 150,
+    "token_shape": [
+      1,
+      150
+    ]
+  }
+]
