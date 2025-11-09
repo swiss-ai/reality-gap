@@ -1,0 +1,43 @@
+# CosyVoice2 Minimal Requirements
+# Only packages actually used in the tokenization pipeline
+#
+# Installation command:
+# uv pip install --system --break-system-packages -r requirements-cosyvoice2.txt
+
+# PyTorch (required for model inference)
+--index-url https://download.pytorch.org/whl/nightly/cu126
+torch>=2.10.0
+torchaudio>=2.10.0
+torchvision>=0.25.0  # Required for Qwen2 import
+
+# Audio processing
+numpy<2.0  # Must be <2.0 for ONNX compatibility
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# ONNX Runtime for encoder
+onnxruntime==1.18.0
+
+# Model loading and inference
+modelscope>=1.20.0  # For downloading models from ModelScope
+transformers>=4.48.0  # For Qwen2 model in decoder
+diffusers>=0.35.0  # For Flow model in decoder
+
+# CosyVoice specific dependencies
+conformer==0.3.2  # Required by CosyVoice models
+lightning>=2.2.4  # Required by CosyVoice models
+hydra-core==1.3.2  # Config loading
+omegaconf==2.3.0  # Config management
+HyperPyYAML==1.2.2  # YAML config parsing
+
+# Required utilities
+einops  # Tensor operations
+gdown>=5.1.0  # Model downloading
+wget>=3.2  # File downloading
+inflect>=7.3.0  # Text processing in decoder
+kaldifst>=1.7.0  # FST operations for text processing
+
+# For running examples/notebooks
+datasets  # For loading ESB diagnostic dataset
+matplotlib  # For visualization in notebooks
+ipykernel  # For Jupyter kernel
