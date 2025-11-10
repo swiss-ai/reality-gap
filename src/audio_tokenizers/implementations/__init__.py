@@ -6,6 +6,7 @@ Each tokenizer here is automatically registered when imported.
 
 # Import all tokenizer implementations
 # This triggers their registration via the metaclass
+# Use try-except to handle missing dependencies gracefully
 
 from .neucodec import NeuCodecTokenizer, DistilledNeuCodecTokenizer
 from .tadicodec import TaDiCodecTokenizer

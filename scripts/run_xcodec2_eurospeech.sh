@@ -7,22 +7,17 @@ LANGUAGES=(
     norway portugal serbia slovakia slovenia sweden uk ukraine
 )
 
-PROJECT_DIR=/users/lmantel/benchmark-audio-tokenizer
-LOG_DIR=${PROJECT_DIR}/logs
-VENVSRC=${PROJECT_DIR}/.venv-xcodec2/bin/activate
-
-mkdir -p "${LOG_DIR}"
+mkdir -p /users/${USER}/benchmark-audio-tokenizer/logs
 
 for lang in "${LANGUAGES[@]}"; do
     sbatch <<EOF
 #!/bin/bash
 #SBATCH --account=infra01
 #SBATCH --job-name=xcodec2_${lang}
-#SBATCH --environment=ngc-24.11
-#SBATCH --output=${LOG_DIR}/xcodec2_${lang}_%j.out
-#SBATCH --error=${LOG_DIR}/xcodec2_${lang}_%j.err
+#SBATCH --output=/users/${USER}/benchmark-audio-tokenizer/logs/%j_xcodec2_${lang}.out
+#SBATCH --error=/users/${USER}/benchmark-audio-tokenizer/logs/%j_xcodec2_${lang}.err
 #SBATCH --time=02:00:00
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --partition=normal
@@ -31,7 +26,7 @@ for lang in "${LANGUAGES[@]}"; do
 export OPENBLAS_NUM_THREADS=72
 export OMP_NUM_THREADS=72
 
-source ${VENVSRC}
+source /users/${USER}/benchmark-audio-tokenizer/.venv-xcodec2/bin/activate
 cd ${PROJECT_DIR}
 
 python scripts/tokenizer_evaluation.py --tokenizer xcodec2 --language ${lang}

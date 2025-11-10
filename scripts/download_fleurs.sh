@@ -29,17 +29,17 @@ LANGUAGES=(
 for lang in "${LANGUAGES[@]}"; do
     sbatch <<EOF
 #!/bin/bash
-#SBATCH --account=root
+#SBATCH --account=infra01
 #SBATCH --job-name=download_fleurs_${lang}
-#SBATCH --output=/users/mrieff/benchmark-audio-tokenizer/logs/download_fleurs_${lang}_%j.out
-#SBATCH --error=/users/mrieff/benchmark-audio-tokenizer/logs/download_fleurs_${lang}_%j.err
+#SBATCH --output=$HOME/benchmark-audio-tokenizer/logs/%j_download_fleurs_${lang}.out
+#SBATCH --error=$HOME/benchmark-audio-tokenizer/logs/%j_download_fleurs_${lang}.err
 #SBATCH --time=01:00:00
 #SBATCH --mem=8G
 #SBATCH --cpus-per-task=2
 #SBATCH --partition=normal
 
-source /users/mrieff/benchmark-audio-tokenizer/venv/bin/activate
-cd /users/mrieff/benchmark-audio-tokenizer
+source /users/$USER/benchmark-audio-tokenizer/.venv/bin/activate
+cd /users/$USER/benchmark-audio-tokenizer
 
 python scripts/download_fleurs.py --language ${lang}
 EOF
