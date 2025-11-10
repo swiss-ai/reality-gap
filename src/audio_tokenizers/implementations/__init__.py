@@ -10,8 +10,10 @@ Each tokenizer here is automatically registered when imported.
 from .neucodec import NeuCodecTokenizer, DistilledNeuCodecTokenizer
 from .tadicodec import TaDiCodecTokenizer
 from .xcodec2 import XCodec2Tokenizer
+from .cosyvoice2 import CosyVoice2Tokenizer
 
 # Add more tokenizers as they're implemented:
+from .glm4voice import GLM4VoiceTokenizer
 # from .encodec import EncodecTokenizer
 # from .dac import DACTokenizer
 # from .soundstream import SoundStreamTokenizer
@@ -21,4 +23,6 @@ __all__ = [
     'DistilledNeuCodecTokenizer',
     'TaDiCodecTokenizer',
     'XCodec2Tokenizer',
+    'CosyVoice2Tokenizer',
+    'GLM4VoiceTokenizer',
 ]

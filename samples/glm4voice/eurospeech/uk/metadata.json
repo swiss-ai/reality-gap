@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "uk",
+    "sample_id": "0001",
+    "dataset_index": 18,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 11.408,
+    "reconstructed_duration": 11.435827664399094,
+    "num_tokens": 143,
+    "token_shape": [
+      1,
+      143
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "uk",
+    "sample_id": "0002",
+    "dataset_index": 26,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 16.928,
+    "reconstructed_duration": 16.950566893424035,
+    "num_tokens": 212,
+    "token_shape": [
+      1,
+      212
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "uk",
+    "sample_id": "0003",
+    "dataset_index": 6,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 13.136,
+    "reconstructed_duration": 13.188934240362812,
+    "num_tokens": 165,
+    "token_shape": [
+      1,
+      165
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "uk",
+    "sample_id": "0004",
+    "dataset_index": 47,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 19.12,
+    "reconstructed_duration": 19.11002267573696,
+    "num_tokens": 239,
+    "token_shape": [
+      1,
+      239
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "uk",
+    "sample_id": "0005",
+    "dataset_index": 66,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/uk/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 12.736,
+    "reconstructed_duration": 12.794195011337868,
+    "num_tokens": 160,
+    "token_shape": [
+      1,
+      160
+    ]
+  }
+]

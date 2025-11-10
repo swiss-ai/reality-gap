@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "lithuania",
+    "sample_id": "0001",
+    "dataset_index": 41,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 15.9065,
+    "reconstructed_duration": 15.92,
+    "num_tokens": 398,
+    "token_shape": [
+      1,
+      398
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "lithuania",
+    "sample_id": "0002",
+    "dataset_index": 90,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 15.104,
+    "reconstructed_duration": 15.12,
+    "num_tokens": 378,
+    "token_shape": [
+      1,
+      378
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "lithuania",
+    "sample_id": "0003",
+    "dataset_index": 8,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 17.856,
+    "reconstructed_duration": 17.88,
+    "num_tokens": 447,
+    "token_shape": [
+      1,
+      447
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "lithuania",
+    "sample_id": "0004",
+    "dataset_index": 24,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 13.056,
+    "reconstructed_duration": 13.08,
+    "num_tokens": 327,
+    "token_shape": [
+      1,
+      327
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "lithuania",
+    "sample_id": "0005",
+    "dataset_index": 72,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/lithuania/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.424,
+    "reconstructed_duration": 11.44,
+    "num_tokens": 286,
+    "token_shape": [
+      1,
+      286
+    ]
+  }
+]

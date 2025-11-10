@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "sweden",
+    "sample_id": "0001",
+    "dataset_index": 91,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 11.648,
+    "reconstructed_duration": 11.679637188208616,
+    "num_tokens": 146,
+    "token_shape": [
+      1,
+      146
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "sweden",
+    "sample_id": "0002",
+    "dataset_index": 55,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 13.344,
+    "reconstructed_duration": 13.351473922902494,
+    "num_tokens": 167,
+    "token_shape": [
+      1,
+      167
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "sweden",
+    "sample_id": "0003",
+    "dataset_index": 53,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 17.065,
+    "reconstructed_duration": 17.11310657596372,
+    "num_tokens": 214,
+    "token_shape": [
+      1,
+      214
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "sweden",
+    "sample_id": "0004",
+    "dataset_index": 57,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 16.192,
+    "reconstructed_duration": 16.23074829931973,
+    "num_tokens": 203,
+    "token_shape": [
+      1,
+      203
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "sweden",
+    "sample_id": "0005",
+    "dataset_index": 67,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/sweden/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 10.224,
+    "reconstructed_duration": 10.24,
+    "num_tokens": 128,
+    "token_shape": [
+      1,
+      128
+    ]
+  }
+]

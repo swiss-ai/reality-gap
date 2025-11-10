@@ -10,7 +10,7 @@ LANGUAGES=(
 for lang in "${LANGUAGES[@]}"; do
     sbatch <<EOF
 #!/bin/bash
-#SBATCH --account=infra01
+#SBATCH --account=root
 #SBATCH --job-name=neucodec_${lang}
 #SBATCH --output=/users/mrieff/benchmark-audio-tokenizer/logs/neucodec_${lang}_%j.out
 #SBATCH --error=/users/mrieff/benchmark-audio-tokenizer/logs/neucodec_${lang}_%j.err
@@ -18,6 +18,7 @@ for lang in "${LANGUAGES[@]}"; do
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
+#SBATCH --constraint=gpu
 #SBATCH --partition=normal
 
 export OPENBLAS_NUM_THREADS=4

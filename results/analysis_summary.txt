@@ -1,0 +1,251 @@
+
+============================================================
+AGGREGATION METHODOLOGY
+============================================================
+
+How metrics are aggregated across languages:
+
+1. Each language file contains MEAN metrics already computed
+   from multiple audio samples (typically 100 samples per language)
+
+2. For OVERALL tokenizer statistics:
+   - We compute the MEAN of the per-language means
+   - This is effectively a 'grand mean' across all languages
+   - Each language contributes equally, regardless of sample count
+
+3. Example calculation:
+   - Language A: PESQ mean = 1.75 (from 100 samples)
+   - Language B: PESQ mean = 1.80 (from 100 samples)
+   - Language C: PESQ mean = 1.70 (from 100 samples)
+   - Overall PESQ = (1.75 + 1.80 + 1.70) / 3 = 1.75
+
+4. Standard deviation calculation:
+   - Computed from the per-language means
+   - Shows variation ACROSS languages (not across samples)
+   - High std = performance varies significantly by language
+
+5. For FAIR comparison (common languages only):
+   - Same methodology, but only using languages both tokenizers have
+   - Ensures apples-to-apples comparison
+
+NOTE: This is language-weighted averaging. If you need
+      sample-weighted averaging (each audio sample counts equally),
+      you would need to implement a weighted mean using num_samples.
+
+============================================================
+LANGUAGE COVERAGE ANALYSIS
+============================================================
+
+Total unique languages: 61
+Languages in both tokenizers: 21
+Languages only in NeuCodec: 40
+  af_za, am_et, ar_eg, ast_es, be_by, bn_in, ca_es, cmn_hans_cn, cs_cz, cy_gb, denmark, en_us, es_419, fa_ir, ga_ie, gl_es, he_il, hi_in, hu_hu, hy_am, id_id, ja_jp, ka_ge, kea_cv, ko_kr, lb_lu, mk_mk, nl_nl, oc_fr, pl_pl, ro_ro, ru_ru, sw_ke, ta_in, te_in, th_th, tr_tr, vi_vn, yo_ng, yue_hant_hk
+Languages only in XCodec2: 0
+
+NOTE: Overall comparisons include ALL languages for each tokenizer.
+      This means the comparison may not be perfectly fair if
+      the tokenizers were tested on different language sets.
+      See 'common_languages_comparison.png' for a fair comparison
+      using only the 21 languages both tokenizers have.
+
+============================================================
+NEUCODEC SUMMARY STATISTICS
+============================================================
+Total languages tested: 61
+Total samples: 6100
+
+------------------------------------------------------------
+METRIC STATISTICS
+------------------------------------------------------------
+
+MSE:
+  Mean: 0.0241
+  Std:  0.0100
+  Min:  0.0119
+  Max:  0.0617
+  Median: 0.0213
+
+SNR_DB:
+  Mean: -1.8135
+  Std:  0.8155
+  Min:  -4.1614
+  Max:  -0.0553
+  Median: -1.7958
+
+SDR_DB:
+  Mean: -1.8790
+  Std:  0.9200
+  Min:  -4.5237
+  Max:  -0.0420
+  Median: -1.7723
+
+PESQ:
+  Mean: 1.7801
+  Std:  0.1427
+  Min:  1.4519
+  Max:  2.0673
+  Median: 1.7945
+
+STOI:
+  Mean: 0.7818
+  Std:  0.0479
+  Min:  0.6763
+  Max:  0.8647
+  Median: 0.7879
+
+ESTOI:
+  Mean: 0.6339
+  Std:  0.0609
+  Min:  0.4931
+  Max:  0.7421
+  Median: 0.6478
+
+COMPRESSION RATIO:
+  Mean: 320.07
+  Std:  0.09
+
+TOKENS PER SECOND:
+  Mean: 49.99
+  Std:  0.01
+
+============================================================
+XCODEC2 SUMMARY STATISTICS
+============================================================
+Total languages tested: 21
+Total samples: 2100
+
+------------------------------------------------------------
+METRIC STATISTICS
+------------------------------------------------------------
+
+MSE:
+  Mean: 0.0127
+  Std:  0.0066
+  Min:  0.0053
+  Max:  0.0327
+  Median: 0.0106
+
+SNR_DB:
+  Mean: 1.4228
+  Std:  1.2578
+  Min:  -0.5644
+  Max:  4.4116
+  Median: 1.4119
+
+SDR_DB:
+  Mean: 1.3815
+  Std:  1.2508
+  Min:  -0.5629
+  Max:  4.3322
+  Median: 1.4136
+
+PESQ:
+  Mean: 2.1249
+  Std:  0.2344
+  Min:  1.6748
+  Max:  2.4828
+  Median: 2.1663
+
+STOI:
+  Mean: 0.8411
+  Std:  0.0536
+  Min:  0.7390
+  Max:  0.9104
+  Median: 0.8413
+
+ESTOI:
+  Mean: 0.6989
+  Std:  0.0817
+  Min:  0.5480
+  Max:  0.8129
+  Median: 0.7053
+
+COMPRESSION RATIO:
+  Mean: 319.74
+  Std:  0.04
+
+TOKENS PER SECOND:
+  Mean: 50.04
+  Std:  0.01
+
+============================================================
+OVERALL COMPARISON (NeuCodec vs XCodec2)
+============================================================
+NOTE: Includes all languages each tokenizer was tested on
+
+MSE:
+  NeuCodec: 0.0241
+  XCodec2:  0.0127
+  Difference: 0.0114 (89.08%)
+  Better: XCodec2
+
+SNR_DB:
+  NeuCodec: -1.8135
+  XCodec2:  1.4228
+  Difference: -3.2363 (-227.46%)
+  Better: XCodec2
+
+SDR_DB:
+  NeuCodec: -1.8790
+  XCodec2:  1.3815
+  Difference: -3.2605 (-236.02%)
+  Better: XCodec2
+
+PESQ:
+  NeuCodec: 1.7801
+  XCodec2:  2.1249
+  Difference: -0.3447 (-16.22%)
+  Better: XCodec2
+
+STOI:
+  NeuCodec: 0.7818
+  XCodec2:  0.8411
+  Difference: -0.0593 (-7.05%)
+  Better: XCodec2
+
+ESTOI:
+  NeuCodec: 0.6339
+  XCodec2:  0.6989
+  Difference: -0.0650 (-9.29%)
+  Better: XCodec2
+
+============================================================
+FAIR COMPARISON (Common Languages Only, n=21)
+============================================================
+Common languages: bosnia-herzegovina, bulgaria, croatia, estonia, finland, france, germany, greece, iceland, italy, latvia, lithuania, malta, norway, portugal, serbia, slovakia, slovenia, sweden, uk, ukraine
+
+MSE:
+  NeuCodec: 0.0280
+  XCodec2:  0.0127
+  Difference: 0.0152 (119.61%)
+  Better: XCodec2
+
+SNR_DB:
+  NeuCodec: -2.0474
+  XCodec2:  1.4228
+  Difference: -3.4702 (-243.90%)
+  Better: XCodec2
+
+SDR_DB:
+  NeuCodec: -2.0369
+  XCodec2:  1.3815
+  Difference: -3.4184 (-247.45%)
+  Better: XCodec2
+
+PESQ:
+  NeuCodec: 1.7999
+  XCodec2:  2.1249
+  Difference: -0.3250 (-15.29%)
+  Better: XCodec2
+
+STOI:
+  NeuCodec: 0.7958
+  XCodec2:  0.8411
+  Difference: -0.0453 (-5.38%)
+  Better: XCodec2
+
+ESTOI:
+  NeuCodec: 0.6323
+  XCodec2:  0.6989
+  Difference: -0.0666 (-9.53%)
+  Better: XCodec2

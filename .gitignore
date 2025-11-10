@@ -220,3 +220,6 @@ __marimo__/
 
 # Keep important source directories
 !src/audio_tokenizers/base/
+logs/
+fleurs-venv/
+*-venv/

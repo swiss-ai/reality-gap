@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "greece",
+    "sample_id": "0001",
+    "dataset_index": 70,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 13.376,
+    "reconstructed_duration": 13.4,
+    "num_tokens": 335,
+    "token_shape": [
+      1,
+      335
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "greece",
+    "sample_id": "0002",
+    "dataset_index": 61,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 15.328,
+    "reconstructed_duration": 15.32,
+    "num_tokens": 383,
+    "token_shape": [
+      1,
+      383
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "greece",
+    "sample_id": "0003",
+    "dataset_index": 56,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 19.7915,
+    "reconstructed_duration": 19.8,
+    "num_tokens": 495,
+    "token_shape": [
+      1,
+      495
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "greece",
+    "sample_id": "0004",
+    "dataset_index": 66,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 12.816,
+    "reconstructed_duration": 12.84,
+    "num_tokens": 321,
+    "token_shape": [
+      1,
+      321
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "greece",
+    "sample_id": "0005",
+    "dataset_index": 33,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/greece/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.04,
+    "reconstructed_duration": 11.04,
+    "num_tokens": 276,
+    "token_shape": [
+      1,
+      276
+    ]
+  }
+]

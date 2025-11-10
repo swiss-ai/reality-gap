@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0001",
+    "dataset_index": 78,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 17.584,
+    "reconstructed_duration": 17.6,
+    "num_tokens": 440,
+    "token_shape": [
+      1,
+      440
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0002",
+    "dataset_index": 63,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 14.048,
+    "reconstructed_duration": 14.04,
+    "num_tokens": 351,
+    "token_shape": [
+      1,
+      351
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0003",
+    "dataset_index": 42,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 16.896,
+    "reconstructed_duration": 16.92,
+    "num_tokens": 423,
+    "token_shape": [
+      1,
+      423
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0004",
+    "dataset_index": 31,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 16.912,
+    "reconstructed_duration": 16.92,
+    "num_tokens": 423,
+    "token_shape": [
+      1,
+      423
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "latvia",
+    "sample_id": "0005",
+    "dataset_index": 93,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/latvia/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 11.792,
+    "reconstructed_duration": 11.8,
+    "num_tokens": 295,
+    "token_shape": [
+      1,
+      295
+    ]
+  }
+]

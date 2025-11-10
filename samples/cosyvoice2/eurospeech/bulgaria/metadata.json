@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "eurospeech",
+    "language": "bulgaria",
+    "sample_id": "0001",
+    "dataset_index": 65,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 13.568,
+    "reconstructed_duration": 13.56,
+    "num_tokens": 339,
+    "token_shape": [
+      1,
+      339
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "bulgaria",
+    "sample_id": "0002",
+    "dataset_index": 62,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 14.464,
+    "reconstructed_duration": 14.48,
+    "num_tokens": 362,
+    "token_shape": [
+      1,
+      362
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "bulgaria",
+    "sample_id": "0003",
+    "dataset_index": 51,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 10.217,
+    "reconstructed_duration": 10.24,
+    "num_tokens": 256,
+    "token_shape": [
+      1,
+      256
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "bulgaria",
+    "sample_id": "0004",
+    "dataset_index": 38,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 13.248,
+    "reconstructed_duration": 13.24,
+    "num_tokens": 331,
+    "token_shape": [
+      1,
+      331
+    ]
+  },
+  {
+    "dataset": "eurospeech",
+    "language": "bulgaria",
+    "sample_id": "0005",
+    "dataset_index": 61,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/bulgaria/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 13.824,
+    "reconstructed_duration": 13.84,
+    "num_tokens": 346,
+    "token_shape": [
+      1,
+      346
+    ]
+  }
+]

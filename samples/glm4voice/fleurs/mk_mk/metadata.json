@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "fleurs",
+    "language": "mk_mk",
+    "sample_id": "0001",
+    "dataset_index": 41,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 9.66,
+    "reconstructed_duration": 9.671111111111111,
+    "num_tokens": 121,
+    "token_shape": [
+      1,
+      121
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "mk_mk",
+    "sample_id": "0002",
+    "dataset_index": 32,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 8.1,
+    "reconstructed_duration": 8.150204081632653,
+    "num_tokens": 102,
+    "token_shape": [
+      1,
+      102
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "mk_mk",
+    "sample_id": "0003",
+    "dataset_index": 33,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 8.46,
+    "reconstructed_duration": 8.475283446712018,
+    "num_tokens": 106,
+    "token_shape": [
+      1,
+      106
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "mk_mk",
+    "sample_id": "0004",
+    "dataset_index": 59,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 12.9,
+    "reconstructed_duration": 12.956734693877552,
+    "num_tokens": 162,
+    "token_shape": [
+      1,
+      162
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "mk_mk",
+    "sample_id": "0005",
+    "dataset_index": 56,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/fleurs/mk_mk/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 17.22,
+    "reconstructed_duration": 17.2756462585034,
+    "num_tokens": 216,
+    "token_shape": [
+      1,
+      216
+    ]
+  }
+]
