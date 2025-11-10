@@ -1,3 +1,5 @@
+# xcodec2 Minimal Requirements
+# TODO: integrate CUDA preservation like in cosyvoice2
 # install manually: pip install --no-deps xcodec2==0.1.5
 
 # torchstuff required by xcodec2

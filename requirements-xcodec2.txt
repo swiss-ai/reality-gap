@@ -1,3 +1,5 @@
+# install manually: pip install --no-deps xcodec2==0.1.5
+
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.2
 aiosignal==1.4.0
