@@ -51,6 +51,14 @@ DATASETS = {
             "ar_eg", "tr_tr", "he_il", "fa_ir",
         ],
     },
+    "naturelm": {
+        "cache_dir": os.path.join(CAPSTOR_CACHE, "naturelm_cache"),
+        "languages": [
+            "Xeno-canto", "WavCaps", "NatureLM", "Watkins",
+            "iNaturalist", "Animal Sound Archive"
+        ],
+        "source_field": "source_dataset",  # Use this field to filter by source
+    },
 }
 
 
@@ -130,7 +138,11 @@ def sample_and_reconstruct(
         print(f"Languages to process: {len(langs_to_process)}")
 
         for lang in langs_to_process:
-            lang_dir = os.path.join(cache_dir, lang)
+            # Special handling for NatureLM: load from single directory and filter by source
+            if dataset_name == "naturelm":
+                lang_dir = os.path.join(cache_dir, "naturelm")
+            else:
+                lang_dir = os.path.join(cache_dir, lang)
 
             if not os.path.exists(lang_dir):
                 print(f"⚠ Skipping {lang} (not found at {lang_dir})")
@@ -141,7 +153,22 @@ def sample_and_reconstruct(
             # Load dataset
             try:
                 ds = load_from_disk(lang_dir)
-                n = len(ds)
+
+                # For NatureLM, filter by source_dataset field
+                if dataset_name == "naturelm":
+                    source_field = cfg.get("source_field", "source_dataset")
+                    # Filter dataset to only samples from this source
+                    filtered_indices = [i for i in range(len(ds)) if ds[i][source_field] == lang]
+                    if not filtered_indices:
+                        print(f"⚠ No samples found for source {lang}")
+                        continue
+                    # Create a filtered view
+                    ds_filtered = ds.select(filtered_indices)
+                    n = len(ds_filtered)
+                    ds = ds_filtered
+                else:
+                    n = len(ds)
+
                 if n == 0:
                     print(f"⚠ Empty dataset for {lang}")
                     continue
@@ -149,6 +176,9 @@ def sample_and_reconstruct(
             except Exception as e:
                 print(f"⚠ Error loading dataset: {e}")
                 continue
+
+            # Reset seed before sampling to ensure consistency across tokenizers
+            random.seed(seed)
 
             # Sample indices
             indices = random.sample(range(n), min(num_samples, n))
@@ -272,7 +302,7 @@ def main():
         "--datasets", "-d",
         nargs="+",
         default=None,
-        help="Datasets to process (default: all). Options: eurospeech, fleurs"
+        help="Datasets to process (default: all). Options: eurospeech, fleurs, naturelm"
     )
 
     parser.add_argument(

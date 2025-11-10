@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0001",
+    "dataset_index": 81,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 2.1528125,
+    "reconstructed_duration": 2.175,
+    "num_tokens": 87,
+    "token_shape": [
+      1,
+      87
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0002",
+    "dataset_index": 14,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 15.1844375,
+    "reconstructed_duration": 15.2,
+    "num_tokens": 608,
+    "token_shape": [
+      1,
+      608
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0003",
+    "dataset_index": 3,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 6.336,
+    "reconstructed_duration": 6.35,
+    "num_tokens": 254,
+    "token_shape": [
+      1,
+      254
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0004",
+    "dataset_index": 94,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 9.111,
+    "reconstructed_duration": 9.125,
+    "num_tokens": 365,
+    "token_shape": [
+      1,
+      365
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0005",
+    "dataset_index": 35,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/naturelm/iNaturalist/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 4.0106875,
+    "reconstructed_duration": 4.025,
+    "num_tokens": 161,
+    "token_shape": [
+      1,
+      161
+    ]
+  }
+]

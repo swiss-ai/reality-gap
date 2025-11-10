@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "naturelm",
+    "language": "Xeno-canto",
+    "sample_id": "0001",
+    "dataset_index": 81,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 30.829,
+    "reconstructed_duration": 30.84,
+    "num_tokens": 771,
+    "token_shape": [
+      1,
+      771
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "Xeno-canto",
+    "sample_id": "0002",
+    "dataset_index": 14,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 1.896,
+    "reconstructed_duration": 1.92,
+    "num_tokens": 48,
+    "token_shape": [
+      1,
+      48
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "Xeno-canto",
+    "sample_id": "0003",
+    "dataset_index": 3,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 15.5078125,
+    "reconstructed_duration": 15.52,
+    "num_tokens": 388,
+    "token_shape": [
+      1,
+      388
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "Xeno-canto",
+    "sample_id": "0004",
+    "dataset_index": 94,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 125.0074375,
+    "reconstructed_duration": 125.0,
+    "num_tokens": 3125,
+    "token_shape": [
+      1,
+      3125
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "Xeno-canto",
+    "sample_id": "0005",
+    "dataset_index": 35,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/naturelm/Xeno-canto/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 4.989375,
+    "reconstructed_duration": 5.0,
+    "num_tokens": 125,
+    "token_shape": [
+      1,
+      125
+    ]
+  }
+]

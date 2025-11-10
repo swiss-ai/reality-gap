@@ -3,85 +3,85 @@
     "dataset": "eurospeech",
     "language": "ukraine",
     "sample_id": "0001",
-    "dataset_index": 11,
+    "dataset_index": 81,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0001_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0001_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 17.952,
-    "reconstructed_duration": 17.96,
-    "num_tokens": 449,
+    "original_duration": 10.887,
+    "reconstructed_duration": 10.88,
+    "num_tokens": 272,
     "token_shape": [
       1,
-      449
+      272
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "ukraine",
     "sample_id": "0002",
-    "dataset_index": 86,
+    "dataset_index": 14,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0002_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0002_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 11.808,
-    "reconstructed_duration": 11.8,
-    "num_tokens": 295,
+    "original_duration": 13.728,
+    "reconstructed_duration": 13.72,
+    "num_tokens": 343,
     "token_shape": [
       1,
-      295
+      343
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "ukraine",
     "sample_id": "0003",
-    "dataset_index": 96,
+    "dataset_index": 3,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0003_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0003_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 15.975,
-    "reconstructed_duration": 16.0,
-    "num_tokens": 400,
+    "original_duration": 12.409,
+    "reconstructed_duration": 12.4,
+    "num_tokens": 310,
     "token_shape": [
       1,
-      400
+      310
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "ukraine",
     "sample_id": "0004",
-    "dataset_index": 16,
+    "dataset_index": 94,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0004_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0004_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 15.216,
-    "reconstructed_duration": 15.24,
-    "num_tokens": 381,
+    "original_duration": 11.952,
+    "reconstructed_duration": 11.92,
+    "num_tokens": 299,
     "token_shape": [
       1,
-      381
+      299
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "ukraine",
     "sample_id": "0005",
-    "dataset_index": 19,
+    "dataset_index": 35,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0005_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/ukraine/sample_0005_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 15.68,
-    "reconstructed_duration": 15.64,
-    "num_tokens": 392,
+    "original_duration": 18.448,
+    "reconstructed_duration": 18.44,
+    "num_tokens": 461,
     "token_shape": [
       1,
-      392
+      461
     ]
   }
 ]

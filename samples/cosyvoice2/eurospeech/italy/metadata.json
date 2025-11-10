@@ -3,85 +3,85 @@
     "dataset": "eurospeech",
     "language": "italy",
     "sample_id": "0001",
-    "dataset_index": 51,
+    "dataset_index": 81,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0001_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0001_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 11.3545,
-    "reconstructed_duration": 11.36,
-    "num_tokens": 284,
+    "original_duration": 16.2725625,
+    "reconstructed_duration": 16.28,
+    "num_tokens": 407,
     "token_shape": [
       1,
-      284
+      407
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "italy",
     "sample_id": "0002",
-    "dataset_index": 90,
+    "dataset_index": 14,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0002_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0002_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 13.0230625,
-    "reconstructed_duration": 13.04,
-    "num_tokens": 326,
+    "original_duration": 14.4800625,
+    "reconstructed_duration": 14.48,
+    "num_tokens": 362,
     "token_shape": [
       1,
-      326
+      362
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "italy",
     "sample_id": "0003",
-    "dataset_index": 85,
+    "dataset_index": 3,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0003_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0003_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 10.78375,
-    "reconstructed_duration": 10.8,
-    "num_tokens": 270,
+    "original_duration": 14.8006875,
+    "reconstructed_duration": 14.8,
+    "num_tokens": 370,
     "token_shape": [
       1,
-      270
+      370
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "italy",
     "sample_id": "0004",
-    "dataset_index": 80,
+    "dataset_index": 94,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0004_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0004_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 13.9851875,
-    "reconstructed_duration": 14.0,
-    "num_tokens": 350,
+    "original_duration": 11.8725625,
+    "reconstructed_duration": 11.88,
+    "num_tokens": 297,
     "token_shape": [
       1,
-      350
+      297
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "italy",
     "sample_id": "0005",
-    "dataset_index": 0,
+    "dataset_index": 35,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0005_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/cosyvoice2/eurospeech/italy/sample_0005_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 24000,
-    "original_duration": 18.7519375,
-    "reconstructed_duration": 18.76,
-    "num_tokens": 469,
+    "original_duration": 19.4558125,
+    "reconstructed_duration": 19.48,
+    "num_tokens": 487,
     "token_shape": [
       1,
-      469
+      487
     ]
   }
 ]

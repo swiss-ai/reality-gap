@@ -3,85 +3,85 @@
     "dataset": "eurospeech",
     "language": "croatia",
     "sample_id": "0001",
-    "dataset_index": 70,
+    "dataset_index": 81,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0001_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0001_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 22050,
-    "original_duration": 16.015875,
-    "reconstructed_duration": 16.07981859410431,
-    "num_tokens": 201,
+    "original_duration": 15.4683125,
+    "reconstructed_duration": 15.51092970521542,
+    "num_tokens": 194,
     "token_shape": [
       1,
-      201
+      194
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "croatia",
     "sample_id": "0002",
-    "dataset_index": 69,
+    "dataset_index": 14,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0002_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0002_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 22050,
-    "original_duration": 17.7125625,
-    "reconstructed_duration": 17.751655328798186,
-    "num_tokens": 222,
+    "original_duration": 12.6723125,
+    "reconstructed_duration": 12.712925170068027,
+    "num_tokens": 159,
     "token_shape": [
       1,
-      222
+      159
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "croatia",
     "sample_id": "0003",
-    "dataset_index": 67,
+    "dataset_index": 3,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0003_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0003_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 22050,
-    "original_duration": 18.1280625,
-    "reconstructed_duration": 18.15800453514739,
-    "num_tokens": 227,
+    "original_duration": 18.9110625,
+    "reconstructed_duration": 18.959092970521542,
+    "num_tokens": 237,
     "token_shape": [
       1,
-      227
+      237
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "croatia",
     "sample_id": "0004",
-    "dataset_index": 99,
+    "dataset_index": 94,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0004_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0004_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 22050,
-    "original_duration": 13.696375,
-    "reconstructed_duration": 13.757823129251701,
-    "num_tokens": 172,
+    "original_duration": 12.587,
+    "reconstructed_duration": 12.631655328798185,
+    "num_tokens": 158,
     "token_shape": [
       1,
-      172
+      158
     ]
   },
   {
     "dataset": "eurospeech",
     "language": "croatia",
     "sample_id": "0005",
-    "dataset_index": 53,
+    "dataset_index": 35,
     "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0005_original.wav",
     "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/eurospeech/croatia/sample_0005_reconstructed.wav",
     "original_sr": 16000,
     "reconstructed_sr": 22050,
-    "original_duration": 14.576,
-    "reconstructed_duration": 14.628571428571428,
-    "num_tokens": 183,
+    "original_duration": 17.6803125,
+    "reconstructed_duration": 17.751655328798186,
+    "num_tokens": 222,
     "token_shape": [
       1,
-      183
+      222
     ]
   }
 ]

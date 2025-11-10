@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "fleurs",
+    "language": "cmn_hans_cn",
+    "sample_id": "0001",
+    "dataset_index": 81,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 12.72,
+    "reconstructed_duration": 12.725,
+    "num_tokens": 509,
+    "token_shape": [
+      1,
+      509
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "cmn_hans_cn",
+    "sample_id": "0002",
+    "dataset_index": 14,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 15.36,
+    "reconstructed_duration": 15.375,
+    "num_tokens": 615,
+    "token_shape": [
+      1,
+      615
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "cmn_hans_cn",
+    "sample_id": "0003",
+    "dataset_index": 3,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 7.32,
+    "reconstructed_duration": 7.325,
+    "num_tokens": 293,
+    "token_shape": [
+      1,
+      293
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "cmn_hans_cn",
+    "sample_id": "0004",
+    "dataset_index": 94,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 6.24,
+    "reconstructed_duration": 6.25,
+    "num_tokens": 250,
+    "token_shape": [
+      1,
+      250
+    ]
+  },
+  {
+    "dataset": "fleurs",
+    "language": "cmn_hans_cn",
+    "sample_id": "0005",
+    "dataset_index": 35,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/wavtokenizer/fleurs/cmn_hans_cn/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 24000,
+    "original_duration": 8.16,
+    "reconstructed_duration": 8.175,
+    "num_tokens": 327,
+    "token_shape": [
+      1,
+      327
+    ]
+  }
+]

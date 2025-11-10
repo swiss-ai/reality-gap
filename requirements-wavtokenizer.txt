@@ -1,0 +1,28 @@
+# Requirements for WavTokenizer
+# Compatible with existing installations
+
+# Core dependencies (should already be installed)
+# torch>=2.0.0
+# torchaudio>=2.0.0
+# numpy
+# scipy
+# soundfile
+# pyyaml
+# huggingface_hub
+# transformers
+
+# Additional dependencies needed for WavTokenizer
+encodec==0.1.1
+einops==0.6.1
+pytorch-lightning==1.8.6
+tensorboardX==2.6
+hyperpyyaml
+pesq
+pystoi
+torch_complex
+
+# Optional but useful
+# jsonargparse[signatures]>=4.15.2
+# fairseq  # Large dependency, skip if not needed
+# torchcrepe  # For pitch tracking, skip if not needed
+# librosa  # Should already be installed

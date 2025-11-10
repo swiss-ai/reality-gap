@@ -19,3 +19,6 @@
 [submodule "src/repos/glm4voice"]
 	path = src/repos/glm4voice
 	url = https://github.com/THUDM/GLM-4-Voice.git
+[submodule "src/repos/wavtokenizer"]
+	path = src/repos/wavtokenizer
+	url = https://github.com/jishengpeng/WavTokenizer.git

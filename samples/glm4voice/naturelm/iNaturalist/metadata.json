@@ -1,0 +1,87 @@
+[
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0001",
+    "dataset_index": 81,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0001_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0001_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 2.1528125,
+    "reconstructed_duration": 2.159455782312925,
+    "num_tokens": 27,
+    "token_shape": [
+      1,
+      27
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0002",
+    "dataset_index": 14,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0002_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0002_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 15.1844375,
+    "reconstructed_duration": 15.197460317460317,
+    "num_tokens": 190,
+    "token_shape": [
+      1,
+      190
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0003",
+    "dataset_index": 3,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0003_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0003_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 6.336,
+    "reconstructed_duration": 6.397097505668934,
+    "num_tokens": 80,
+    "token_shape": [
+      1,
+      80
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0004",
+    "dataset_index": 94,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0004_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0004_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 9.111,
+    "reconstructed_duration": 9.113832199546485,
+    "num_tokens": 114,
+    "token_shape": [
+      1,
+      114
+    ]
+  },
+  {
+    "dataset": "naturelm",
+    "language": "iNaturalist",
+    "sample_id": "0005",
+    "dataset_index": 35,
+    "original_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0005_original.wav",
+    "reconstructed_file": "/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/samples/glm4voice/naturelm/iNaturalist/sample_0005_reconstructed.wav",
+    "original_sr": 16000,
+    "reconstructed_sr": 22050,
+    "original_duration": 4.0106875,
+    "reconstructed_duration": 4.0751020408163265,
+    "num_tokens": 51,
+    "token_shape": [
+      1,
+      51
+    ]
+  }
+]
