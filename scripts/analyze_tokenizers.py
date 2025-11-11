@@ -35,7 +35,7 @@ class TokenizerAnalyzer:
         
         Examples:
         - neucodec_estonia_results.json -> estonia
-        - neucodec_fleurs_en_us_results.json -> fleurs_en_us (keep fleurs prefix!)
+        - neucodec_fleurs_en_us_results.json -> en_us 
         - xcodec2_eurospeech_estonia_results.json -> estonia
         
         Note: FLEURS prefix is kept as it's part of the language identifier.
