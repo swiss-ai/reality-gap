@@ -1,0 +1,29 @@
+# Requirements for Step-Audio-EditX tokenizer
+# https://github.com/stepfun-ai/Step-Audio-EditX
+
+# PyTorch (already installed with CUDA support, DO NOT reinstall)
+# torch>=2.4.1
+# torchaudio
+# torchvision
+
+# Core dependencies
+transformers>=4.53.3
+accelerate>=1.3.0
+openai-whisper>=20240930
+onnxruntime-gpu>=1.17.0
+omegaconf>=2.3.0
+librosa>=0.10.2
+hyperpyyaml
+conformer>=0.3.2
+diffusers
+sentencepiece
+protobuf>=5.0.0
+
+# FunASR for VQ02 tokenizer
+funasr>=1.1.3
+
+# ModelScope for model downloading (optional)
+# modelscope
+
+# Note: Install with --no-deps to avoid torch conflicts:
+# uv pip install --system --break-system-packages --no-deps -r requirements-stepaudioeditx.txt

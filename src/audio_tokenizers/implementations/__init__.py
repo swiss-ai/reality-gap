@@ -2,30 +2,37 @@
 Audio tokenizer implementations.
 
 Each tokenizer here is automatically registered when imported.
+Uses lazy imports to only load dependencies for requested tokenizers.
 """
 
-# Import all tokenizer implementations
-# This triggers their registration via the metaclass
-# Use try-except to handle missing dependencies gracefully
+import logging
+import importlib
+logger = logging.getLogger(__name__)
 
-from .neucodec import NeuCodecTokenizer, DistilledNeuCodecTokenizer
-from .tadicodec import TaDiCodecTokenizer
-from .xcodec2 import XCodec2Tokenizer
-from .cosyvoice2 import CosyVoice2Tokenizer
-from .glm4voice import GLM4VoiceTokenizer
-from .wavtokenizer import WavTokenizerWrapper
+# Tokenizer import mappings: name -> (module, classes)
+_TOKENIZER_IMPORTS = {
+    'neucodec': ('neucodec', ['NeuCodecTokenizer', 'DistilledNeuCodecTokenizer']),
+    'tadicodec': ('tadicodec', ['TaDiCodecTokenizer']),
+    'xcodec2': ('xcodec2', ['XCodec2Tokenizer']),
+    'cosyvoice2': ('cosyvoice2', ['CosyVoice2Tokenizer']),
+    'glm4voice': ('glm4voice', ['GLM4VoiceTokenizer']),
+    'wavtokenizer': ('wavtokenizer', ['WavTokenizerWrapper']),
+    'stepaudioeditx': ('stepaudioeditx', ['StepAudioEditXWrapper']),
+}
 
-# Add more tokenizers as they're implemented:
-# from .encodec import EncodecTokenizer
-# from .dac import DACTokenizer
-# from .soundstream import SoundStreamTokenizer
+# Try to import all tokenizers, but don't fail if dependencies are missing
+_available_tokenizers = []
+for tokenizer_key, (module_name, class_names) in _TOKENIZER_IMPORTS.items():
+    try:
+        module = importlib.import_module(f'.{module_name}', package='audio_tokenizers.implementations')
+        for class_name in class_names:
+            cls = getattr(module, class_name)
+            globals()[class_name] = cls
+            _available_tokenizers.append(class_name)
+    except ImportError as e:
+        logger.debug(f"Tokenizer {tokenizer_key} not available: {e}")
+        # Set to None so we know it was attempted
+        for class_name in class_names:
+            globals()[class_name] = None
 
-__all__ = [
-    'NeuCodecTokenizer',
-    'DistilledNeuCodecTokenizer',
-    'TaDiCodecTokenizer',
-    'XCodec2Tokenizer',
-    'CosyVoice2Tokenizer',
-    'GLM4VoiceTokenizer',
-    'WavTokenizerWrapper',
-]
+__all__ = _available_tokenizers

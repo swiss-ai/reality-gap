@@ -33,6 +33,7 @@ lightning>=2.2.4  # Required by CosyVoice models
 hydra-core==1.3.2  # Config loading
 omegaconf==2.3.0  # Config management
 HyperPyYAML==1.2.2  # YAML config parsing
+ruamel.yaml>=0.18.0  # YAML parsing for decoder config files
 
 # Required utilities
 einops  # Tensor operations
@@ -42,6 +43,8 @@ inflect>=7.3.0  # Text processing in decoder
 kaldifst>=1.7.0  # FST operations for text processing
 openai-whisper  # Whisper for audio transcription (used by decoder)
 torchmetrics  # Metrics for model evaluation (used by decoder)
+torch_complex
+rotary_embedding_torch
 
 # For running examples/notebooks
 datasets  # For loading ESB diagnostic dataset

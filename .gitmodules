@@ -22,3 +22,6 @@
 [submodule "src/repos/wavtokenizer"]
 	path = src/repos/wavtokenizer
 	url = https://github.com/jishengpeng/WavTokenizer.git
+[submodule "src/repos/stepaudioeditx"]
+	path = src/repos/stepaudioeditx
+	url = https://github.com/stepfun-ai/Step-Audio-EditX.git
