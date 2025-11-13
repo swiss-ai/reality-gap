@@ -91,10 +91,21 @@ class CosyVoice2Tokenizer(BaseAudioTokenizer):
                 print("Loading CosyVoice 2 decoder models...")
                 self._load_cosyvoice_model()
                 print("✓ Decoder models loaded successfully")
-            except Exception as e:
-                print(f"Warning: Could not load decoder models: {e}")
+            except ImportError as e:
+                print(f"Warning: Could not load decoder models due to missing dependency: {e}")
+                print("Please install missing dependencies from requirements-cosyvoice2.txt")
                 print("Encoding will work, but decoding will not be available.")
                 self.cosyvoice = None
+            except FileNotFoundError as e:
+                print(f"Warning: Could not load decoder models due to missing file: {e}")
+                print("Please ensure the model checkpoint is complete.")
+                print("Encoding will work, but decoding will not be available.")
+                self.cosyvoice = None
+            except Exception as e:
+                print(f"Error: Failed to load decoder models: {e}")
+                import traceback
+                traceback.print_exc()
+                raise
 
         # Set properties
         self._codebook_size = 6561  # 81^2
