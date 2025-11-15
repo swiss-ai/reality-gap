@@ -1,3 +1,11 @@
+"""
+Evaluate registered audio tokenizer backends on multilingual speech and sound datasets
+and export metric summaries to `metrics/`.
+
+Usage examples:
+    python scripts/tokenizer_evaluation.py --tokenizer xcodec2 --language germany
+    python scripts/tokenizer_evaluation.py --tokenizer cosyvoice2 --language germany
+"""
 import os
 import sys
 import torch
@@ -12,7 +20,9 @@ import static_ffmpeg
 static_ffmpeg.add_paths()
 import stempeg
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+script_dir = Path(__file__).resolve().parent
+project_root = script_dir.parent
+sys.path.insert(0, str(project_root / 'src'))
 from audio_tokenizers import get_tokenizer
 
 from pesq import pesq
@@ -20,16 +30,14 @@ from pystoi import stoi
 import museval
 
 # Base directories
-SCRATCH_DIR = os.path.expandvars("$SCRATCH/benchmark-audio-tokenizer/datasets")
-script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
-RESULTS_DIR = os.path.join(project_root, "metrics")
-os.makedirs(RESULTS_DIR, exist_ok=True)
+DATASET_DIR = Path("/capstor/store/cscs/swissai/infra01/audio-datasets")
+RESULTS_DIR = project_root / "metrics"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Dataset configurations
 DATASETS = {
     'eurospeech': {
-        'cache_dir': os.path.join(SCRATCH_DIR, "eurospeech_cache"),
+        'cache_dir': DATASET_DIR / "eurospeech_cache",
         'languages': [
             "bosnia-herzegovina", "bulgaria", "croatia", "denmark", "estonia", "finland",
             "france", "germany", "greece", "iceland", "italy", "latvia", "lithuania",
@@ -38,7 +46,7 @@ DATASETS = {
         ]
     },
     'fleurs': {
-        'cache_dir': os.path.join(SCRATCH_DIR, "fleurs_cache"),
+        'cache_dir': DATASET_DIR / "fleurs_cache",
         'languages': [
             # Western Europe
             "ast_es", "ca_es", "nl_nl", "en_us", "gl_es", "hu_hu", "ga_ie", 
@@ -56,8 +64,24 @@ DATASETS = {
             # Middle East
             "ar_eg", "tr_tr", "he_il", "fa_ir"
         ]
+    },
+    "naturelm": {
+        "cache_dir": DATASET_DIR / "naturelm_cache",
+        "languages": [
+            "Xeno-canto", "WavCaps", "NatureLM", "Watkins",
+            "iNaturalist", "Animal Sound Archive"
+        ],
+        "source_field": "source_dataset",  # Use this field to filter by source
+    },
+    "gtzan": {
+        "cache_dir": DATASET_DIR / "gtzan_cache",
+        "languages": [
+            "blues", "classical", "country", "disco", "hiphop",
+            "jazz", "metal", "pop", "reggae", "rock"
+        ],
+        "source_field": "genre_name",  # Use this field to filter by genre
+    },
     }
-}
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"PyTorch version: {torch.__version__}")
@@ -180,39 +204,74 @@ def process_language(language, tokenizer, dataset_name, cache_dir):
     print(f"Processing: {language} (dataset: {dataset_name})")
     print(f"{'='*60}")
     
-    lang_dir = os.path.join(cache_dir, language)
-    if not os.path.exists(lang_dir):
+    # Special handling for NatureLM and GTZAN: load from single directory and filter by field
+    if dataset_name == "naturelm":
+        lang_dir = cache_dir / "naturelm"
+    elif dataset_name == "gtzan":
+        lang_dir = cache_dir / "gtzan"
+    else:
+        lang_dir = cache_dir / language
+    
+    if not lang_dir.exists():
         print(f"Dataset not found for {language} at {lang_dir}")
         return None
     
-    ds = load_from_disk(lang_dir)
-    print(f"Loaded {len(ds)} samples for {language}")
+    # Load dataset
+    try:
+        ds = load_from_disk(lang_dir)
+        
+        # For NatureLM and GTZAN, filter by source field
+        if dataset_name in ["naturelm", "gtzan"]:
+            source_field = DATASETS[dataset_name].get("source_field", "source_dataset" if dataset_name == "naturelm" else "genre_name")
+            # Filter dataset to only samples from this source/genre
+            filtered_indices = [i for i in range(len(ds)) if ds[i][source_field] == language]
+            if not filtered_indices:
+                print(f"No samples found for {language}")
+                return None
+            # Create a filtered view
+            ds = ds.select(filtered_indices)
+        
+        print(f"Loaded {len(ds)} samples for {language}")
+    except Exception as e:
+        print(f"Error loading dataset: {e}")
+        return None
     
     all_metrics = []
     all_tokens_per_second = []
     all_compression_ratios = []
+    successful = 0
+    failed = 0
     
     for idx in tqdm(range(len(ds)), desc=f"Processing {language}"):
-        sample = ds[idx]
-        
-        audio_array = sample['audio']['array']
-        sr = sample['audio']['sampling_rate']
-        duration = len(audio_array) / sr
-        
-        audio_tensor = torch.from_numpy(audio_array).float()
-        
         try:
+            sample = ds[idx]
+            
+            audio_array = sample['audio']['array']
+            sr = sample['audio']['sampling_rate']
+            duration = len(audio_array) / sr
+            
+            # Convert to tensor
+            audio_tensor = torch.from_numpy(audio_array).float()
+            if audio_tensor.dim() == 1:
+                audio_tensor = audio_tensor.unsqueeze(0)  # Add batch dimension
+            
+            # Note: Don't move to device here - let the tokenizer handle device placement
+            # Some tokenizers (like CosyVoice2 with ONNX) need CPU input and handle conversion internally
             tokens, encode_info = tokenizer.encode(audio_tensor, sr=sr)
             reconstructed, decode_info = tokenizer.decode(tokens)
             
+            # Get output sample rate with fallback
+            recon_sr = decode_info.get("output_sample_rate", tokenizer.output_sample_rate)
+            if recon_sr is None:
+                recon_sr = sr  # Fallback to input sample rate
+            
             reconstructed_array = reconstructed.squeeze().cpu().numpy()
-            token_values = tokens.squeeze().cpu().numpy()
             
             metrics = calculate_reconstruction_metrics(
                 audio_array,
                 reconstructed_array,
                 sr,
-                decode_info['output_sample_rate']
+                recon_sr
             )
             
             num_tokens = tokens.numel()
@@ -225,14 +284,21 @@ def process_language(language, tokenizer, dataset_name, cache_dir):
             all_metrics.append(metrics)
             all_tokens_per_second.append(tokens_per_sec)
             all_compression_ratios.append(compression_ratio)
+            successful += 1
             
         except Exception as e:
-            print(f"Error processing sample {idx}: {e}")
+            print(f"\nError processing sample {idx}: {e}")
+            failed += 1
             continue
-    
+                
     if not all_metrics:
         print(f"No samples processed successfully for {language}")
+        if failed > 0:
+            print(f"Failed: {failed} samples")
         return None
+    
+    if failed > 0:
+        print(f"Successfully processed: {successful} samples, Failed: {failed} samples")
     
     def compute_stats(metric_name):
         values = [m[metric_name] for m in all_metrics if m.get(metric_name) is not None]
@@ -310,8 +376,8 @@ def main():
     parser = argparse.ArgumentParser(description='Evaluate audio tokenizer on multiple datasets')
     parser.add_argument('--tokenizer', type=str, default='neucodec',
                         help='Tokenizer name registered in audio_tokenizers (e.g., neucodec, xcodec2)')
-    parser.add_argument('--dataset', type=str, choices=['eurospeech', 'fleurs', 'all'], default=None,
-                        help='Dataset to evaluate: eurospeech, fleurs, or all. If not specified with --language, evaluates all datasets.')
+    parser.add_argument('--dataset', type=str, choices=['eurospeech', 'fleurs', 'naturelm', 'gtzan', 'all'], default=None,
+                        help='Dataset to evaluate: eurospeech, fleurs, naturelm, gtzan, or all. If not specified with --language, evaluates all datasets.')
     parser.add_argument('--language', type=str, default=None,
                         help='Specific language to evaluate (e.g., germany, en_us). Auto-detects dataset.')
     parser.add_argument('--languages', nargs='+', default=None,
@@ -344,8 +410,15 @@ def main():
         print(f"Languages: {', '.join(languages_to_evaluate[:10])}... (+{len(languages_to_evaluate)-10} more)")
     
     print("\nLoading tokenizer ...")
-    tokenizer = get_tokenizer(args.tokenizer, device=device)
-    print(f"Tokenizer loaded: {tokenizer}")
+    try:
+        tokenizer = get_tokenizer(args.tokenizer, device=device)
+        print(f"✓ Tokenizer loaded successfully")
+        if hasattr(tokenizer, 'sample_rate'):
+            print(f"  Input SR: {tokenizer.sample_rate} Hz")
+        print(f"  Output SR: {tokenizer.output_sample_rate} Hz")
+    except Exception as e:
+        print(f"✗ Failed to load tokenizer: {e}")
+        return
     
     all_results = []
     failed_languages = []
@@ -363,28 +436,15 @@ def main():
             all_results.append(summary)
             print_summary(summary)
             
-            output_file = os.path.join(RESULTS_DIR, f"{args.tokenizer}_{dataset_name}_{language}_results.json")
-            with open(output_file, 'w') as f:
+            output_file = RESULTS_DIR / f"{args.tokenizer}_{dataset_name}_{language}_results.json"
+            with output_file.open('w') as f:
                 json.dump(summary, f, indent=2)
             print(f"\nResults saved to: {output_file}")
         else:
             failed_languages.append(language)
     
     if all_results:
-        combined_output = os.path.join(RESULTS_DIR, f"{args.tokenizer}_all_results.json")
-        with open(combined_output, 'w') as f:
-            json.dump(all_results, f, indent=2)
-        
-        for dataset_name in DATASETS.keys():
-            dataset_results = [r for r in all_results if r['dataset'] == dataset_name]
-            if dataset_results:
-                dataset_output = os.path.join(RESULTS_DIR, f"{args.tokenizer}_{dataset_name}_summary.json")
-                with open(dataset_output, 'w') as f:
-                    json.dump(dataset_results, f, indent=2)
-                print(f"\n{dataset_name.upper()} results saved to: {dataset_output}")
-        
         print(f"\n{'='*60}")
-        print(f"Combined results saved to: {combined_output}")
         print(f"Successfully evaluated: {len(all_results)}/{len(languages_to_evaluate)} languages")
         if failed_languages:
             print(f"Failed languages: {', '.join(failed_languages)}")
