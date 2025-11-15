@@ -1,0 +1,17 @@
+torch==2.6.0
+
+# stuff required by xcodec2
+torchao # keep in mind patch in Makefile
+torchtune # keep in mind patch in Makefile
+# numpy>=2.0.2 # try to violate xcodec2 numpy dependency to confirm NGC 24.11 numpy dependency issue
+einops==0.8.0
+# transformers==4.45.2
+transformers==4.48.0 # like in cosyvoice2-topdeps, there it works with NGC pytorch
+vector-quantize-pytorch==1.17.8
+
+# scipt/notebook stuff
+soundfile
+ipykernel
+datasets==2.21.0 # to not need torchcodec
+numpy<2.0  # Must be <2.0 for compatibility with torch version of NGC (but xcodec2 needs >=2.0.2)
+numba==0.62.1 # to be able to use numpy>=2.0.2
