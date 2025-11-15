@@ -125,52 +125,47 @@ class CosyVoice2Tokenizer(BaseAudioTokenizer):
             if path not in sys.path:
                 sys.path.insert(0, path)
 
-        try:
-            from hyperpyyaml import load_hyperpyyaml
-            from cosyvoice.cli.model import CosyVoice2Model
-            from cosyvoice.utils.class_utils import get_model_type
+        from hyperpyyaml import load_hyperpyyaml
+        from cosyvoice.cli.model import CosyVoice2Model
+        from cosyvoice.utils.class_utils import get_model_type
 
-            # Load config with proper override for empty qwen_pretrain_path
-            config_path = self.model_dir / "cosyvoice2.yaml"
-            if not config_path.exists():
-                raise FileNotFoundError(f"Config file not found: {config_path}")
+        # Load config with proper override for empty qwen_pretrain_path
+        config_path = self.model_dir / "cosyvoice2.yaml"
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
 
-            # Override the empty qwen_pretrain_path as CosyVoice2 does
-            overrides = {
-                'qwen_pretrain_path': str(self.model_dir / 'CosyVoice-BlankEN')
-            }
+        # Override the empty qwen_pretrain_path as CosyVoice2 does
+        overrides = {
+            'qwen_pretrain_path': str(self.model_dir / 'CosyVoice-BlankEN')
+        }
 
-            print(f"Loading config from: {config_path}")
-            with open(config_path, 'r') as f:
-                configs = load_hyperpyyaml(f, overrides=overrides)
+        print(f"Loading config from: {config_path}")
+        with open(config_path, 'r') as f:
+            configs = load_hyperpyyaml(f, overrides=overrides)
 
-            # Verify it's a CosyVoice2 model
-            assert get_model_type(configs) == CosyVoice2Model, 'Model is not CosyVoice2!'
+        # Verify it's a CosyVoice2 model
+        assert get_model_type(configs) == CosyVoice2Model, 'Model is not CosyVoice2!'
 
-            # Initialize the model
-            self.model = CosyVoice2Model(
-                configs['llm'],
-                configs['flow'],
-                configs['hift'],
-                fp16=(self.device != "cpu")
-            )
+        # Initialize the model
+        self.model = CosyVoice2Model(
+            configs['llm'],
+            configs['flow'],
+            configs['hift'],
+            fp16=(self.device != "cpu")
+        )
 
-            # Load model weights
-            self.model.load(
-                str(self.model_dir / "llm.pt"),
-                str(self.model_dir / "flow.pt"),
-                str(self.model_dir / "hift.pt")
-            )
+        # Load model weights
+        self.model.load(
+            str(self.model_dir / "llm.pt"),
+            str(self.model_dir / "flow.pt"),
+            str(self.model_dir / "hift.pt")
+        )
 
-            print("✓ CosyVoice2 decoder models loaded successfully")
+        print("✓ CosyVoice2 decoder models loaded successfully")
 
-            # Store for compatibility
-            self.cosyvoice = self
+        # Store for compatibility
+        self.cosyvoice = self
 
-        except Exception as e:
-            print(f"Warning: Could not load decoder models: {e}")
-            self.model = None
-            self.cosyvoice = None
 
     def encode_audio(self, audio: torch.Tensor) -> torch.Tensor:
         """Encode audio to tokens at 25 Hz."""
