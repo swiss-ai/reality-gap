@@ -8,7 +8,8 @@
 hidden-*
 requirements-*-subdeps.txt
 core_*
-samples/
+samples
+results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
