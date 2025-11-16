@@ -7,6 +7,8 @@
 *.wav
 hidden-*
 requirements-*-subdeps.txt
+core_*
+samples/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
