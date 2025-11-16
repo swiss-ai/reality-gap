@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Tokenizer Benchmark Analysis Script
-Analyzes and visualizes neucodec and xcodec2 performance across languages and datasets
+Analyzes and visualizes all tokenizer performance across languages and datasets
+Automatically detects all tokenizers from result files in metrics directory
 """
 
 import json
@@ -11,23 +12,50 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Set
+from collections import defaultdict
 
 # Set style for better-looking plots
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 8)
 plt.rcParams['font.size'] = 10
 
+# Color palette for tokenizers (will be extended if needed)
+DEFAULT_COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e']
+MARKERS = ['o', 's', '^', 'D', 'v', 'p', '*', 'h']
+
+# Get script directory for path resolution
+SCRIPT_DIR = Path(__file__).parent.resolve()
+PROJECT_ROOT = SCRIPT_DIR.parent.resolve()
+
 class TokenizerAnalyzer:
-    def __init__(self, data_dir: str = "../metrics"):
+    def __init__(self, data_dir: str = None):
         """Initialize analyzer with data directory"""
-        self.data_dir = Path(data_dir)
-        self.neucodec_data = []
-        self.xcodec2_data = []
+        if data_dir is None:
+            self.data_dir = PROJECT_ROOT / "metrics"
+        else:
+            self.data_dir = Path(data_dir)
+        self.tokenizer_data = defaultdict(list)  # {tokenizer_name: [data, ...]}
+        self.tokenizer_languages = defaultdict(set)  # {tokenizer_name: {languages}}
         self.metrics = ['mse', 'snr_db', 'sdr_db', 'pesq', 'stoi', 'estoi']
         self.all_languages = set()  # Track all unique languages
-        self.neucodec_languages = set()
-        self.xcodec2_languages = set()
+        self.tokenizers = []  # List of detected tokenizer names (sorted)
+    
+    def detect_tokenizers(self) -> List[str]:
+        """Detect all tokenizers from result files in the data directory"""
+        all_files = glob.glob(str(self.data_dir / "*_*_results.json"))
+        tokenizers = set()
+        
+        for file in all_files:
+            basename = Path(file).name
+            # Extract tokenizer name (first part before first underscore)
+            if '_' in basename:
+                tokenizer = basename.split('_')[0]
+                # Skip summary and aggregate files
+                if 'summary' not in basename and 'all_results' not in basename:
+                    tokenizers.add(tokenizer)
+        
+        return sorted(list(tokenizers))
     
     def extract_language_from_filename(self, filename: str, tokenizer: str) -> str:
         """
@@ -37,6 +65,7 @@ class TokenizerAnalyzer:
         - neucodec_estonia_results.json -> estonia
         - neucodec_fleurs_en_us_results.json -> en_us 
         - xcodec2_eurospeech_estonia_results.json -> estonia
+        - cosyvoice2_gtzan_blues_results.json -> blues
         
         Note: FLEURS prefix is kept as it's part of the language identifier.
         """
@@ -50,111 +79,113 @@ class TokenizerAnalyzer:
         if basename.endswith("_results"):
             basename = basename[:-8]
         
-        # For xcodec2, remove eurospeech prefix if present (but NOT fleurs prefix)
-        if tokenizer == "xcodec2" and basename.startswith("eurospeech_"):
-            basename = basename[11:]  # len("eurospeech_") = 11
+        # Remove dataset prefixes (eurospeech, fleurs, gtzan, naturelm)
+        # but keep fleurs prefix as it's part of language identifier
+        known_datasets = ['eurospeech', 'gtzan', 'naturelm']
+        for dataset in known_datasets:
+            if basename.startswith(f"{dataset}_"):
+                basename = basename[len(dataset)+1:]
         
-        if basename.startswith("fleurs_"):
-            basename = basename[len("fleurs_"):]
+        # Keep fleurs prefix as it's part of language identifier
+        # (fleurs languages are like fleurs_en_us)
         
         return basename
         
     def load_data(self):
-        """Load all JSON result files"""
-        print("Loading data files...")
+        """Load all JSON result files for all detected tokenizers"""
+        print("Detecting tokenizers...")
+        self.tokenizers = self.detect_tokenizers()
         
-        # Load neucodec results (excluding summaries and all_results)
-        neucodec_files = glob.glob(str(self.data_dir / "neucodec_*_results.json"))
-        neucodec_files = [f for f in neucodec_files if 'summary' not in f and 'all_results' not in f]
+        if not self.tokenizers:
+            print("Warning: No tokenizers detected in data directory!")
+            return
         
-        for file in neucodec_files:
-            with open(file, 'r') as f:
-                data = json.load(f)
-                data['tokenizer'] = 'neucodec'
-                data['file'] = Path(file).name
-                
-                # Extract language from filename to ensure consistency
-                filename_language = self.extract_language_from_filename(file, 'neucodec')
-                
-                # Use language from JSON, but verify/normalize with filename
-                json_language = data.get('language', filename_language)
-                
-                # For consistency, use the filename-extracted language as canonical
-                data['language_canonical'] = filename_language
-                data['language_from_json'] = json_language
-                data['language'] = filename_language  # Use filename as source of truth
-                
-                # Extract dataset type
-                if 'fleurs' in file:
-                    data['dataset'] = 'fleurs'
-                elif 'eurospeech' in file:
-                    data['dataset'] = 'eurospeech'
-                else:
-                    data['dataset'] = 'eurospeech'  # country names are eurospeech
-                
-                self.neucodec_data.append(data)
-                self.neucodec_languages.add(data['language'])
-                self.all_languages.add(data['language'])
+        print(f"Found tokenizers: {', '.join(self.tokenizers)}")
+        print("\nLoading data files...")
         
-        # Load xcodec2 results
-        xcodec2_files = glob.glob(str(self.data_dir / "xcodec2_*_results.json"))
-        xcodec2_files = [f for f in xcodec2_files if 'summary' not in f and 'all_results' not in f]
+        # Load data for each tokenizer
+        for tokenizer in self.tokenizers:
+            tokenizer_files = glob.glob(str(self.data_dir / f"{tokenizer}_*_results.json"))
+            tokenizer_files = [f for f in tokenizer_files if 'summary' not in f and 'all_results' not in f]
+            
+            for file in tokenizer_files:
+                try:
+                    with open(file, 'r') as f:
+                        data = json.load(f)
+                        data['tokenizer'] = tokenizer
+                        data['file'] = Path(file).name
+                        
+                        # Extract language from filename to ensure consistency
+                        filename_language = self.extract_language_from_filename(file, tokenizer)
+                        
+                        # Use language from JSON, but verify/normalize with filename
+                        json_language = data.get('language', filename_language)
+                        
+                        # For consistency, use the filename-extracted language as canonical
+                        data['language_canonical'] = filename_language
+                        data['language_from_json'] = json_language
+                        data['language'] = filename_language  # Use filename as source of truth
+                        
+                        # Extract dataset type
+                        if 'fleurs' in file:
+                            data['dataset'] = 'fleurs'
+                        elif 'eurospeech' in file:
+                            data['dataset'] = 'eurospeech'
+                        elif 'gtzan' in file:
+                            data['dataset'] = 'gtzan'
+                        elif 'naturelm' in file:
+                            data['dataset'] = 'naturelm'
+                        else:
+                            # Default: assume eurospeech for country names
+                            data['dataset'] = 'eurospeech'
+                        
+                        self.tokenizer_data[tokenizer].append(data)
+                        self.tokenizer_languages[tokenizer].add(data['language'])
+                        self.all_languages.add(data['language'])
+                except Exception as e:
+                    print(f"Warning: Error loading {file}: {e}")
+                    continue
         
-        for file in xcodec2_files:
-            with open(file, 'r') as f:
-                data = json.load(f)
-                data['tokenizer'] = 'xcodec2'
-                data['file'] = Path(file).name
-                
-                # Extract language from filename to ensure consistency
-                filename_language = self.extract_language_from_filename(file, 'xcodec2')
-                
-                # Use language from JSON, but verify/normalize with filename
-                json_language = data.get('language', filename_language)
-                
-                # For consistency, use the filename-extracted language as canonical
-                data['language_canonical'] = filename_language
-                data['language_from_json'] = json_language
-                data['language'] = filename_language  # Use filename as source of truth
-                
-                # Extract dataset type
-                if 'eurospeech' in file:
-                    data['dataset'] = 'eurospeech'
-                else:
-                    data['dataset'] = 'unknown'
-                
-                self.xcodec2_data.append(data)
-                self.xcodec2_languages.add(data['language'])
-                self.all_languages.add(data['language'])
-        
-        print(f"Loaded {len(self.neucodec_data)} neucodec files and {len(self.xcodec2_data)} xcodec2 files")
+        # Print summary
+        total_files = sum(len(data) for data in self.tokenizer_data.values())
+        print(f"\nLoaded {total_files} result files:")
+        for tokenizer in self.tokenizers:
+            count = len(self.tokenizer_data[tokenizer])
+            langs = len(self.tokenizer_languages[tokenizer])
+            print(f"  {tokenizer}: {count} files, {langs} languages")
         
         # Report on language coverage
-        neucodec_only = self.neucodec_languages - self.xcodec2_languages
-        xcodec2_only = self.xcodec2_languages - self.neucodec_languages
-        common = self.neucodec_languages & self.xcodec2_languages
-        
         print(f"\nLanguage Coverage:")
         print(f"  Total unique languages: {len(self.all_languages)}")
-        print(f"  Common to both: {len(common)}")
-        if common:
-            common_list = sorted(list(common))
-            print(f"    Languages: {', '.join(common_list[:10])}{'...' if len(common) > 10 else ''}")
-        print(f"  NeuCodec only: {len(neucodec_only)}")
-        if neucodec_only:
-            neucodec_only_list = sorted(list(neucodec_only))
-            print(f"    Languages: {', '.join(neucodec_only_list[:10])}{'...' if len(neucodec_only) > 10 else ''}")
-        print(f"  XCodec2 only: {len(xcodec2_only)}")
-        if xcodec2_only:
-            xcodec2_only_list = sorted(list(xcodec2_only))
-            print(f"    Languages: {', '.join(xcodec2_only_list[:10])}{'...' if len(xcodec2_only) > 10 else ''}")
+        
+        # Find common languages (languages present in all tokenizers)
+        if len(self.tokenizers) > 1:
+            common_languages = set.intersection(*[self.tokenizer_languages[t] for t in self.tokenizers])
+            print(f"  Common to all tokenizers: {len(common_languages)}")
+            if common_languages and len(common_languages) <= 20:
+                print(f"    Languages: {', '.join(sorted(common_languages))}")
+            elif common_languages:
+                common_list = sorted(list(common_languages))
+                print(f"    Languages: {', '.join(common_list[:10])}... (+{len(common_languages)-10} more)")
+        
+        # Report tokenizer-specific languages
+        for tokenizer in self.tokenizers:
+            other_tokenizers = [t for t in self.tokenizers if t != tokenizer]
+            if other_tokenizers:
+                other_languages = set.union(*[self.tokenizer_languages[t] for t in other_tokenizers])
+                tokenizer_only = self.tokenizer_languages[tokenizer] - other_languages
+                if tokenizer_only:
+                    print(f"  {tokenizer} only: {len(tokenizer_only)} languages")
+                    if len(tokenizer_only) <= 10:
+                        print(f"    {', '.join(sorted(tokenizer_only))}")
         
         # Warn about any mismatches between filename and JSON language field
         print(f"\nVerifying language consistency...")
         mismatches = []
-        for data in self.neucodec_data + self.xcodec2_data:
-            if data['language_canonical'] != data['language_from_json']:
-                mismatches.append(f"  {data['file']}: filename='{data['language_canonical']}' vs json='{data['language_from_json']}'")
+        for tokenizer in self.tokenizers:
+            for data in self.tokenizer_data[tokenizer]:
+                if data['language_canonical'] != data['language_from_json']:
+                    mismatches.append(f"  {data['file']}: filename='{data['language_canonical']}' vs json='{data['language_from_json']}'")
         
         if mismatches:
             print(f"Warning: Found {len(mismatches)} filename/JSON language mismatches:")
@@ -170,29 +201,45 @@ class TokenizerAnalyzer:
         """Create a consolidated DataFrame from all results"""
         rows = []
         
-        for data in self.neucodec_data + self.xcodec2_data:
-            row = {
-                'tokenizer': data['tokenizer'],
-                'language': data['language'],
-                'dataset': data['dataset'],
-                'num_samples': data['num_samples']
-            }
-            
-            # Add metric means
-            for metric in self.metrics:
-                if metric in data['metrics']:
-                    row[f'{metric}_mean'] = data['metrics'][metric]['mean']
-                    row[f'{metric}_std'] = data['metrics'][metric]['std']
-            
-            # Add tokens per second and compression ratio if available
-            if 'tokens_per_second' in data:
-                row['tokens_per_second'] = data['tokens_per_second']['mean']
-            if 'compression_ratio' in data:
-                row['compression_ratio'] = data['compression_ratio']['mean']
-            
-            rows.append(row)
+        for tokenizer in self.tokenizers:
+            for data in self.tokenizer_data[tokenizer]:
+                row = {
+                    'tokenizer': data['tokenizer'],
+                    'language': data['language'],
+                    'dataset': data['dataset'],
+                    'num_samples': data['num_samples']
+                }
+                
+                # Add metric means
+                metrics = data.get('metrics', {})
+                for metric in self.metrics:
+                    metric_data = metrics.get(metric)
+                    if metric_data is not None:
+                        row[f'{metric}_mean'] = metric_data.get('mean')
+                        if 'std' in metric_data:
+                            row[f'{metric}_std'] = metric_data.get('std')
+                
+                # Add tokens per second and compression ratio if available
+                tps = data.get('tokens_per_second')
+                if tps is not None and isinstance(tps, dict):
+                    row['tokens_per_second'] = tps.get('mean')
+                cr = data.get('compression_ratio')
+                if cr is not None and isinstance(cr, dict):
+                    row['compression_ratio'] = cr.get('mean')
+                
+                rows.append(row)
         
         return pd.DataFrame(rows)
+    
+    def get_tokenizer_color(self, tokenizer: str) -> str:
+        """Get color for a tokenizer"""
+        idx = self.tokenizers.index(tokenizer) if tokenizer in self.tokenizers else 0
+        return DEFAULT_COLORS[idx % len(DEFAULT_COLORS)]
+    
+    def get_tokenizer_marker(self, tokenizer: str) -> str:
+        """Get marker for a tokenizer"""
+        idx = self.tokenizers.index(tokenizer) if tokenizer in self.tokenizers else 0
+        return MARKERS[idx % len(MARKERS)]
     
     def plot_language_coverage(self, df: pd.DataFrame):
         """Visualize language coverage for each tokenizer"""
@@ -203,9 +250,11 @@ class TokenizerAnalyzer:
         coverage_data = []
         
         for lang in languages:
-            has_neucodec = 1 if lang in self.neucodec_languages else 0
-            has_xcodec2 = 1 if lang in self.xcodec2_languages else 0
-            coverage_data.append([has_neucodec, has_xcodec2])
+            row = []
+            for tokenizer in self.tokenizers:
+                has_tokenizer = 1 if lang in self.tokenizer_languages[tokenizer] else 0
+                row.append(has_tokenizer)
+            coverage_data.append(row)
         
         coverage_array = np.array(coverage_data)
         
@@ -214,15 +263,15 @@ class TokenizerAnalyzer:
         
         # Set ticks and labels
         ax.set_xticks(range(len(languages)))
-        ax.set_xticklabels(languages, rotation=90, ha='right')
-        ax.set_yticks([0, 1])
-        ax.set_yticklabels(['NeuCodec', 'XCodec2'])
+        ax.set_xticklabels(languages, rotation=90, ha='right', fontsize=8)
+        ax.set_yticks(range(len(self.tokenizers)))
+        ax.set_yticklabels([t.upper() for t in self.tokenizers])
         
         # Add text annotations
         for i in range(len(languages)):
-            for j in range(2):
+            for j in range(len(self.tokenizers)):
                 text = ax.text(i, j, '✓' if coverage_array[i, j] == 1 else '✗',
-                             ha="center", va="center", color="black", fontsize=10, fontweight='bold')
+                             ha="center", va="center", color="black", fontsize=8, fontweight='bold')
         
         ax.set_title('Language Coverage by Tokenizer', fontsize=14, fontweight='bold', pad=20)
         plt.colorbar(im, ax=ax, label='Available')
@@ -233,11 +282,16 @@ class TokenizerAnalyzer:
         plt.close()
     
     def plot_common_languages_comparison(self, df: pd.DataFrame):
-        """Compare tokenizers only on languages both have"""
-        common_languages = self.neucodec_languages & self.xcodec2_languages
+        """Compare tokenizers only on languages all have"""
+        if len(self.tokenizers) < 2:
+            print("Warning: Need at least 2 tokenizers for comparison")
+            return
+        
+        # Find languages present in all tokenizers
+        common_languages = set.intersection(*[self.tokenizer_languages[t] for t in self.tokenizers])
         
         if len(common_languages) == 0:
-            print("Warning: No common languages found between tokenizers")
+            print("Warning: No common languages found between all tokenizers")
             return
         
         df_common = df[df['language'].isin(common_languages)].copy()
@@ -255,16 +309,18 @@ class TokenizerAnalyzer:
             if metric_col not in df_common.columns:
                 continue
             
-            # Create violin plot
-            data_to_plot = [
-                df_common[df_common['tokenizer'] == 'neucodec'][metric_col].dropna(),
-                df_common[df_common['tokenizer'] == 'xcodec2'][metric_col].dropna()
-            ]
+            # Create violin plot for all tokenizers
+            data_to_plot = []
+            for tokenizer in self.tokenizers:
+                data = df_common[df_common['tokenizer'] == tokenizer][metric_col].dropna()
+                if len(data) > 0:
+                    data_to_plot.append(data)
             
-            if all(len(d) > 0 for d in data_to_plot):
-                parts = ax.violinplot(data_to_plot, positions=[0, 1], showmeans=True, showmedians=True)
-                ax.set_xticks([0, 1])
-                ax.set_xticklabels(['NeuCodec', 'XCodec2'])
+            if len(data_to_plot) > 0:
+                positions = list(range(len(data_to_plot)))
+                parts = ax.violinplot(data_to_plot, positions=positions, showmeans=True, showmedians=True)
+                ax.set_xticks(positions)
+                ax.set_xticklabels([t.upper() for t in self.tokenizers])
                 ax.set_ylabel(metric.upper())
                 ax.set_title(f'{metric.upper()} Distribution')
                 ax.grid(True, alpha=0.3)
@@ -295,25 +351,28 @@ class TokenizerAnalyzer:
             if metric_col not in df.columns:
                 continue
             
-            # Create violin plot
-            data_to_plot = [
-                df[df['tokenizer'] == 'neucodec'][metric_col].dropna(),
-                df[df['tokenizer'] == 'xcodec2'][metric_col].dropna()
-            ]
-            
-            parts = ax.violinplot(data_to_plot, positions=[0, 1], showmeans=True, showmedians=True)
-            ax.set_xticks([0, 1])
-            ax.set_xticklabels(['NeuCodec', 'XCodec2'])
-            ax.set_ylabel(metric.upper())
-            ax.set_title(f'{metric.upper()} Distribution')
-            ax.grid(True, alpha=0.3)
-            
-            # Add mean values as text
-            for i, data in enumerate(data_to_plot):
+            # Create violin plot for all tokenizers
+            data_to_plot = []
+            for tokenizer in self.tokenizers:
+                data = df[df['tokenizer'] == tokenizer][metric_col].dropna()
                 if len(data) > 0:
-                    mean_val = data.mean()
-                    ax.text(i, mean_val, f'{mean_val:.3f}', 
-                           ha='center', va='bottom', fontweight='bold')
+                    data_to_plot.append(data)
+            
+            if len(data_to_plot) > 0:
+                positions = list(range(len(data_to_plot)))
+                parts = ax.violinplot(data_to_plot, positions=positions, showmeans=True, showmedians=True)
+                ax.set_xticks(positions)
+                ax.set_xticklabels([t.upper() for t in self.tokenizers])
+                ax.set_ylabel(metric.upper())
+                ax.set_title(f'{metric.upper()} Distribution')
+                ax.grid(True, alpha=0.3)
+                
+                # Add mean values as text
+                for i, data in enumerate(data_to_plot):
+                    if len(data) > 0:
+                        mean_val = data.mean()
+                        ax.text(i, mean_val, f'{mean_val:.3f}', 
+                               ha='center', va='bottom', fontweight='bold')
         
         plt.tight_layout()
         plt.savefig('overall_comparison.png', dpi=300, bbox_inches='tight')
@@ -334,35 +393,39 @@ class TokenizerAnalyzer:
             if metric_col not in df.columns:
                 continue
             
-            # Calculate means and stds
+            # Calculate means and stds for all tokenizers
             # AGGREGATION METHOD: 
             # - Each language file has a pre-computed mean (from ~100 samples)
             # - We compute the mean of these per-language means (grand mean)
             # - This gives equal weight to each language, regardless of sample count
             # - Std shows variation ACROSS languages (not across samples within language)
-            neucodec_mean = df[df['tokenizer'] == 'neucodec'][metric_col].mean()
-            xcodec2_mean = df[df['tokenizer'] == 'xcodec2'][metric_col].mean()
-            neucodec_std = df[df['tokenizer'] == 'neucodec'][metric_col].std()
-            xcodec2_std = df[df['tokenizer'] == 'xcodec2'][metric_col].std()
+            means = []
+            stds = []
+            colors = []
+            labels = []
             
-            # Create bar plot
-            bars = ax.bar(['NeuCodec', 'XCodec2'], 
-                         [neucodec_mean, xcodec2_mean],
-                         yerr=[neucodec_std, xcodec2_std],
-                         capsize=5,
-                         color=['#3498db', '#e74c3c'],
-                         alpha=0.7)
+            for tokenizer in self.tokenizers:
+                data = df[df['tokenizer'] == tokenizer][metric_col].dropna()
+                if len(data) > 0:
+                    means.append(data.mean())
+                    stds.append(data.std())
+                    colors.append(self.get_tokenizer_color(tokenizer))
+                    labels.append(tokenizer.upper())
             
-            ax.set_ylabel(metric.upper())
-            ax.set_title(f'{metric.upper()}')
-            ax.grid(True, alpha=0.3, axis='y')
-            
-            # Add value labels on bars
-            for bar, val in zip(bars, [neucodec_mean, xcodec2_mean]):
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height,
-                       f'{val:.4f}',
-                       ha='center', va='bottom', fontweight='bold')
+            if len(means) > 0:
+                # Create bar plot
+                bars = ax.bar(labels, means, yerr=stds, capsize=5, color=colors, alpha=0.7)
+                
+                ax.set_ylabel(metric.upper())
+                ax.set_title(f'{metric.upper()}')
+                ax.grid(True, alpha=0.3, axis='y')
+                
+                # Add value labels on bars
+                for bar, val in zip(bars, means):
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height,
+                           f'{val:.4f}',
+                           ha='center', va='bottom', fontweight='bold')
         
         plt.tight_layout()
         plt.savefig('metric_comparison_bars.png', dpi=300, bbox_inches='tight')
@@ -377,11 +440,30 @@ class TokenizerAnalyzer:
             print(f"Metric {metric} not found in data")
             return
         
-        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+        # Create subplots for each tokenizer
+        n_tokenizers = len(self.tokenizers)
+        if n_tokenizers == 0:
+            return
+        
+        n_cols = min(3, n_tokenizers)
+        n_rows = (n_tokenizers + n_cols - 1) // n_cols
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 6*n_rows))
         fig.suptitle(f'Top and Bottom {n} Languages by {metric.upper()}', 
                      fontsize=16, fontweight='bold')
         
-        for idx, tokenizer in enumerate(['neucodec', 'xcodec2']):
+        # Ensure axes is always a list/array of Axes objects
+        if n_tokenizers == 1:
+            axes = [axes]
+        elif n_rows == 1:
+            # axes is already a 1D array, convert to list
+            axes = list(axes) if hasattr(axes, '__iter__') else [axes]
+        else:
+            # axes is a 2D array, flatten to 1D and convert to list
+            axes = list(axes.flatten())
+        
+        for idx, tokenizer in enumerate(self.tokenizers):
+            if idx >= len(axes):
+                break
             ax = axes[idx]
             df_tok = df[df['tokenizer'] == tokenizer].copy()
             
@@ -443,7 +525,9 @@ class TokenizerAnalyzer:
             pivot = grouped.pivot(index='dataset', columns='tokenizer', values=metric_col)
             
             if not pivot.empty:
-                pivot.plot(kind='bar', ax=ax, color=['#3498db', '#e74c3c'], alpha=0.7)
+                # Get colors for each tokenizer
+                colors = [self.get_tokenizer_color(t) for t in pivot.columns if t in self.tokenizers]
+                pivot.plot(kind='bar', ax=ax, color=colors, alpha=0.7)
                 ax.set_ylabel(metric.upper())
                 ax.set_title(f'{metric.upper()} by Dataset')
                 ax.set_xlabel('Dataset')
@@ -464,14 +548,20 @@ class TokenizerAnalyzer:
         # Compression ratio
         if 'compression_ratio' in df.columns:
             ax = axes[0]
-            data_to_plot = [
-                df[df['tokenizer'] == 'neucodec']['compression_ratio'].dropna(),
-                df[df['tokenizer'] == 'xcodec2']['compression_ratio'].dropna()
-            ]
+            data_to_plot = []
+            labels = []
+            colors = []
             
-            if all(len(d) > 0 for d in data_to_plot):
-                bp = ax.boxplot(data_to_plot, labels=['NeuCodec', 'XCodec2'], patch_artist=True)
-                for patch, color in zip(bp['boxes'], ['#3498db', '#e74c3c']):
+            for tokenizer in self.tokenizers:
+                data = df[df['tokenizer'] == tokenizer]['compression_ratio'].dropna()
+                if len(data) > 0:
+                    data_to_plot.append(data)
+                    labels.append(tokenizer.upper())
+                    colors.append(self.get_tokenizer_color(tokenizer))
+            
+            if len(data_to_plot) > 0:
+                bp = ax.boxplot(data_to_plot, tick_labels=labels, patch_artist=True)
+                for patch, color in zip(bp['boxes'], colors):
                     patch.set_facecolor(color)
                     patch.set_alpha(0.7)
                 
@@ -488,14 +578,20 @@ class TokenizerAnalyzer:
         # Tokens per second
         if 'tokens_per_second' in df.columns:
             ax = axes[1]
-            data_to_plot = [
-                df[df['tokenizer'] == 'neucodec']['tokens_per_second'].dropna(),
-                df[df['tokenizer'] == 'xcodec2']['tokens_per_second'].dropna()
-            ]
+            data_to_plot = []
+            labels = []
+            colors = []
             
-            if all(len(d) > 0 for d in data_to_plot):
-                bp = ax.boxplot(data_to_plot, labels=['NeuCodec', 'XCodec2'], patch_artist=True)
-                for patch, color in zip(bp['boxes'], ['#3498db', '#e74c3c']):
+            for tokenizer in self.tokenizers:
+                data = df[df['tokenizer'] == tokenizer]['tokens_per_second'].dropna()
+                if len(data) > 0:
+                    data_to_plot.append(data)
+                    labels.append(tokenizer.upper())
+                    colors.append(self.get_tokenizer_color(tokenizer))
+            
+            if len(data_to_plot) > 0:
+                bp = ax.boxplot(data_to_plot, tick_labels=labels, patch_artist=True)
+                for patch, color in zip(bp['boxes'], colors):
                     patch.set_facecolor(color)
                     patch.set_alpha(0.7)
                 
@@ -516,12 +612,30 @@ class TokenizerAnalyzer:
     
     def plot_correlation_heatmap(self, df: pd.DataFrame):
         """Plot correlation heatmap between metrics"""
-        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+        n_tokenizers = len(self.tokenizers)
+        if n_tokenizers == 0:
+            return
+        
+        n_cols = min(3, n_tokenizers)
+        n_rows = (n_tokenizers + n_cols - 1) // n_cols
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 6*n_rows))
         fig.suptitle('Metric Correlations', fontsize=16, fontweight='bold')
         
         metric_cols = [f'{m}_mean' for m in self.metrics if f'{m}_mean' in df.columns]
         
-        for idx, tokenizer in enumerate(['neucodec', 'xcodec2']):
+        # Ensure axes is always a list/array of Axes objects
+        if n_tokenizers == 1:
+            axes = [axes]
+        elif n_rows == 1:
+            # axes is already a 1D array, convert to list
+            axes = list(axes) if hasattr(axes, '__iter__') else [axes]
+        else:
+            # axes is a 2D array, flatten to 1D and convert to list
+            axes = list(axes.flatten())
+        
+        for idx, tokenizer in enumerate(self.tokenizers):
+            if idx >= len(axes):
+                break
             ax = axes[idx]
             df_tok = df[df['tokenizer'] == tokenizer][metric_cols]
             
@@ -552,12 +666,14 @@ class TokenizerAnalyzer:
             return
         
         # Plot for each tokenizer
-        for tokenizer, color, marker in [('neucodec', '#3498db', 'o'), 
-                                         ('xcodec2', '#e74c3c', 's')]:
+        for tokenizer in self.tokenizers:
             df_tok = df[df['tokenizer'] == tokenizer]
-            ax.scatter(df_tok[metric_x_col], df_tok[metric_y_col], 
-                      c=color, label=tokenizer.upper(), alpha=0.6, 
-                      s=100, marker=marker, edgecolors='black', linewidths=0.5)
+            if len(df_tok) > 0:
+                color = self.get_tokenizer_color(tokenizer)
+                marker = self.get_tokenizer_marker(tokenizer)
+                ax.scatter(df_tok[metric_x_col], df_tok[metric_y_col], 
+                          c=color, label=tokenizer.upper(), alpha=0.6, 
+                          s=100, marker=marker, edgecolors='black', linewidths=0.5)
         
         ax.set_xlabel(metric_x.upper(), fontsize=12)
         ax.set_ylabel(metric_y.upper(), fontsize=12)
@@ -612,26 +728,38 @@ class TokenizerAnalyzer:
         summary.append("LANGUAGE COVERAGE ANALYSIS")
         summary.append(f"{'='*60}")
         
-        neucodec_only = self.neucodec_languages - self.xcodec2_languages
-        xcodec2_only = self.xcodec2_languages - self.neucodec_languages
-        common = self.neucodec_languages & self.xcodec2_languages
-        
         summary.append(f"\nTotal unique languages: {len(self.all_languages)}")
-        summary.append(f"Languages in both tokenizers: {len(common)}")
-        summary.append(f"Languages only in NeuCodec: {len(neucodec_only)}")
-        if neucodec_only:
-            summary.append(f"  {', '.join(sorted(neucodec_only))}")
-        summary.append(f"Languages only in XCodec2: {len(xcodec2_only)}")
-        if xcodec2_only:
-            summary.append(f"  {', '.join(sorted(xcodec2_only))}")
+        
+        # Find common languages (present in all tokenizers)
+        if len(self.tokenizers) > 1:
+            common_languages = set.intersection(*[self.tokenizer_languages[t] for t in self.tokenizers])
+            summary.append(f"Languages in all tokenizers: {len(common_languages)}")
+            if common_languages and len(common_languages) <= 20:
+                summary.append(f"  {', '.join(sorted(common_languages))}")
+            elif common_languages:
+                common_list = sorted(list(common_languages))
+                summary.append(f"  {', '.join(common_list[:10])}... (+{len(common_languages)-10} more)")
+        
+        # Report tokenizer-specific languages
+        for tokenizer in self.tokenizers:
+            other_tokenizers = [t for t in self.tokenizers if t != tokenizer]
+            if other_tokenizers:
+                other_languages = set.union(*[self.tokenizer_languages[t] for t in other_tokenizers])
+                tokenizer_only = self.tokenizer_languages[tokenizer] - other_languages
+                if tokenizer_only:
+                    summary.append(f"\nLanguages only in {tokenizer.upper()}: {len(tokenizer_only)}")
+                    if len(tokenizer_only) <= 10:
+                        summary.append(f"  {', '.join(sorted(tokenizer_only))}")
         
         summary.append(f"\nNOTE: Overall comparisons include ALL languages for each tokenizer.")
         summary.append(f"      This means the comparison may not be perfectly fair if")
         summary.append(f"      the tokenizers were tested on different language sets.")
-        summary.append(f"      See 'common_languages_comparison.png' for a fair comparison")
-        summary.append(f"      using only the {len(common)} languages both tokenizers have.")
+        if len(self.tokenizers) > 1:
+            common_languages = set.intersection(*[self.tokenizer_languages[t] for t in self.tokenizers])
+            summary.append(f"      See 'common_languages_comparison.png' for a fair comparison")
+            summary.append(f"      using only the {len(common_languages)} languages all tokenizers have.")
         
-        for tokenizer in ['neucodec', 'xcodec2']:
+        for tokenizer in self.tokenizers:
             df_tok = df[df['tokenizer'] == tokenizer]
             
             summary.append(f"\n{'='*60}")
@@ -670,61 +798,69 @@ class TokenizerAnalyzer:
                     summary.append(f"  Mean: {tps_values.mean():.2f}")
                     summary.append(f"  Std:  {tps_values.std():.2f}")
         
-        # Overall comparison section
-        summary.append(f"\n{'='*60}")
-        summary.append("OVERALL COMPARISON (NeuCodec vs XCodec2)")
-        summary.append(f"{'='*60}")
-        summary.append("NOTE: Includes all languages each tokenizer was tested on")
-        
-        for metric in self.metrics:
-            metric_col = f'{metric}_mean'
-            if metric_col in df.columns:
-                neucodec_mean = df[df['tokenizer'] == 'neucodec'][metric_col].mean()
-                xcodec2_mean = df[df['tokenizer'] == 'xcodec2'][metric_col].mean()
-                diff = neucodec_mean - xcodec2_mean
-                pct_diff = (diff / abs(xcodec2_mean)) * 100 if xcodec2_mean != 0 else 0
-                
-                better = "NeuCodec" if diff > 0 else "XCodec2"
-                # For MSE, lower is better
-                if metric == 'mse':
-                    better = "NeuCodec" if diff < 0 else "XCodec2"
-                
-                summary.append(f"\n{metric.upper()}:")
-                summary.append(f"  NeuCodec: {neucodec_mean:.4f}")
-                summary.append(f"  XCodec2:  {xcodec2_mean:.4f}")
-                summary.append(f"  Difference: {diff:.4f} ({pct_diff:.2f}%)")
-                summary.append(f"  Better: {better}")
-        
-        # Common languages comparison
-        common_languages = self.neucodec_languages & self.xcodec2_languages
-        if len(common_languages) > 0:
-            df_common = df[df['language'].isin(common_languages)].copy()
-            
+        # Overall comparison section (pairwise comparisons)
+        if len(self.tokenizers) > 1:
             summary.append(f"\n{'='*60}")
-            summary.append(f"FAIR COMPARISON (Common Languages Only, n={len(common_languages)})")
+            summary.append("OVERALL COMPARISON (All Tokenizers)")
             summary.append(f"{'='*60}")
-            summary.append(f"Common languages: {', '.join(sorted(common_languages))}")
+            summary.append("NOTE: Includes all languages each tokenizer was tested on")
             
             for metric in self.metrics:
                 metric_col = f'{metric}_mean'
-                if metric_col in df_common.columns:
-                    neucodec_mean = df_common[df_common['tokenizer'] == 'neucodec'][metric_col].mean()
-                    xcodec2_mean = df_common[df_common['tokenizer'] == 'xcodec2'][metric_col].mean()
+                if metric_col not in df.columns:
+                    continue
+                
+                summary.append(f"\n{metric.upper()}:")
+                means = {}
+                for tokenizer in self.tokenizers:
+                    data = df[df['tokenizer'] == tokenizer][metric_col].dropna()
+                    if len(data) > 0:
+                        means[tokenizer] = data.mean()
+                        summary.append(f"  {tokenizer.upper()}: {means[tokenizer]:.4f}")
+                
+                # Find best tokenizer
+                if len(means) > 0:
+                    if metric == 'mse':
+                        best_tokenizer = min(means, key=means.get)
+                    else:
+                        best_tokenizer = max(means, key=means.get)
+                    summary.append(f"  Best: {best_tokenizer.upper()}")
+        
+        # Common languages comparison
+        if len(self.tokenizers) > 1:
+            common_languages = set.intersection(*[self.tokenizer_languages[t] for t in self.tokenizers])
+            if len(common_languages) > 0:
+                df_common = df[df['language'].isin(common_languages)].copy()
+                
+                summary.append(f"\n{'='*60}")
+                summary.append(f"FAIR COMPARISON (Common Languages Only, n={len(common_languages)})")
+                summary.append(f"{'='*60}")
+                if len(common_languages) <= 20:
+                    summary.append(f"Common languages: {', '.join(sorted(common_languages))}")
+                else:
+                    common_list = sorted(list(common_languages))
+                    summary.append(f"Common languages: {', '.join(common_list[:10])}... (+{len(common_languages)-10} more)")
+                
+                for metric in self.metrics:
+                    metric_col = f'{metric}_mean'
+                    if metric_col not in df_common.columns:
+                        continue
                     
-                    if not np.isnan(neucodec_mean) and not np.isnan(xcodec2_mean):
-                        diff = neucodec_mean - xcodec2_mean
-                        pct_diff = (diff / abs(xcodec2_mean)) * 100 if xcodec2_mean != 0 else 0
-                        
-                        better = "NeuCodec" if diff > 0 else "XCodec2"
-                        # For MSE, lower is better
+                    summary.append(f"\n{metric.upper()}:")
+                    means = {}
+                    for tokenizer in self.tokenizers:
+                        data = df_common[df_common['tokenizer'] == tokenizer][metric_col].dropna()
+                        if len(data) > 0 and not np.isnan(data.mean()):
+                            means[tokenizer] = data.mean()
+                            summary.append(f"  {tokenizer.upper()}: {means[tokenizer]:.4f}")
+                    
+                    # Find best tokenizer
+                    if len(means) > 0:
                         if metric == 'mse':
-                            better = "NeuCodec" if diff < 0 else "XCodec2"
-                        
-                        summary.append(f"\n{metric.upper()}:")
-                        summary.append(f"  NeuCodec: {neucodec_mean:.4f}")
-                        summary.append(f"  XCodec2:  {xcodec2_mean:.4f}")
-                        summary.append(f"  Difference: {diff:.4f} ({pct_diff:.2f}%)")
-                        summary.append(f"  Better: {better}")
+                            best_tokenizer = min(means, key=means.get)
+                        else:
+                            best_tokenizer = max(means, key=means.get)
+                        summary.append(f"  Best: {best_tokenizer.upper()}")
         
         # Save to file
         summary_text = '\n'.join(summary)
@@ -750,14 +886,14 @@ class TokenizerAnalyzer:
         print(f"Datasets: {df['dataset'].unique()}")
         
         # Create results directory
-        results_dir = Path("../results")
+        results_dir = PROJECT_ROOT / "results"
         results_dir.mkdir(exist_ok=True)
         print(f"\nSaving results to: {results_dir.absolute()}")
         
         # Change to results directory for saving outputs
         import os
         original_dir = os.getcwd()
-        os.chdir(results_dir)
+        os.chdir(str(results_dir))
         
         try:
             # Generate all visualizations
@@ -816,13 +952,12 @@ class TokenizerAnalyzer:
 if __name__ == "__main__":
     import sys
     
-    # Get data directory from command line argument or use default relative path
+    # Get data directory from command line argument or use default path
     # Default assumes script is in benchmark-audio-tokenizers/scripts/
     # and data is in benchmark-audio-tokenizers/metrics/
-    data_dir = sys.argv[1] if len(sys.argv) > 1 else "../metrics"
-    
-    print(f"Looking for data in: {data_dir}")
+    data_dir = sys.argv[1] if len(sys.argv) > 1 else None
     
     # Run analysis
     analyzer = TokenizerAnalyzer(data_dir)
+    print(f"Looking for data in: {analyzer.data_dir}")
     analyzer.run_full_analysis()
