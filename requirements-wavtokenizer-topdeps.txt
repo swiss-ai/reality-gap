@@ -1,0 +1,42 @@
+torch==2.6.0
+
+# Core dependencies (should already be installed, but listed for compilation)
+# torch>=2.0.0
+# torchaudio>=2.0.0
+numpy<2.0.0
+scipy
+soundfile
+pyyaml
+huggingface_hub
+transformers
+
+# Additional dependencies needed for WavTokenizer
+encodec==0.1.1
+einops==0.6.1
+pytorch-lightning==1.8.6
+tensorboardX==2.6
+hyperpyyaml
+pesq
+pystoi
+torch_complex
+
+# Optional but useful
+# jsonargparse[signatures]>=4.15.2
+# fairseq  # Large dependency, skip if not needed
+# torchcrepe  # For pitch tracking, skip if not needed
+# librosa  # Should already be installed
+
+
+
+# For running examples/notebooks
+datasets==2.21.0  # For loading ESB diagnostic dataset (and for using ffmpeg instead of torchcodec)
+matplotlib  # For visualization in notebooks
+ipykernel  # For Jupyter kernel
+
+
+# For running scipts/tokenizer-evaluation.py
+static_ffmpeg
+stempeg
+pesq
+pystoi
+museval
