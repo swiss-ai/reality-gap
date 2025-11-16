@@ -1,0 +1,39 @@
+{
+  "language": "NatureLM",
+  "dataset": "naturelm",
+  "num_samples": 100,
+  "metrics": {
+    "mse": {
+      "mean": 0.0829804962000312,
+      "std": 0.09832035208201985,
+      "min": 0.0034113759693608814,
+      "max": 0.483044551747196,
+      "median": 0.04384842291642038
+    },
+    "snr_db": {
+      "mean": -1.179865706005024,
+      "std": 2.568027312774539,
+      "min": -6.351752265249263,
+      "max": 7.937734453358826,
+      "median": -1.7535415798876377
+    },
+    "sdr_db": {
+      "mean": NaN,
+      "std": NaN,
+      "min": NaN,
+      "max": NaN,
+      "median": NaN
+    },
+    "pesq": null,
+    "stoi": null,
+    "estoi": null
+  },
+  "tokens_per_second": {
+    "mean": 50.15408620427086,
+    "std": 0.1466043555429879
+  },
+  "compression_ratio": {
+    "mean": 319.01959254362276,
+    "std": 0.9286628295594649
+  }
+}
