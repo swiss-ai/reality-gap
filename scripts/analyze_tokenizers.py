@@ -183,7 +183,7 @@ class TokenizerAnalyzer:
         invalid_files = []
         for tokenizer in self.tokenizers:
             tokenizer_files = glob.glob(str(self.data_dir / f"{tokenizer}_*_results.json"))
-            tokenizer_files = [f for f in tokenizer_files if 'summary' not in f and 'all_results' not in f]
+            tokenizer_files = sorted([f for f in tokenizer_files if 'summary' not in f and 'all_results' not in f])
             
             for file in tokenizer_files:
                 file_path = Path(file)

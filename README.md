@@ -4,201 +4,318 @@ A comprehensive benchmarking framework for evaluating discrete audio tokenizer p
 
 ## Overview
 
-This repository provides tools and scripts for systematically evaluating audio tokenizers on multilingual speech data. We support multiple datasets (EuroSpeech, FLEURS) with automatic dataset detection and unified evaluation pipeline.
+This repository provides tools and scripts for systematically evaluating audio tokenizers on multilingual speech data. The project runs on **Clariden (CSCS Alps)** and supports multiple datasets (EuroSpeech, FLEURS, GTZAN, NatureLM) with automatic dataset detection and unified evaluation pipeline.
 
-## Project Structure
+## Project Goals
 
-```
-.
-├── examples/                      # (not currently in use)
-├── jobs/                          # Job submission files for cluster computing
-├── logs/                          # Execution logs (.out and .err files per language)
-├── metrics/                       # Evaluation results and metrics (JSON output)
-├── scripts/                       # All Python scripts and shell scripts
-│   ├── download_eurospeech.py     # Download EuroSpeech dataset
-│   ├── download_fleurs.py         # Download FLEURS dataset
-│   ├── download_all_fleurs.sh     # SLURM batch download for FLEURS
-│   ├── neucodec_evaluation.py     # Multi-dataset evaluation script
-│   ├── run_eurospeech.sh          # SLURM batch evaluation for EuroSpeech
-│   ├── test_minimal.py            # Minimal testing script
-│   └── verify_eurospeech.py       # Dataset verification script
-├── src/
-│   ├── audio_tokenizers/          # Tokenizer implementations and wrappers
-│   └── repos/                     # External repository dependencies
-├── venv/                          # Virtual environment for downloads (also: fleurs-venv)
-├── neucodec-venv/                 # Virtual environment for evaluations
-├── requirements_venv.txt          # Dependencies for download environment
-└── requirements_neucodec-venv.txt # Dependencies for evaluation environment
-```
+The benchmarking framework focuses on two main objectives:
 
-## Current Status
+1. **Statistical Evaluation**: Compute comprehensive metrics (MSE, SNR, SDR, PESQ, STOI, ESTOI) on 100 samples per language to assess tokenizer performance statistically.
 
-**Datasets:**
-- ✅ **EuroSpeech** 
-  - 22 languages: bosnia-herzegovina, bulgaria, croatia, denmark, estonia, finland, france, germany, greece, iceland, italy, latvia, lithuania, malta, norway, portugal, serbia, slovakia, slovenia, sweden, uk, ukraine
-  - 100 samples per language
-  - Cached in `$SCRATCH/benchmark-audio-tokenizer/datasets/eurospeech_cache`
+2. **Sample Generation**: Generate 5 audio samples per tokenizer-dataset-language combination for listening evaluation and qualitative assessment.
 
-- ✅ **FLEURS**
-  - 40 languages configured (102 available): ast_es, ca_es, nl_nl, en_us, gl_es, hu_hu, ga_ie, kea_cv, lb_lu, oc_fr, es_419, cy_gb, hy_am, be_by, cs_cz, ka_ge, mk_mk, pl_pl, ro_ro, ru_ru, cmn_hans_cn, yue_hant_hk, ja_jp, ko_kr, hi_in, bn_in, ta_in, te_in, th_th, vi_vn, id_id, af_za, sw_ke, am_et, yo_ng, ar_eg, tr_tr, he_il, fa_ir
-  - 100 samples per language
-  - Cached in `$SCRATCH/benchmark-audio-tokenizer/datasets/fleurs_cache`
+## Prerequisites
 
-**Total Coverage (as of November 1st 2025):** 62 languages across 2 datasets
+- Access to **Clariden (CSCS Alps)** cluster
+- Assignment to the `infra01` group with proper `.edf` configuration (recommended)
+- `uv` package manager (recommended, for creating virtual environments)
+- PyTorch NGC 24.11 environment (recommended)
 
-**Tokenizers Evaluated:**
-- ✅ NeuCodec
+## Installation
 
-## Getting Started
+### 1. Clone the Repository
 
-### Prerequisites
-
-- Python 3.10+
-- CUDA-capable GPU (recommended for evaluation)
-- Access to compute cluster with scratch storage
-- SLURM workload manager (optional, for parallel processing)
-
-### Installation
-
-1. Clone the repository:
 ```bash
 git clone <your-repo-url>
 cd benchmark-audio-tokenizer
 ```
 
-2. Set up the download environment:
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements_venv.txt
-```
+### 2. Set Up Virtual Environments
 
-3. Set up the evaluation environment:
-```bash
-python -m venv neucodec-venv
-source neucodec-venv/bin/activate
-pip install -r requirements_neucodec-venv.txt
-```
+**Important:** Virtual environments should be created within the NGC 24.11 environment on Clariden.
 
-## Downloading Datasets
+The project uses `uv` for fast virtual environment management. We use a two-stage dependency compilation approach:
 
-### EuroSpeech (Sequential Download)
+- **Top-level dependencies** (`requirements-*-topdeps.txt`): High-level packages specified by the user
+- **Sub-dependencies** (`requirements-*-subdeps.txt`): All transitive dependencies compiled by `uv pip compile`
+
+This approach allows us to use system-installed PyTorch from NGC (avoiding CUDA compatibility issues) and install dependencies in a controlled, reproducible manner
+
+#### Create All Tokenizer Environments
 
 ```bash
-source venv/bin/activate
-python scripts/download_eurospeech.py
+# Make sure you're in NGC 24.11 environment
+# Then create all venvs:
+make venvs
 ```
 
-Downloads 100 samples for each of 22 languages to:
-```
-$SCRATCH/benchmark-audio-tokenizer/datasets/eurospeech_cache/
-```
+This creates virtual environments for all tokenizers:
+- `.venv-neucodec/`
+- `.venv-cosyvoice2/`
+- `.venv-xcodec2/`
+- `.venv-wavtokenizer/`
 
-### FLEURS (Parallel Download via SLURM - Recommended)
+#### Alternatively: Create Individual Environments
 
 ```bash
-# Make script executable
-chmod +x scripts/download_fleurs.sh
-
-# Submit 40 parallel download jobs
-bash scripts/download_fleurs.sh
+# Create a specific tokenizer environment
+make neucodec      # CPU-only PyTorch
+make cosyvoice2    # Uses system-site-packages for PyTorch
+make xcodec2       # CPU-only PyTorch
+make wavtokenizer  # Uses system-site-packages for PyTorch
 ```
 
-**Alternative (Sequential):**
+Each Makefile target:
+1. Removes the old venv (if exists)
+2. Creates a new venv with `uv`
+3. Compiles top-level dependencies to sub-dependencies (where applicable)
+4. Removes conflicting PyTorch entries from compiled dependencies
+5. Installs dependencies without overshadowing system PyTorch from NGC
+6. Verifies the installation
+
+### 3. Verify Setup with Example Notebooks
+
+Before running evaluations, we recommend testing your setup with the example notebooks in the `examples/` directory:
+
 ```bash
-source venv/bin/activate
+# Activate a tokenizer environment
+source .venv-neucodec/bin/activate
 
-# Download all 40 languages 
-python scripts/download_fleurs.py
-
-# Or download specific languages
-python scripts/download_fleurs.py --language en_us
-python scripts/download_fleurs.py --languages en_us ja_jp ko_kr
+# Start Jupyter
+jupyter notebook examples/neucodec.ipynb
 ```
 
-Downloads to: `$SCRATCH/benchmark-audio-tokenizer/datasets/fleurs_cache/`
+Available notebooks:
+- `neucodec.ipynb`
+- `cosyvoice2.ipynb`
+- `xcodec2.ipynb`
+- `wavtokenizer.ipynb`
 
+These notebooks demonstrate basic tokenizer usage and help verify that your environment is correctly configured.
+
+## Project Structure
+
+```
+.
+├── examples/                      # Example notebooks for testing tokenizers
+├── logs/                          # Execution logs (.out and .err files per job)
+├── metrics/                       # Evaluation results and metrics (JSON output)
+├── samples/                       # Generated audio samples for listening evaluation
+├── scripts/                       # All Python scripts and shell scripts
+│   ├── tokenizer_evaluation.py    # Main evaluation script
+│   ├── generate_samples.py        # Sample generation script
+│   ├── submit_missing_jobs.py     # Automatic job submission
+│   ├── analyze_tokenizers.py      # Analysis and visualization
+│   └── ...
+├── src/
+│   ├── audio_tokenizers/          # Tokenizer implementations and wrappers
+│   └── repos/                     # External repository dependencies
+├── .venv-*/                       # Virtual environments for each tokenizer
+├── requirements-*-topdeps.txt     # Top-level dependencies
+├── requirements-*-subdeps.txt     # Compiled sub-dependencies
+└── Makefile                       # Environment setup automation
+```
+
+## Datasets
+
+**EuroSpeech:**
+- 22 languages: bosnia-herzegovina, bulgaria, croatia, denmark, estonia, finland, france, germany, greece, iceland, italy, latvia, lithuania, malta, norway, portugal, serbia, slovakia, slovenia, sweden, uk, ukraine
+
+**FLEURS:**
+- 40 languages configured (102 available)
+
+**GTZAN:**
+- 10 music genres: blues, classical, country, disco, hiphop, jazz, metal, pop, reggae, rock
+- less than 100 samples each
+
+**NatureLM:**
+- 6 audio datasets: Xeno-canto, WavCaps, NatureLM, Watkins, iNaturalist, Animal Sound Archive
+
+**Total Coverage:** 78+ languages/datasets across 4 dataset types
+
+## Tokenizers Evaluated
+
+- ✅ NeuCodec
+- ✅ XCodec2
+- ✅ CosyVoice2
+- ✅ WavTokenizer
 
 ## Running Evaluations
 
-### Multi-Dataset Evaluation Features
+### Automatic Job Submission
 
-The evaluation script automatically:
-- Detects which dataset a language belongs to
-- Loads from the correct cache directory
-- Tracks dataset origin in results
-- Supports mixed-dataset evaluation
+The recommended approach is to use `submit_missing_jobs.py` to automatically detect and submit missing tokenizer-language combinations.
 
-### Evaluation Commands
+#### Step 1: Dry Run
 
-#### Single Language (Auto-detects dataset)
+Always start with a dry run to see what would be submitted:
+
 ```bash
-source neucodec-venv/bin/activate
-
-# EuroSpeech language
-python scripts/neucodec_evaluation.py --language germany
-
-# FLEURS language
-python scripts/neucodec_evaluation.py --language en_us
+python scripts/submit_missing_jobs.py --dry-run
 ```
 
-#### Multiple Languages (Mixed datasets OK!)
+This shows:
+- Which tokenizer-language combinations are missing
+- How jobs would be grouped (by dataset or language)
+- What commands would be executed
+
+#### Step 2: Test with One Job
+
+Before submitting all missing jobs, test with a single submission:
+
 ```bash
-# Mix of EuroSpeech and FLEURS
-python scripts/neucodec_evaluation.py --languages germany en_us ja_jp france
+python scripts/submit_missing_jobs.py --submit-one
 ```
 
-#### All Languages from One Dataset
-```bash
-# All EuroSpeech languages (22)
-python scripts/neucodec_evaluation.py --dataset eurospeech
+This submits only one job per task (metrics and samples) to verify everything works correctly.
 
-# All FLEURS languages (40)
-python scripts/neucodec_evaluation.py --dataset fleurs
+#### Step 3: Submit All Missing Jobs
+
+Once verified, submit all missing combinations:
+
+```bash
+# Submit both metrics and samples (default)
+python scripts/submit_missing_jobs.py
+
+# Or submit only one task
+python scripts/submit_missing_jobs.py --task metrics
+python scripts/submit_missing_jobs.py --task samples
 ```
 
-#### All Languages from All Datasets
-```bash
-# All 62 languages
-python scripts/neucodec_evaluation.py --dataset all
+#### Important Options
 
-# Or simply (same as above)
-python scripts/neucodec_evaluation.py
+**Validation (`--validate-metrics`):**
+- Validates that metrics JSON files are complete and have all required fields with values
+- Invalid files are treated as missing and will be re-submitted
+- **Why needed:** Sometimes jobs fail partially, creating incomplete JSON files. This ensures only complete results are considered.
+
+```bash
+python scripts/submit_missing_jobs.py --validate-metrics
 ```
 
-### SLURM Batch Evaluation
+**Grouping (`--group-by`):**
+- `dataset` (default): Groups missing languages by dataset, creating one job per tokenizer-dataset combination
+  - Fewer jobs, longer runtime per job
+  - More efficient for cluster resource usage
+- `language`: Creates one job per tokenizer-language combination
+  - More jobs, shorter runtime per job
+  - Better for fine-grained control and faster individual completions
 
-#### EuroSpeech (22 parallel jobs)
 ```bash
-bash scripts/run_eurospeech.sh
+# Group by dataset (default, recommended)
+python scripts/submit_missing_jobs.py --group-by dataset
+
+# Group by language
+python scripts/submit_missing_jobs.py --group-by language
 ```
 
-#### FLEURS (40 parallel jobs)
-Create and run a similar batch script for FLEURS languages, or submit individual jobs:
+**Prerequisites for Job Submission:**
+- You must be assigned to the `infra01` group
+- Your `.edf` file must be properly configured for SLURM
+- The script automatically checks for running jobs to avoid duplicates
+
+### Manual Evaluation
+
+You can also run evaluations manually:
+
 ```bash
-sbatch -J neucodec_en_us scripts/run_single_eval.sh en_us
+source .venv-neucodec/bin/activate
+
+# Single language
+python scripts/tokenizer_evaluation.py --tokenizer neucodec --language germany
+
+# Multiple languages
+python scripts/tokenizer_evaluation.py --tokenizer neucodec --languages germany en_us ja_jp
+
+# Entire dataset
+python scripts/tokenizer_evaluation.py --tokenizer neucodec --dataset eurospeech
 ```
 
 ### Results Organization
 
-Results are automatically organized by dataset:
+Results are automatically organized:
 
 ```
 metrics/
 ├── neucodec_eurospeech_germany_results.json      # Per-language results
 ├── neucodec_fleurs_en_us_results.json            # Per-language results
-├── neucodec_eurospeech_summary.json              # All EuroSpeech results
-├── neucodec_fleurs_summary.json                  # All FLEURS results
-└── neucodec_all_results.json                     # Combined results
+└── ...
+
+samples/
+├── neucodec/
+│   ├── eurospeech/
+│   │   └── germany/
+│   │       ├── metadata.json
+│   │       └── sample_*.wav
+│   └── fleurs/
+│       └── en_us/
+│           ├── metadata.json
+│           └── sample_*.wav
+└── ...
 ```
 
-Each result includes:
-- Language name
-- Dataset origin
-- All metrics (MSE, SNR, SDR, PESQ, STOI, ESTOI)
-- Tokenization statistics
+Each metrics file includes:
+- Language name and dataset origin
+- All metrics (MSE, SNR, SDR, PESQ, STOI, ESTOI) with mean, std, min, max, median
+- Tokenization statistics (tokens per second, compression ratio)
+- Number of samples evaluated
+- Might be incomplete for certain metrics
 
-Execution logs are saved in `logs/` directory.
+## Analysis and Visualization
+
+After collecting results, use `analyze_tokenizers.py` to generate comprehensive analysis and visualizations.
+
+### Setup Analysis Environment
+
+Create a simple virtual environment with standard packages for analysis:
+
+```bash
+uv venv .venv-analysis
+source .venv-analysis/bin/activate
+uv pip install pandas matplotlib seaborn numpy
+```
+
+### Run Analysis
+
+```bash
+source .venv-analysis/bin/activate
+python scripts/analyze_tokenizers.py
+```
+
+The script automatically:
+- Detects all tokenizers from result files in `metrics/`
+- Validates metrics files for completeness
+- Generates comprehensive visualizations
+- Creates summary statistics
+
+### Generated Outputs
+
+All outputs are saved to the `results/` directory:
+
+**Visualizations:**
+- `language_coverage.png` - Heatmap showing which languages each tokenizer has (with metrics completeness)
+- `overall_comparison.png` - Performance comparison across all languages (may not be fair if tokenizers tested different languages)
+- `common_languages_comparison.png` - Fair comparison using only languages all tokenizers have
+- `metric_comparison_bars.png` - Bar charts comparing mean performance by metric
+- `dataset_comparison.png` - Performance breakdown by dataset
+- `compression_efficiency.png` - Compression ratio and tokens per second analysis
+- `correlation_heatmap.png` - Correlation matrix between metrics
+- `top_bottom_languages_*.png` - Top and bottom performing languages for key metrics
+- `scatter_*_vs_*.png` - Scatter plots comparing metric relationships
+
+**Statistics:**
+- `analysis_summary.txt` - Comprehensive text summary including:
+  - Aggregation methodology explanation
+  - Language coverage analysis
+  - Per-tokenizer statistics
+  - Overall comparisons
+  - Fair comparisons (common languages only)
+
+**Key Features:**
+- Automatically handles missing or incomplete metrics files
+- Shows metrics completeness (0-6 valid metrics per language)
+- Provides both overall and fair comparisons
+- Explains aggregation methodology (language-weighted vs sample-weighted)
 
 ## Evaluation Metrics
 
@@ -216,110 +333,30 @@ The framework computes comprehensive reconstruction quality metrics:
 - **Tokens per second**: Tokenization rate
 - **Compression ratio**: Original size / Token size
 
-All metrics include: mean, standard deviation, min, max, and median values.
-
-## Adding New Datasets
-
-To add a new dataset (e.g., LibriSpeech):
-
-1. **Create download script** following `download_fleurs.py` pattern
-2. **Ensure data structure compatibility**:
-   ```python
-   {
-       'audio': {'array': ..., 'sampling_rate': ..., 'path': ...},
-       'text': ...,
-       'language': ...,
-       'sample_id': ...
-   }
-   ```
-3. **Update evaluation script** - Add to DATASETS dictionary:
-   ```python
-   DATASETS = {
-       'eurospeech': {...},
-       'fleurs': {...},
-       'librispeech': {
-           'cache_dir': os.path.join(SCRATCH_DIR, "librispeech_cache"),
-           'languages': ['en_train', 'en_test', 'en_dev']
-       }
-   }
-   ```
-
-The evaluation script will automatically support the new dataset!
-
-## Dataset Details
-
-### Unified Structure
-
-Both datasets use identical structure for compatibility:
-```python
-{
-    "audio": {
-        "array": np.ndarray,      # Audio waveform
-        "sampling_rate": int,     # Sample rate (Hz)
-        "path": str              # Original file path
-    },
-    "text": str,                 # Transcription
-    "language": str,             # Language code/name
-    "sample_id": int            # Sample index
-}
-```
-
-### Language Codes
-
-**EuroSpeech:** Full country names (e.g., `germany`, `france`, `uk`)
-
-**FLEURS:** ISO codes (e.g., `en_us`, `de_de`, `cmn_hans_cn`)
-
-See `scripts/download_fleurs.py` for complete FLEURS language list.
+All metrics include: mean, standard deviation, min, max, and median values computed across 100 samples per language.
 
 ## Troubleshooting
 
-### Dataset Download Issues
-- **FLEURS "BuilderConfig not found"**: Check language codes in error message
-- **FLEURS "trust_remote_code required"**: Already handled in download script
-- **EuroSpeech validation split**: Slovakia uses validation split automatically
+### Environment Setup
+- **"uv: command not found"**: Install `uv` package manager
+- **PyTorch CUDA issues**: Ensure you're using NGC 24.11 environment
+- **Dependency conflicts**: The Makefile handles PyTorch conflicts automatically by using system-site-packages where needed
 
-### Evaluation Issues
-- **"Language not found"**: Verify language code spelling and download status
-- **"Dataset not found at PATH"**: Check `$SCRATCH` variable and cache directories
-- **PESQ errors**: Automatically resampled to 16kHz, check audio quality
-- **Memory issues**: Reduce batch size or use SLURM with more memory
+### Job Submission
+- **"Permission denied"**: Verify you're in the `infra01` group and `.edf` is configured
+- **Jobs not submitting**: Check SLURM configuration and cluster status
+- **Duplicate jobs**: The script automatically checks for running jobs, but verify with `squeue`
 
-### SLURM Issues
-- **Jobs queued**: Cluster is busy, jobs will run when resources available
-- **Cancel jobs**: `scancel -u $USER -n download_fleurs` or `scancel -u $USER -n neucodec`
+### Evaluation
+- **"Language not found"**: Verify language code spelling and dataset download status
+- **"Dataset not found at PATH"**: Check cache directories
+- **PESQ errors**: Audio is automatically resampled to 16kHz, check audio quality
+- **Memory issues**: Adjust memory requirements in `submit_missing_jobs.py` or use SLURM with more memory
 
 ## Contributing
 
 This project is part of the Data Science Lab course at ETH Zurich, autumn semester 2025.
 
-**Contributors:**
-- Leonard Mantel
-- Melanie Rieff
-
 ## Citation
 
-If you use this benchmarking framework, please cite the relevant datasets:
-
-**EuroSpeech:**
-```bibtex
-@dataset{eurospeech,
-  title={EuroSpeech Dataset},
-  author={Disco-eth},
-  year={2024},
-  url={https://huggingface.co/datasets/disco-eth/EuroSpeech}
-}
-```
-
-**FLEURS:**
-```bibtex
-@article{fleurs2022arxiv,
-  title={FLEURS: Few-shot Learning Evaluation of Universal Representations of Speech},
-  author={Conneau, Alexis and Ma, Min and Khanuja, Simran and Zhang, Yu and Axelrod, Vera and Dalmia, Siddharth and Riesa, Jason and Rivera, Clara and Bapna, Ankur},
-  journal={arXiv preprint arXiv:2205.12446},
-  year={2022},
-  url={https://arxiv.org/abs/2205.12446}
-}
-```
-
-## License
+If you use this benchmarking framework, please cite the relevant datasets.

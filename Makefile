@@ -1,6 +1,10 @@
 SHELL := /bin/bash
 
 
+# create all venvs (executed from NGC-24.11)
+venvs: neucodec cosyvoice2 xcodec2 wavtokenizer
+
+
 # neucodec # CPU-only torch
 neucodec:
 	mv .venv-neucodec .venv-neucodec-old || true
