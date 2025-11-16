@@ -2,6 +2,10 @@
 """
 Universal audio sampling script for all tokenizers.
 Generates original and reconstructed audio pairs for multiple tokenizers.
+
+Usage examples:
+    python scripts/generate_samples.py --tokenizer neucodec
+    python scripts/generate_samples.py --tokenizer xcodec2 --languages germany --num-samples 5
 """
 
 import os
@@ -58,6 +62,14 @@ DATASETS = {
             "iNaturalist", "Animal Sound Archive"
         ],
         "source_field": "source_dataset",  # Use this field to filter by source
+    },
+    "gtzan": {
+        "cache_dir": os.path.join(CAPSTOR_CACHE, "gtzan_cache"),
+        "languages": [
+            "blues", "classical", "country", "disco", "hiphop",
+            "jazz", "metal", "pop", "reggae", "rock"
+        ],
+        "source_field": "genre_name",  # Use this field to filter by genre
     },
 }
 
@@ -138,9 +150,11 @@ def sample_and_reconstruct(
         print(f"Languages to process: {len(langs_to_process)}")
 
         for lang in langs_to_process:
-            # Special handling for NatureLM: load from single directory and filter by source
+            # Special handling for NatureLM and GTZAN: load from single directory and filter by source
             if dataset_name == "naturelm":
                 lang_dir = os.path.join(cache_dir, "naturelm")
+            elif dataset_name == "gtzan":
+                lang_dir = os.path.join(cache_dir, "gtzan")
             else:
                 lang_dir = os.path.join(cache_dir, lang)
 
@@ -154,13 +168,13 @@ def sample_and_reconstruct(
             try:
                 ds = load_from_disk(lang_dir)
 
-                # For NatureLM, filter by source_dataset field
-                if dataset_name == "naturelm":
-                    source_field = cfg.get("source_field", "source_dataset")
-                    # Filter dataset to only samples from this source
+                # For NatureLM and GTZAN, filter by source field
+                if dataset_name in ["naturelm", "gtzan"]:
+                    source_field = cfg.get("source_field", "source_dataset" if dataset_name == "naturelm" else "genre_name")
+                    # Filter dataset to only samples from this source/genre
                     filtered_indices = [i for i in range(len(ds)) if ds[i][source_field] == lang]
                     if not filtered_indices:
-                        print(f"⚠ No samples found for source {lang}")
+                        print(f"⚠ No samples found for {lang}")
                         continue
                     # Create a filtered view
                     ds_filtered = ds.select(filtered_indices)
@@ -302,7 +316,7 @@ def main():
         "--datasets", "-d",
         nargs="+",
         default=None,
-        help="Datasets to process (default: all). Options: eurospeech, fleurs, naturelm"
+        help="Datasets to process (default: all). Options: eurospeech, fleurs, naturelm, gtzan"
     )
 
     parser.add_argument(
