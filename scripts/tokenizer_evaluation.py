@@ -255,39 +255,74 @@ def process_language(language, tokenizer, dataset_name, cache_dir):
             if audio_tensor.dim() == 1:
                 audio_tensor = audio_tensor.unsqueeze(0)  # Add batch dimension
             
-            # Note: Don't move to device here - let the tokenizer handle device placement
-            # Some tokenizers (like CosyVoice2 with ONNX) need CPU input and handle conversion internally
-            tokens, encode_info = tokenizer.encode(audio_tensor, sr=sr)
-            reconstructed, decode_info = tokenizer.decode(tokens)
+            # Encode
+            try:
+                # Note: Don't move to device here - let the tokenizer handle device placement
+                # Some tokenizers (like CosyVoice2 with ONNX) need CPU input and handle conversion internally
+                tokens, encode_info = tokenizer.encode(audio_tensor, sr=sr)
+            except Exception as e:
+                print(f"\nError encoding sample {idx}: {e}")
+                failed += 1
+                continue
+            
+            # Decode
+            try:
+                reconstructed, decode_info = tokenizer.decode(tokens)
+            except Exception as e:
+                print(f"\nError decoding sample {idx}: {e}")
+                failed += 1
+                continue
             
             # Get output sample rate with fallback
             recon_sr = decode_info.get("output_sample_rate", tokenizer.output_sample_rate)
             if recon_sr is None:
                 recon_sr = sr  # Fallback to input sample rate
             
-            reconstructed_array = reconstructed.squeeze().cpu().numpy()
+            try:
+                reconstructed_array = reconstructed.squeeze().cpu().numpy()
+            except Exception as e:
+                print(f"\nError extracting reconstructed audio for sample {idx}: {e}")
+                failed += 1
+                continue
             
-            metrics = calculate_reconstruction_metrics(
-                audio_array,
-                reconstructed_array,
-                sr,
-                recon_sr
-            )
+            # Calculate metrics
+            try:
+                metrics = calculate_reconstruction_metrics(
+                    audio_array,
+                    reconstructed_array,
+                    sr,
+                    recon_sr
+                )
+            except Exception as e:
+                print(f"\nError calculating metrics for sample {idx}: {e}")
+                failed += 1
+                continue
             
-            num_tokens = tokens.numel()
-            tokens_per_sec = num_tokens / duration
-            
-            original_size = len(audio_array) * 2  # 16-bit audio
-            token_size = num_tokens * 2  # 16-bit tokens
-            compression_ratio = original_size / token_size
+            # Calculate statistics
+            try:
+                num_tokens = tokens.numel()
+                tokens_per_sec = num_tokens / duration
+                
+                original_size = len(audio_array) * 2  # 16-bit audio
+                token_size = num_tokens * 2  # 16-bit tokens
+                compression_ratio = original_size / token_size
+            except Exception as e:
+                print(f"\nError calculating statistics for sample {idx}: {e}")
+                failed += 1
+                continue
             
             all_metrics.append(metrics)
             all_tokens_per_second.append(tokens_per_sec)
             all_compression_ratios.append(compression_ratio)
             successful += 1
             
+        except KeyboardInterrupt:
+            print(f"\n\nInterrupted by user at sample {idx}")
+            break
         except Exception as e:
-            print(f"\nError processing sample {idx}: {e}")
+            import traceback
+            print(f"\nUnexpected error processing sample {idx}: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
             failed += 1
             continue
                 
@@ -316,6 +351,7 @@ def process_language(language, tokenizer, dataset_name, cache_dir):
         'language': language,
         'dataset': dataset_name,
         'num_samples': len(all_metrics),
+        'num_failed': failed,
         'metrics': {
             'mse': compute_stats('mse'),
             'snr_db': compute_stats('snr_db'),
@@ -422,6 +458,7 @@ def main():
     
     all_results = []
     failed_languages = []
+    total_failed_samples = 0
     
     for language in languages_to_evaluate:
         dataset_name, cache_dir, _ = get_dataset_for_language(language)
@@ -434,6 +471,7 @@ def main():
         summary = process_language(language, tokenizer, dataset_name, cache_dir)
         if summary:
             all_results.append(summary)
+            total_failed_samples += summary.get('num_failed', 0)
             print_summary(summary)
             
             output_file = RESULTS_DIR / f"{args.tokenizer}_{dataset_name}_{language}_results.json"
@@ -448,9 +486,17 @@ def main():
         print(f"Successfully evaluated: {len(all_results)}/{len(languages_to_evaluate)} languages")
         if failed_languages:
             print(f"Failed languages: {', '.join(failed_languages)}")
+        if total_failed_samples > 0:
+            print(f"Total failed samples: {total_failed_samples}")
         print(f"Evaluation complete!")
     else:
         print("No languages were successfully evaluated.")
+    
+    # Exit with non-zero code if there were any failed samples
+    if total_failed_samples > 0 or len(failed_languages) > 0:
+        sys.exit(1)
+    else:
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

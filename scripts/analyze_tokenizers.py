@@ -9,6 +9,7 @@ import json
 import glob
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, BoundaryNorm
 import seaborn as sns
 import numpy as np
 from pathlib import Path
@@ -40,6 +41,7 @@ class TokenizerAnalyzer:
         self.metrics = ['mse', 'snr_db', 'sdr_db', 'pesq', 'stoi', 'estoi']
         self.all_languages = set()  # Track all unique languages
         self.tokenizers = []  # List of detected tokenizer names (sorted)
+        self.language_metrics_count = defaultdict(dict)  # {(tokenizer, language): num_metrics}
     
     def detect_tokenizers(self) -> List[str]:
         """Detect all tokenizers from result files in the data directory"""
@@ -90,6 +92,80 @@ class TokenizerAnalyzer:
         # (fleurs languages are like fleurs_en_us)
         
         return basename
+    
+    def validate_metrics_file(self, file_path: Path) -> Tuple[bool, int]:
+        """
+        Validate that a metrics file is complete and has all required fields with values.
+        Based on validation logic from submit_missing_jobs.py.
+        
+        Returns:
+            (is_valid, num_valid_metrics) tuple where:
+            - is_valid: True if the file is valid
+            - num_valid_metrics: Number of valid metrics (0-6)
+        """
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return (False, 0)
+        
+        # Check required top-level fields
+        required_fields = ['language', 'dataset', 'num_samples', 'metrics', 
+                           'tokens_per_second', 'compression_ratio']
+        for field in required_fields:
+            if field not in data:
+                return (False, 0)
+        
+        # Check num_samples is valid
+        if not isinstance(data['num_samples'], int) or data['num_samples'] <= 0:
+            return (False, 0)
+        
+        # Check metrics structure
+        metrics = data.get('metrics', {})
+        if not isinstance(metrics, dict):
+            return (False, 0)
+        
+        # Expected metric names
+        expected_metrics = ['mse', 'snr_db', 'sdr_db', 'pesq', 'stoi', 'estoi']
+        
+        # Count valid metrics (metrics that exist, are not None, and have all required fields)
+        num_valid_metrics = 0
+        for metric_name in expected_metrics:
+            if metric_name in metrics and metrics[metric_name] is not None:
+                metric_data = metrics[metric_name]
+                if not isinstance(metric_data, dict):
+                    continue
+                # Check required fields for non-null metrics
+                required_metric_fields = ['mean', 'std', 'min', 'max', 'median']
+                is_valid_metric = True
+                for field in required_metric_fields:
+                    if field not in metric_data:
+                        is_valid_metric = False
+                        break
+                    # Check that values are numbers (not None)
+                    if metric_data[field] is None:
+                        is_valid_metric = False
+                        break
+                if is_valid_metric:
+                    num_valid_metrics += 1
+        
+        # Check tokens_per_second structure
+        tps = data.get('tokens_per_second', {})
+        if not isinstance(tps, dict) or 'mean' not in tps or 'std' not in tps:
+            return (False, num_valid_metrics)
+        if tps['mean'] is None or tps['std'] is None:
+            return (False, num_valid_metrics)
+        
+        # Check compression_ratio structure
+        cr = data.get('compression_ratio', {})
+        if not isinstance(cr, dict) or 'mean' not in cr or 'std' not in cr:
+            return (False, num_valid_metrics)
+        if cr['mean'] is None or cr['std'] is None:
+            return (False, num_valid_metrics)
+        
+        # File is valid if it has at least some structure, even if not all metrics are valid
+        # We return True if basic structure is OK, and num_valid_metrics shows completeness
+        return (True, num_valid_metrics)
         
     def load_data(self):
         """Load all JSON result files for all detected tokenizers"""
@@ -104,16 +180,26 @@ class TokenizerAnalyzer:
         print("\nLoading data files...")
         
         # Load data for each tokenizer
+        invalid_files = []
         for tokenizer in self.tokenizers:
             tokenizer_files = glob.glob(str(self.data_dir / f"{tokenizer}_*_results.json"))
             tokenizer_files = [f for f in tokenizer_files if 'summary' not in f and 'all_results' not in f]
             
             for file in tokenizer_files:
+                file_path = Path(file)
                 try:
+                    # Validate metrics file
+                    is_valid, num_valid_metrics = self.validate_metrics_file(file_path)
+                    
+                    if not is_valid:
+                        invalid_files.append((file_path.name, "Invalid structure"))
+                        continue
+                    
                     with open(file, 'r') as f:
                         data = json.load(f)
                         data['tokenizer'] = tokenizer
-                        data['file'] = Path(file).name
+                        data['file'] = file_path.name
+                        data['num_valid_metrics'] = num_valid_metrics
                         
                         # Extract language from filename to ensure consistency
                         filename_language = self.extract_language_from_filename(file, tokenizer)
@@ -142,17 +228,29 @@ class TokenizerAnalyzer:
                         self.tokenizer_data[tokenizer].append(data)
                         self.tokenizer_languages[tokenizer].add(data['language'])
                         self.all_languages.add(data['language'])
+                        
+                        # Store metrics count for this tokenizer-language combination
+                        key = (tokenizer, data['language'])
+                        self.language_metrics_count[key] = num_valid_metrics
                 except Exception as e:
-                    print(f"Warning: Error loading {file}: {e}")
+                    invalid_files.append((file_path.name, str(e)))
                     continue
         
         # Print summary
         total_files = sum(len(data) for data in self.tokenizer_data.values())
-        print(f"\nLoaded {total_files} result files:")
+        print(f"\nLoaded {total_files} valid result files:")
         for tokenizer in self.tokenizers:
             count = len(self.tokenizer_data[tokenizer])
             langs = len(self.tokenizer_languages[tokenizer])
             print(f"  {tokenizer}: {count} files, {langs} languages")
+        
+        # Report invalid files
+        if invalid_files:
+            print(f"\nWarning: Found {len(invalid_files)} invalid files (skipped):")
+            for filename, reason in invalid_files[:10]:  # Show first 10
+                print(f"  {filename}: {reason}")
+            if len(invalid_files) > 10:
+                print(f"  ... and {len(invalid_files) - 10} more invalid files")
         
         # Report on language coverage
         print(f"\nLanguage Coverage:")
@@ -178,6 +276,19 @@ class TokenizerAnalyzer:
                     print(f"  {tokenizer} only: {len(tokenizer_only)} languages")
                     if len(tokenizer_only) <= 10:
                         print(f"    {', '.join(sorted(tokenizer_only))}")
+        
+        # Report metrics completeness
+        print(f"\nMetrics Completeness:")
+        for tokenizer in self.tokenizers:
+            metrics_counts = {}
+            for data in self.tokenizer_data[tokenizer]:
+                num_metrics = data.get('num_valid_metrics', 0)
+                metrics_counts[num_metrics] = metrics_counts.get(num_metrics, 0) + 1
+            
+            print(f"  {tokenizer}:")
+            for num_metrics in sorted(metrics_counts.keys(), reverse=True):
+                count = metrics_counts[num_metrics]
+                print(f"    {num_metrics}/6 metrics: {count} languages")
         
         # Warn about any mismatches between filename and JSON language field
         print(f"\nVerifying language consistency...")
@@ -242,24 +353,45 @@ class TokenizerAnalyzer:
         return MARKERS[idx % len(MARKERS)]
     
     def plot_language_coverage(self, df: pd.DataFrame):
-        """Visualize language coverage for each tokenizer"""
+        """
+        Visualize language coverage for each tokenizer.
+        Colors indicate number of valid metrics (0-6) for each language.
+        """
         fig, ax = plt.subplots(1, 1, figsize=(14, max(8, len(self.all_languages) * 0.3)))
         
-        # Create a matrix showing which languages are available for which tokenizer
+        # Create a matrix showing number of valid metrics for each tokenizer-language combination
         languages = sorted(self.all_languages)
         coverage_data = []
         
         for lang in languages:
             row = []
             for tokenizer in self.tokenizers:
-                has_tokenizer = 1 if lang in self.tokenizer_languages[tokenizer] else 0
-                row.append(has_tokenizer)
+                key = (tokenizer, lang)
+                num_metrics = self.language_metrics_count.get(key, 0)
+                # Treat missing languages as 0 (both will be red)
+                if lang not in self.tokenizer_languages[tokenizer]:
+                    num_metrics = 0
+                row.append(num_metrics)
             coverage_data.append(row)
         
         coverage_array = np.array(coverage_data)
         
-        # Create heatmap
-        im = ax.imshow(coverage_array.T, cmap='RdYlGn', aspect='auto', vmin=0, vmax=1)
+        # Create heatmap with custom colormap
+        # 0-6 = number of valid metrics (red to green gradient)
+        colors_list = ['#e74c3c',   # Red for 0 metrics (or missing)
+                       '#e67e22',   # Dark orange for 1 metric
+                       '#f39c12',   # Orange for 2 metrics
+                       '#f1c40f',   # Yellow for 3 metrics
+                       '#f1c40f',   # Yellow for 4 metrics
+                       '#2ecc71',   # Light green for 5 metrics
+                       '#27ae60']   # Normal green for 6 metrics (all complete)
+        
+        # Create colormap: 0, 1, 2, 3, 4, 5, 6
+        cmap = ListedColormap(colors_list)
+        bounds = [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5]
+        norm = BoundaryNorm(bounds, cmap.N)
+        
+        im = ax.imshow(coverage_array.T, cmap=cmap, norm=norm, aspect='auto')
         
         # Set ticks and labels
         ax.set_xticks(range(len(languages)))
@@ -267,14 +399,24 @@ class TokenizerAnalyzer:
         ax.set_yticks(range(len(self.tokenizers)))
         ax.set_yticklabels([t.upper() for t in self.tokenizers])
         
-        # Add text annotations
+        # Add text annotations showing number of metrics
         for i in range(len(languages)):
             for j in range(len(self.tokenizers)):
-                text = ax.text(i, j, '✓' if coverage_array[i, j] == 1 else '✗',
-                             ha="center", va="center", color="black", fontsize=8, fontweight='bold')
+                num_metrics = coverage_array[i, j]
+                text = str(int(num_metrics))
+                color = 'black' if num_metrics >= 3 else 'white'
+                
+                ax.text(i, j, text,
+                       ha="center", va="center", color=color, 
+                       fontsize=8, fontweight='bold')
         
-        ax.set_title('Language Coverage by Tokenizer', fontsize=14, fontweight='bold', pad=20)
-        plt.colorbar(im, ax=ax, label='Available')
+        ax.set_title('Language Coverage by Tokenizer\n(Color = Number of Valid Metrics, 0-6)', 
+                    fontsize=14, fontweight='bold', pad=20)
+        
+        # Custom colorbar with labels
+        cbar = plt.colorbar(im, ax=ax, ticks=[0, 1, 2, 3, 4, 5, 6])
+        cbar.set_ticklabels(['0', '1', '2', '3', '4', '5', '6'])
+        cbar.set_label('Number of Valid Metrics', rotation=270, labelpad=20)
         
         plt.tight_layout()
         plt.savefig('language_coverage.png', dpi=300, bbox_inches='tight')
