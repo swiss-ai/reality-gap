@@ -10,6 +10,10 @@ Usage:
     python scripts/submit_missing_jobs.py --task samples
     python scripts/submit_missing_jobs.py --task both  # default
     python scripts/submit_missing_jobs.py --dry-run  # only show, don't submit
+    python scripts/submit_missing_jobs.py --group-by language  # group by language instead of dataset
+    python scripts/submit_missing_jobs.py --tokenizers xcodec2 cosyvoice2  # only submit for specific tokenizers
+    python scripts/submit_missing_jobs.py --languages germany en_us  # only submit for specific languages
+    python scripts/submit_missing_jobs.py --submit-one  # only submit one job per task
     python scripts/submit_missing_jobs.py --validate-metrics  # also validate file completeness
 """
 
@@ -17,6 +21,7 @@ import glob
 import subprocess
 import shlex
 import json
+import time
 from pathlib import Path
 from typing import Set, Tuple, List, Dict, Optional
 import argparse
@@ -30,6 +35,7 @@ TOKENIZERS = [
     'neucodec',
     'xcodec2',
     'cosyvoice2',
+    'wavtokenizer',
 ]
 
 # Dataset configurations (shared with tokenizer_evaluation.py and generate_samples.py)
@@ -83,11 +89,19 @@ SLURM_TEMPLATE = """#!/bin/bash
 #SBATCH --output={log_dir}/%j_{job_name}.out
 #SBATCH --error={log_dir}/%j_{job_name}.err
 #SBATCH --time=02:00:00
-#SBATCH --mem=32G
+#SBATCH --mem={memory}G
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=gpu
 #SBATCH --partition=normal
+
+# Disable core dumps to prevent filling up home directory
+ulimit -c 0
+
+# Set OpenBLAS threads to match CPU count (prevents warnings)
+export OPENBLAS_NUM_THREADS=4
+export OMP_NUM_THREADS=4
+export MKL_NUM_THREADS=4
 
 # Store start time as Unix timestamp for duration calculation
 START_TIME_SEC=$(date +%s)
@@ -347,6 +361,39 @@ def get_venv_path(tokenizer: str) -> str:
     return str(venv_path)
 
 
+def get_memory_for_tokenizer(tokenizer: str, dataset: str = None) -> int:
+    """
+    Get memory requirement (in GB) for a tokenizer-dataset combination.
+    
+    Args:
+        tokenizer: Tokenizer name
+        dataset: Dataset name (optional, for dataset-specific requirements)
+    
+    Returns:
+        Memory in GB
+    """
+    # Default memory
+    default_memory = 32
+    
+    # Tokenizer-specific memory requirements
+    memory_config = {
+        'xcodec2': 64,  # xcodec2 needs more memory, especially for naturelm
+        'wavtokenizer': 32,
+        'neucodec': 32,
+        'cosyvoice2': 32,
+    }
+    
+    # Dataset-specific overrides (can be combined with tokenizer)
+    if dataset == 'naturelm':
+        # NatureLM has large audio files, may need more memory
+        if tokenizer == 'xcodec2':
+            return 64
+        elif tokenizer in ['neucodec', 'wavtokenizer']:
+            return 48  # Slightly more for naturelm
+    
+    return memory_config.get(tokenizer, default_memory)
+
+
 def sanitize_job_name(tokenizer: str, identifier: str, task: str) -> str:
     """
     Create a safe job name for SLURM.
@@ -358,7 +405,7 @@ def sanitize_job_name(tokenizer: str, identifier: str, task: str) -> str:
     """
     safe = identifier.replace(' ', '_').replace('/', '_').replace('-', '_')
     safe = ''.join(c if c.isalnum() or c in '_-' else '_' for c in safe)
-    return f"{tokenizer}_{task}_{safe}"
+    return f"{task}_{tokenizer}_{safe}"
 
 
 def is_job_running(tokenizer: str, identifier: str, task: str) -> bool:
@@ -394,7 +441,7 @@ def is_job_running(tokenizer: str, identifier: str, task: str) -> bool:
         return False
 
 
-def submit_job(tokenizer: str, language: str = None, dataset: str = None, task: str = None, dry_run: bool = False) -> Tuple[bool, str]:
+def submit_job(tokenizer: str, language: str = None, dataset: str = None, languages: List[str] = None, task: str = None, dry_run: bool = False) -> Tuple[bool, str]:
     """
     Submit a SLURM job for a tokenizer-language or tokenizer-dataset combination.
     
@@ -402,6 +449,7 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, task: 
         tokenizer: Tokenizer name
         language: Language name (for language-based jobs)
         dataset: Dataset name (for dataset-based jobs)
+        languages: List of language names (for dataset-based jobs with specific languages)
         task: Task name (metrics or samples)
         dry_run: If True, only show what would be submitted
     
@@ -410,8 +458,11 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, task: 
         - success: True if job was submitted or would be submitted (dry-run)
         - status: 'submitted', 'skipped', or 'failed'
     """
-    if (language is None) == (dataset is None):
-        raise ValueError("Either language or dataset must be provided, not both")
+    # Validate arguments: either language, or (dataset with optional languages list)
+    if language is not None and (dataset is not None or languages is not None):
+        raise ValueError("Cannot specify both language and dataset/languages")
+    if language is None and dataset is None:
+        raise ValueError("Either language or dataset must be provided")
     
     if task is None:
         raise ValueError("Task must be provided")
@@ -423,7 +474,10 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, task: 
         return (False, 'failed')
     
     # Create identifier for job name
-    identifier = dataset if dataset else language
+    if languages:
+        identifier = dataset if dataset else f"{len(languages)}_languages"
+    else:
+        identifier = dataset if dataset else language
     job_name = sanitize_job_name(tokenizer, identifier, task)
     
     # Check if a job for this combination is already running
@@ -435,12 +489,20 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, task: 
     tokenizer_quoted = shlex.quote(tokenizer)
     
     if task == "metrics":
-        if dataset:
+        if languages:
+            # Use --languages with all missing languages (only process these, not entire dataset)
+            languages_quoted = ' '.join(shlex.quote(lang) for lang in languages)
+            command = f"python scripts/tokenizer_evaluation.py --tokenizer {tokenizer_quoted} --languages {languages_quoted}"
+        elif dataset:
             command = f"python scripts/tokenizer_evaluation.py --tokenizer {tokenizer_quoted} --dataset {shlex.quote(dataset)}"
         else:
             command = f"python scripts/tokenizer_evaluation.py --tokenizer {tokenizer_quoted} --language {shlex.quote(language)}"
     elif task == "samples":
-        if dataset:
+        if languages:
+            # Use --languages with all missing languages (only process these, not entire dataset)
+            languages_quoted = ' '.join(shlex.quote(lang) for lang in languages)
+            command = f"python scripts/generate_samples.py --tokenizer {tokenizer_quoted} --languages {languages_quoted} --num-samples 5"
+        elif dataset:
             command = f"python scripts/generate_samples.py --tokenizer {tokenizer_quoted} --datasets {shlex.quote(dataset)} --num-samples 5"
         else:
             command = f"python scripts/generate_samples.py --tokenizer {tokenizer_quoted} --languages {shlex.quote(language)} --num-samples 5"
@@ -448,12 +510,16 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, task: 
         print(f"  ✗ Unknown task: {task}")
         return (False, 'failed')
     
+    # Get memory requirement for this tokenizer-dataset combination
+    memory = get_memory_for_tokenizer(tokenizer, dataset)
+    
     # Create SLURM script
     slurm_script = SLURM_TEMPLATE.format(
         job_name=job_name,
         log_dir=str(LOGS_DIR),
         venv_path=venv_path,
         project_root=str(PROJECT_ROOT),
+        memory=memory,
         command=command
     )
     
@@ -461,6 +527,7 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, task: 
         print(f"  [DRY RUN] Would submit: {tokenizer} - {identifier} ({task})")
         print(f"    Job name: {job_name}")
         print(f"    Command: {command}")
+        print()
         return (True, 'submitted')
     
     # Submit via sbatch
@@ -474,6 +541,7 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, task: 
         )
         job_id = result.stdout.strip().split()[-1]
         print(f"  ✓ Submitted job {job_id}: {tokenizer} - {identifier} ({task})")
+        time.sleep(1)  # Wait 1 second between submissions
         return (True, 'submitted')
     except subprocess.CalledProcessError as e:
         print(f"  ✗ Failed to submit job: {e}")
@@ -498,6 +566,9 @@ Examples:
 
   # Dry-run: Only show what would be submitted, don't actually submit
   python scripts/submit_missing_jobs.py --dry-run
+
+  # Submit only one job per task (useful after dry-run to test step by step)
+  python scripts/submit_missing_jobs.py --submit-one
 
   # Validate metrics files for completeness (treats invalid files as missing)
   python scripts/submit_missing_jobs.py --validate-metrics
@@ -536,8 +607,8 @@ Examples:
     parser.add_argument(
         '--group-by',
         choices=['language', 'dataset'],
-        default='language',
-        help='Group jobs by language (one job per language) or dataset (one job per dataset, all languages together). Default: language'
+        default='dataset',
+        help='Group jobs by language (one job per language) or dataset (one job per dataset, all languages together). Default: dataset'
     )
     
     parser.add_argument(
@@ -554,6 +625,12 @@ Examples:
         help='Only submit for specific languages (default: all)'
     )
     
+    parser.add_argument(
+        '--submit-one',
+        action='store_true',
+        help='Only submit one job per task (useful after dry-run to test step by step)'
+    )
+    
     args = parser.parse_args()
     
     print("="*60)
@@ -562,6 +639,8 @@ Examples:
     print(f"Task(s): {args.task}")
     print(f"Group by: {args.group_by}")
     print(f"Dry-run: {args.dry_run}")
+    if args.submit_one:
+        print(f"Submit one per task: Yes (only first job per task)")
     if args.validate_metrics:
         print(f"Validate metrics: Yes (checking completeness)")
     if args.tokenizers:
@@ -617,23 +696,35 @@ Examples:
             print(f"\n4. Submitting missing metrics jobs grouped by dataset ({len(missing_metrics)} languages)...")
             missing_by_dataset = get_missing_by_dataset(missing_metrics)
             print(f"   Grouped into {len(missing_by_dataset)} dataset jobs")
+            if args.submit_one:
+                print(f"   [Submit-one mode: Only submitting first job]")
             for (tokenizer, dataset), languages in sorted(missing_by_dataset.items()):
                 print(f"   {tokenizer} - {dataset}: {len(languages)} languages")
-                success, status = submit_job(tokenizer, dataset=dataset, task="metrics", dry_run=args.dry_run)
+                success, status = submit_job(tokenizer, dataset=dataset, languages=languages, task="metrics", dry_run=args.dry_run)
                 if status == 'submitted':
                     total_submitted += 1
+                    if args.submit_one:
+                        break  # Only submit one job
                 elif status == 'skipped':
                     total_skipped += 1
+                    if args.submit_one:
+                        break  # Only submit one job
                 else:
                     total_failed += 1
         else:
             print(f"\n4. Submitting missing metrics jobs ({len(missing_metrics)})...")
+            if args.submit_one:
+                print(f"   [Submit-one mode: Only submitting first job]")
             for tokenizer, language in sorted(missing_metrics):
                 success, status = submit_job(tokenizer, language=language, task="metrics", dry_run=args.dry_run)
                 if status == 'submitted':
                     total_submitted += 1
+                    if args.submit_one:
+                        break  # Only submit one job
                 elif status == 'skipped':
                     total_skipped += 1
+                    if args.submit_one:
+                        break  # Only submit one job
                 else:
                     total_failed += 1
     
@@ -642,23 +733,35 @@ Examples:
             print(f"\n5. Submitting missing sample jobs grouped by dataset ({len(missing_samples)} languages)...")
             missing_by_dataset = get_missing_by_dataset(missing_samples)
             print(f"   Grouped into {len(missing_by_dataset)} dataset jobs")
+            if args.submit_one:
+                print(f"   [Submit-one mode: Only submitting first job]")
             for (tokenizer, dataset), languages in sorted(missing_by_dataset.items()):
                 print(f"   {tokenizer} - {dataset}: {len(languages)} languages")
-                success, status = submit_job(tokenizer, dataset=dataset, task="samples", dry_run=args.dry_run)
+                success, status = submit_job(tokenizer, dataset=dataset, languages=languages, task="samples", dry_run=args.dry_run)
                 if status == 'submitted':
                     total_submitted += 1
+                    if args.submit_one:
+                        break  # Only submit one job
                 elif status == 'skipped':
                     total_skipped += 1
+                    if args.submit_one:
+                        break  # Only submit one job
                 else:
                     total_failed += 1
         else:
             print(f"\n5. Submitting missing sample jobs ({len(missing_samples)})...")
+            if args.submit_one:
+                print(f"   [Submit-one mode: Only submitting first job]")
             for tokenizer, language in sorted(missing_samples):
                 success, status = submit_job(tokenizer, language=language, task="samples", dry_run=args.dry_run)
                 if status == 'submitted':
                     total_submitted += 1
+                    if args.submit_one:
+                        break  # Only submit one job
                 elif status == 'skipped':
                     total_skipped += 1
+                    if args.submit_one:
+                        break  # Only submit one job
                 else:
                     total_failed += 1
     
