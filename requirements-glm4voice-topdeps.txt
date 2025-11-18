@@ -35,6 +35,7 @@ transformers==4.48.0 # like in cosyvoice-deps
 hydra
 lightning
 gdown
+wget
 
 
 # === ADDITIONAL REQUIREMENTS FOR BENCHMARK-AUDIO-TOKENIZER ===
