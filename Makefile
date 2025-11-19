@@ -5,6 +5,26 @@ SHELL := /bin/bash
 venvs: neucodec cosyvoice2 xcodec2 wavtokenizer glm4voice
 
 
+
+# neucodec with cuda
+neucodec:
+	mv .venv-neucodec .venv-neucodec-old || true
+	rm -rf .venv-neucodec-old &
+
+	uv venv .venv-neucodec --system-site-packages
+
+	uv pip compile requirements-neucodec-topdeps.txt -o requirements-neucodec-subdeps.txt
+	sed -i '/^torch==/d' requirements-neucodec-subdeps.txt
+	sed -i '/^torchaudio==/d' requirements-neucodec-subdeps.txt
+	
+	source .venv-neucodec/bin/activate && \
+	uv pip install --no-deps --no-build-isolation git+https://github.com/pytorch/audio.git@release/2.6 && \
+	uv pip install --no-deps --no-build-isolation git+https://github.com/pytorch/ao.git@v0.6.1 && \
+	uv pip install --no-deps -r requirements-neucodec-subdeps.txt && \
+	uv pip install --no-deps neucodec==0.0.4 && \
+	python -c "import torch; print(f'PyTorch Version: {torch.__version__}'); print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'CUDA Version: {torch.version.cuda}'); import torchaudio; print(f'torchaudio Version: {torchaudio.__version__}')"
+
+
 # glm4voice
 glm4voice:
 	mv .venv-glm4voice .venv-glm4voice-old || true
@@ -68,16 +88,16 @@ xcodec2:
 	python -c "import torch; print(f'PyTorch Version: {torch.__version__}'); print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'CUDA Version: {torch.version.cuda}'); import torchaudio; print(f'torchaudio Version: {torchaudio.__version__}')"
 
 
-# neucodec # CPU-only torch
-neucodec:
-	mv .venv-neucodec .venv-neucodec-old || true
-	rm -rf .venv-neucodec-old &
+# # neucodec # CPU-only torch
+# neucodec:
+# 	mv .venv-neucodec .venv-neucodec-old || true
+# 	rm -rf .venv-neucodec-old &
 
-	uv venv .venv-neucodec
+# 	uv venv .venv-neucodec
 
-	source .venv-neucodec/bin/activate && \
-	uv pip install -r requirements_neucodec-venv.txt && \
-	python -c "import torch; print(f'PyTorch Version: {torch.__version__}'); print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'CUDA Version: {torch.version.cuda}'); import torchaudio; print(f'torchaudio Version: {torchaudio.__version__}')"
+# 	source .venv-neucodec/bin/activate && \
+# 	uv pip install -r requirements_neucodec-venv.txt && \
+# 	python -c "import torch; print(f'PyTorch Version: {torch.__version__}'); print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'CUDA Version: {torch.version.cuda}'); import torchaudio; print(f'torchaudio Version: {torchaudio.__version__}')"
 
 
 # #############################################################################
