@@ -37,73 +37,73 @@ LANGUAGE COVERAGE ANALYSIS
 ============================================================
 
 Total unique languages: 77
-Languages in all tokenizers: 58
-  blues, bosnia-herzegovina, bulgaria, classical, country, croatia, denmark, disco, estonia, finland... (+48 more)
+Languages in all tokenizers: 74
+  Animal Sound Archive, NatureLM, Watkins, blues, bosnia-herzegovina, bulgaria, classical, country, croatia, denmark... (+64 more)
 
-Languages only in COSYVOICE2: 3
-  WavCaps, Xeno-canto, iNaturalist
+Languages only in COSYVOICE2: 2
+  Xeno-canto, iNaturalist
 
 NOTE: Overall comparisons include ALL languages for each tokenizer.
       This means the comparison may not be perfectly fair if
       the tokenizers were tested on different language sets.
       See 'common_languages_comparison.png' for a fair comparison
-      using only the 58 languages all tokenizers have.
+      using only the 74 languages all tokenizers have.
 
 ============================================================
 COSYVOICE2 SUMMARY STATISTICS
 ============================================================
-Total languages tested: 75
-Total samples: 6886
+Total languages tested: 77
+Total samples: 6943
 
 ------------------------------------------------------------
 METRIC STATISTICS
 ------------------------------------------------------------
 
 MSE:
-  Mean: 0.0381
-  Std:  0.0203
+  Mean: 0.0390
+  Std:  0.0210
   Min:  0.0144
   Max:  0.1223
   Median: 0.0317
 
 SNR_DB:
-  Mean: -3.6105
-  Std:  0.8031
+  Mean: -3.5932
+  Std:  0.7989
   Min:  -6.7927
   Max:  -2.0309
-  Median: -3.6378
+  Median: -3.5770
 
 SDR_DB:
-  Mean: -3.7516
-  Std:  0.9126
+  Mean: -3.7290
+  Std:  0.9092
   Min:  -6.7418
   Max:  -1.9928
-  Median: -3.7451
+  Median: -3.6522
 
 PESQ:
-  Mean: 1.1472
-  Std:  0.0541
+  Mean: 1.1443
+  Std:  0.0563
   Min:  1.0298
   Max:  1.2529
-  Median: 1.1561
+  Median: 1.1549
 
 STOI:
-  Mean: 0.6416
-  Std:  0.1467
+  Mean: 0.6332
+  Std:  0.1536
   Min:  0.1715
   Max:  0.7844
-  Median: 0.6920
+  Median: 0.6915
 
 ESTOI:
-  Mean: 0.4615
-  Std:  0.1412
+  Mean: 0.4542
+  Std:  0.1461
   Min:  0.0752
   Max:  0.6254
-  Median: 0.5014
+  Median: 0.4951
 
 COMPRESSION RATIO:
-  Mean: 665.27
-  Std:  75.13
+  Mean: 670.87
+  Std:  81.77
 
 TOKENS PER SECOND:
   Mean: 25.02
@@ -112,238 +112,238 @@ TOKENS PER SECOND:
 ============================================================
 GLM4VOICE SUMMARY STATISTICS
 ============================================================
-Total languages tested: 72
-Total samples: 6450
+Total languages tested: 75
+Total samples: 6748
 
 ------------------------------------------------------------
 METRIC STATISTICS
 ------------------------------------------------------------
 
 MSE:
-  Mean: 0.0337
-  Std:  0.0087
+  Mean: 0.0358
+  Std:  0.0154
   Min:  0.0166
-  Max:  0.0578
-  Median: 0.0323
+  Max:  0.1380
+  Median: 0.0325
 
 SNR_DB:
-  Mean: -3.4341
-  Std:  1.3104
+  Mean: -3.4505
+  Std:  1.2901
   Min:  -5.8794
   Max:  -0.5225
-  Median: -3.6360
+  Median: -3.6323
 
 SDR_DB:
-  Mean: -3.5947
-  Std:  1.5034
+  Mean: -3.6191
+  Std:  1.4972
   Min:  -7.8513
   Max:  -0.5482
   Median: -3.7295
 
 PESQ:
-  Mean: 1.0655
-  Std:  0.0310
+  Mean: 1.0698
+  Std:  0.0396
   Min:  1.0279
-  Max:  1.2607
-  Median: 1.0611
+  Max:  1.2628
+  Median: 1.0614
 
 STOI:
-  Mean: 0.4898
-  Std:  0.1281
+  Mean: 0.4751
+  Std:  0.1451
   Min:  0.0825
   Max:  0.6153
-  Median: 0.5336
+  Median: 0.5309
 
 ESTOI:
-  Mean: 0.2686
-  Std:  0.0958
+  Mean: 0.2590
+  Std:  0.1052
   Min:  0.0073
   Max:  0.4211
-  Median: 0.2970
+  Median: 0.2922
 
 COMPRESSION RATIO:
-  Mean: 1343.80
-  Std:  168.34
+  Mean: 1340.63
+  Std:  165.64
 
 TOKENS PER SECOND:
-  Mean: 12.53
-  Std:  0.01
+  Mean: 12.54
+  Std:  0.04
 
 ============================================================
 NEUCODEC SUMMARY STATISTICS
 ============================================================
-Total languages tested: 63
-Total samples: 5550
+Total languages tested: 75
+Total samples: 6747
 
 ------------------------------------------------------------
 METRIC STATISTICS
 ------------------------------------------------------------
 
 MSE:
-  Mean: 0.0293
-  Std:  0.0176
+  Mean: 0.0288
+  Std:  0.0166
   Min:  0.0119
   Max:  0.1162
   Median: 0.0228
 
 SNR_DB:
-  Mean: -1.7523
-  Std:  0.7845
+  Mean: -1.8354
+  Std:  0.7729
   Min:  -4.1614
   Max:  -0.0553
-  Median: -1.7841
+  Median: -1.8425
 
 SDR_DB:
-  Mean: -1.8230
-  Std:  0.9056
+  Mean: -1.8964
+  Std:  0.8695
   Min:  -4.5237
   Max:  -0.0420
-  Median: -1.7629
+  Median: -1.8705
 
 PESQ:
-  Mean: 1.7601
-  Std:  0.1700
-  Min:  1.2250
+  Mean: 1.6671
+  Std:  0.2723
+  Min:  1.0801
   Max:  2.0673
-  Median: 1.7894
+  Median: 1.7489
 
 STOI:
-  Mean: 0.7597
-  Std:  0.1000
+  Mean: 0.7239
+  Std:  0.1367
   Min:  0.3161
-  Max:  0.8641
-  Median: 0.7780
+  Max:  0.8647
+  Median: 0.7728
 
 ESTOI:
-  Mean: 0.6146
-  Std:  0.1010
+  Mean: 0.5748
+  Std:  0.1396
   Min:  0.1795
-  Max:  0.7218
-  Median: 0.6466
+  Max:  0.7421
+  Median: 0.6273
 
 COMPRESSION RATIO:
-  Mean: 339.31
-  Std:  44.59
+  Mean: 336.25
+  Std:  41.42
 
 TOKENS PER SECOND:
   Mean: 49.98
-  Std:  0.05
+  Std:  0.04
 
 ============================================================
 WAVTOKENIZER SUMMARY STATISTICS
 ============================================================
-Total languages tested: 72
-Total samples: 6450
+Total languages tested: 74
+Total samples: 6650
 
 ------------------------------------------------------------
 METRIC STATISTICS
 ------------------------------------------------------------
 
 MSE:
-  Mean: 0.0141
-  Std:  0.0092
+  Mean: 0.0156
+  Std:  0.0136
   Min:  0.0045
-  Max:  0.0462
-  Median: 0.0104
+  Max:  0.0958
+  Median: 0.0107
 
 SNR_DB:
-  Mean: 1.1809
-  Std:  0.8673
+  Mean: 1.1432
+  Std:  0.8888
   Min:  -0.7478
   Max:  3.1385
-  Median: 1.2174
+  Median: 1.2160
 
 SDR_DB:
-  Mean: 1.1175
-  Std:  0.8757
+  Mean: 1.0927
+  Std:  0.8952
   Min:  -0.8668
   Max:  3.0548
-  Median: 1.1607
+  Median: 1.1333
 
 PESQ:
-  Mean: 1.5645
-  Std:  0.2083
+  Mean: 1.5577
+  Std:  0.2096
   Min:  1.0985
   Max:  1.9183
-  Median: 1.6364
+  Median: 1.6313
 
 STOI:
-  Mean: 0.7033
-  Std:  0.1290
-  Min:  0.2324
+  Mean: 0.6906
+  Std:  0.1486
+  Min:  0.2099
   Max:  0.8464
-  Median: 0.7369
+  Median: 0.7350
 
 ESTOI:
-  Mean: 0.5237
-  Std:  0.1344
-  Min:  0.1246
+  Mean: 0.5123
+  Std:  0.1493
+  Min:  0.0883
   Max:  0.6990
-  Median: 0.5712
+  Median: 0.5692
 
 COMPRESSION RATIO:
-  Mean: 420.66
-  Std:  52.71
+  Mean: 420.04
+  Std:  52.11
 
 TOKENS PER SECOND:
-  Mean: 40.03
-  Std:  0.01
+  Mean: 40.04
+  Std:  0.04
 
 ============================================================
 XCODEC2 SUMMARY STATISTICS
 ============================================================
-Total languages tested: 73
-Total samples: 6550
+Total languages tested: 75
+Total samples: 6747
 
 ------------------------------------------------------------
 METRIC STATISTICS
 ------------------------------------------------------------
 
 MSE:
-  Mean: 0.0197
-  Std:  0.0174
+  Mean: 0.0200
+  Std:  0.0173
   Min:  0.0053
-  Max:  0.0830
-  Median: 0.0128
+  Max:  0.0832
+  Median: 0.0129
 
 SNR_DB:
-  Mean: 0.4010
-  Std:  1.5181
-  Min:  -3.3296
+  Mean: 0.3285
+  Std:  1.5613
+  Min:  -3.3402
   Max:  4.4116
-  Median: 0.6362
+  Median: 0.5939
 
 SDR_DB:
-  Mean: 0.3758
-  Std:  1.5321
-  Min:  -3.3240
+  Mean: 0.3002
+  Std:  1.5787
+  Min:  -3.3350
   Max:  4.3322
-  Median: 0.6225
+  Median: 0.5377
 
 PESQ:
-  Mean: 2.0680
-  Std:  0.1977
-  Min:  1.6417
+  Mean: 1.9075
+  Std:  0.3841
+  Min:  1.0899
   Max:  2.4866
-  Median: 2.0778
+  Median: 2.0045
 
 STOI:
-  Mean: 0.8290
-  Std:  0.0471
-  Min:  0.7329
+  Mean: 0.7656
+  Std:  0.1470
+  Min:  0.3378
   Max:  0.9104
-  Median: 0.8382
+  Median: 0.8212
 
 ESTOI:
-  Mean: 0.6973
-  Std:  0.0641
-  Min:  0.5480
+  Mean: 0.6277
+  Std:  0.1604
+  Min:  0.2089
   Max:  0.8129
-  Median: 0.7098
+  Median: 0.6914
 
 COMPRESSION RATIO:
-  Mean: 336.11
-  Std:  42.02
+  Mean: 335.67
+  Std:  41.54
 
 TOKENS PER SECOND:
   Mean: 50.07
@@ -355,102 +355,102 @@ OVERALL COMPARISON (All Tokenizers)
 NOTE: Includes all languages each tokenizer was tested on
 
 MSE:
-  COSYVOICE2: 0.0381
-  GLM4VOICE: 0.0337
-  NEUCODEC: 0.0293
-  WAVTOKENIZER: 0.0141
-  XCODEC2: 0.0197
+  COSYVOICE2: 0.0390
+  GLM4VOICE: 0.0358
+  NEUCODEC: 0.0288
+  WAVTOKENIZER: 0.0156
+  XCODEC2: 0.0200
   Best: WAVTOKENIZER
 
 SNR_DB:
-  COSYVOICE2: -3.6105
-  GLM4VOICE: -3.4341
-  NEUCODEC: -1.7523
-  WAVTOKENIZER: 1.1809
-  XCODEC2: 0.4010
+  COSYVOICE2: -3.5932
+  GLM4VOICE: -3.4505
+  NEUCODEC: -1.8354
+  WAVTOKENIZER: 1.1432
+  XCODEC2: 0.3285
   Best: WAVTOKENIZER
 
 SDR_DB:
-  COSYVOICE2: -3.7516
-  GLM4VOICE: -3.5947
-  NEUCODEC: -1.8230
-  WAVTOKENIZER: 1.1175
-  XCODEC2: 0.3758
+  COSYVOICE2: -3.7290
+  GLM4VOICE: -3.6191
+  NEUCODEC: -1.8964
+  WAVTOKENIZER: 1.0927
+  XCODEC2: 0.3002
   Best: WAVTOKENIZER
 
 PESQ:
-  COSYVOICE2: 1.1472
-  GLM4VOICE: 1.0655
-  NEUCODEC: 1.7601
-  WAVTOKENIZER: 1.5645
-  XCODEC2: 2.0680
+  COSYVOICE2: 1.1443
+  GLM4VOICE: 1.0698
+  NEUCODEC: 1.6671
+  WAVTOKENIZER: 1.5577
+  XCODEC2: 1.9075
   Best: XCODEC2
 
 STOI:
-  COSYVOICE2: 0.6416
-  GLM4VOICE: 0.4898
-  NEUCODEC: 0.7597
-  WAVTOKENIZER: 0.7033
-  XCODEC2: 0.8290
+  COSYVOICE2: 0.6332
+  GLM4VOICE: 0.4751
+  NEUCODEC: 0.7239
+  WAVTOKENIZER: 0.6906
+  XCODEC2: 0.7656
   Best: XCODEC2
 
 ESTOI:
-  COSYVOICE2: 0.4615
-  GLM4VOICE: 0.2686
-  NEUCODEC: 0.6146
-  WAVTOKENIZER: 0.5237
-  XCODEC2: 0.6973
+  COSYVOICE2: 0.4542
+  GLM4VOICE: 0.2590
+  NEUCODEC: 0.5748
+  WAVTOKENIZER: 0.5123
+  XCODEC2: 0.6277
   Best: XCODEC2
 
 ============================================================
-FAIR COMPARISON (Common Languages Only, n=58)
+FAIR COMPARISON (Common Languages Only, n=74)
 ============================================================
-Common languages: blues, bosnia-herzegovina, bulgaria, classical, country, croatia, denmark, disco, estonia, finland... (+48 more)
+Common languages: Animal Sound Archive, NatureLM, Watkins, blues, bosnia-herzegovina, bulgaria, classical, country, croatia, denmark... (+64 more)
 
 MSE:
-  COSYVOICE2: 0.0371
-  GLM4VOICE: 0.0345
-  NEUCODEC: 0.0266
-  WAVTOKENIZER: 0.0139
-  XCODEC2: 0.0181
+  COSYVOICE2: 0.0395
+  GLM4VOICE: 0.0356
+  NEUCODEC: 0.0288
+  WAVTOKENIZER: 0.0156
+  XCODEC2: 0.0198
   Best: WAVTOKENIZER
 
 SNR_DB:
-  COSYVOICE2: -3.5392
-  GLM4VOICE: -3.5838
-  NEUCODEC: -1.7407
-  WAVTOKENIZER: 1.2450
-  XCODEC2: 0.4072
+  COSYVOICE2: -3.5730
+  GLM4VOICE: -3.4356
+  NEUCODEC: -1.8279
+  WAVTOKENIZER: 1.1432
+  XCODEC2: 0.3660
   Best: WAVTOKENIZER
 
 SDR_DB:
-  COSYVOICE2: -3.6637
-  GLM4VOICE: -3.7632
-  NEUCODEC: -1.8133
-  WAVTOKENIZER: 1.1826
-  XCODEC2: 0.3569
+  COSYVOICE2: -3.6971
+  GLM4VOICE: -3.5950
+  NEUCODEC: -1.8881
+  WAVTOKENIZER: 1.0927
+  XCODEC2: 0.3390
   Best: WAVTOKENIZER
 
 PESQ:
-  COSYVOICE2: 1.1504
-  GLM4VOICE: 1.0671
-  NEUCODEC: 1.7805
-  WAVTOKENIZER: 1.5706
-  XCODEC2: 2.0586
+  COSYVOICE2: 1.1443
+  GLM4VOICE: 1.0672
+  NEUCODEC: 1.6713
+  WAVTOKENIZER: 1.5577
+  XCODEC2: 1.9141
   Best: XCODEC2
 
 STOI:
-  COSYVOICE2: 0.6515
-  GLM4VOICE: 0.4977
-  NEUCODEC: 0.7773
-  WAVTOKENIZER: 0.7087
-  XCODEC2: 0.8246
+  COSYVOICE2: 0.6332
+  GLM4VOICE: 0.4794
+  NEUCODEC: 0.7275
+  WAVTOKENIZER: 0.6906
+  XCODEC2: 0.7693
   Best: XCODEC2
 
 ESTOI:
-  COSYVOICE2: 0.4714
-  GLM4VOICE: 0.2781
-  NEUCODEC: 0.6312
-  WAVTOKENIZER: 0.5288
-  XCODEC2: 0.6939
+  COSYVOICE2: 0.4542
+  GLM4VOICE: 0.2619
+  NEUCODEC: 0.5789
+  WAVTOKENIZER: 0.5123
+  XCODEC2: 0.6323
   Best: XCODEC2
