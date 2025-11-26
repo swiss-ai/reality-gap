@@ -154,12 +154,51 @@ class CosyVoice2Tokenizer(BaseAudioTokenizer):
             fp16=(self.device != "cpu")
         )
 
+        # Set device explicitly to match tokenizer device
+        # Ensure we have both string and torch.device versions
+        if isinstance(self.device, str):
+            device_str = self.device
+            model_device = torch.device(self.device)
+        else:
+            device_str = str(self.device)
+            model_device = self.device
+        
+        # Override the device that was auto-set in CosyVoice2Model.__init__
+        # Use string for map_location in torch.load (more reliable)
+        self.model.device = device_str
+
         # Load model weights
+        # map_location works best with string device names
         self.model.load(
             str(self.model_dir / "llm.pt"),
             str(self.model_dir / "flow.pt"),
             str(self.model_dir / "hift.pt")
         )
+        
+        # Now set device to torch.device object for .to() calls in token2wav
+        self.model.device = model_device
+        
+        # Explicitly move all model components to the correct device
+        # This ensures all nested modules are moved correctly
+        # Use .to() which recursively moves all parameters and buffers
+        self.model.llm = self.model.llm.to(model_device)
+        self.model.flow = self.model.flow.to(model_device)
+        self.model.hift = self.model.hift.to(model_device)
+        
+        # Force evaluation mode
+        self.model.llm.eval()
+        self.model.flow.eval()
+        self.model.hift.eval()
+        
+        # Additional safety: explicitly move all parameters and buffers to device
+        # Sometimes .to() doesn't catch all nested modules
+        for module in [self.model.llm, self.model.flow, self.model.hift]:
+            for param in module.parameters():
+                if param.device != model_device:
+                    param.data = param.data.to(model_device)
+            for buffer in module.buffers():
+                if buffer.device != model_device:
+                    buffer.data = buffer.data.to(model_device)
 
         print("✓ CosyVoice2 decoder models loaded successfully")
 
@@ -181,11 +220,26 @@ class CosyVoice2Tokenizer(BaseAudioTokenizer):
 
         # Convert to numpy
         audio_np = audio.cpu().numpy()
+        
+        # Whisper's log_mel_spectrogram adds 200 samples padding on each side
+        # Minimum audio length must be at least 400 samples to avoid padding errors
+        MIN_AUDIO_LENGTH = 400  # 200 samples padding on each side
+        
+        if len(audio_np) < MIN_AUDIO_LENGTH:
+            # Pad audio to minimum length with zeros
+            padding_needed = MIN_AUDIO_LENGTH - len(audio_np)
+            audio_np = np.pad(audio_np, (0, padding_needed), mode='constant', constant_values=0)
+        
         tokens = []
 
         # Process in 30-second chunks for long audio
         for i in range(0, len(audio_np), 30 * 16000):
             chunk = audio_np[i:i + 30 * 16000]
+            
+            # Ensure chunk meets minimum length requirement
+            if len(chunk) < MIN_AUDIO_LENGTH:
+                padding_needed = MIN_AUDIO_LENGTH - len(chunk)
+                chunk = np.pad(chunk, (0, padding_needed), mode='constant', constant_values=0)
 
             # Extract mel features using whisper
             chunk_tensor = torch.from_numpy(chunk).float().to(self.device)
