@@ -25,3 +25,10 @@
 [submodule "src/repos/stepaudioeditx"]
 	path = src/repos/stepaudioeditx
 	url = https://github.com/stepfun-ai/Step-Audio-EditX.git
+[submodule "src/repos/posttraining-data"]
+	path = src/repos/posttraining-data
+	url = https://github.com/swiss-ai/posttraining-data.git
+[submodule "src/repos/benchmark-image-tokenzier"]
+	path = src/repos/benchmark-image-tokenzier
+	url = https://github.com/swiss-ai/benchmark-image-tokenzier.git
+	branch = yxu-tokenization-refactor
