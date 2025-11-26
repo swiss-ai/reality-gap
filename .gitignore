@@ -6,9 +6,11 @@
 .venv*/
 *.wav
 hidden-*
-requirements-*-subdeps.txt
+requirements*-subdeps.txt
 core_*
 samples
+.cursor/
+plans/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
