@@ -33,13 +33,13 @@ def parse_args():
         help="Directory containing the standardized HF datasets.",
     )
     parser.add_argument(
-        "--megatron-root",
-        default="data/megatron/librispeech_clean",
+        "--tokenized-root",
+        default="data/tokenized/librispeech_clean",
         help="Output path for Megatron-compatible IndexedDatasets.",
     )
     parser.add_argument(
-        "--tokenized-root",
-        default="data/tokenized/librispeech_clean",
+        "--hf-tokenized-root",
+        default="data/hf_tokenized/librispeech_clean",
         help="Output path for optional HF token datasets.",
     )
     parser.add_argument(
@@ -68,13 +68,13 @@ def parse_args():
         "--log-dir",
         type=str,
         default=None,
-        help="Optional override for log directory; defaults to <megatron_root>/<split>/logs.",
+        help="Optional override for log directory; defaults to <tokenized_root>/<split>/logs.",
     )
     parser.add_argument(
         "--stage-dir",
         type=str,
         default=None,
-        help="Optional staging directory (e.g., $SCRATCH) before moving results into --megatron-root.",
+        help="Optional staging directory (e.g., $SCRATCH) before moving results into --tokenized-root.",
     )
     parser.add_argument(
         "--skip-megatron",
@@ -138,7 +138,7 @@ def process_split(split: str, args, tokenizer: AudioTokenizer):
             f"→ {split}: shard {args.shard_id}/{args.num_shards} contains {len(dataset)} examples."
         )
 
-    base_output = Path(args.megatron_root) / split
+    base_output = Path(args.tokenized_root) / split
     tokens_dir = base_output / "tokens"
     logs_dir = (
         Path(args.log_dir) / split
@@ -213,7 +213,7 @@ def process_split(split: str, args, tokenizer: AudioTokenizer):
 
     if args.write_tokenized:
         tokenized_dataset = datasets.Dataset.from_list(tokenized_records)
-        tokenized_dir = Path(args.tokenized_root) / split
+        tokenized_dir = Path(args.hf_tokenized_root) / split
         tokenized_dir.mkdir(parents=True, exist_ok=True)
         tokenized_dataset.save_to_disk(str(tokenized_dir))
 

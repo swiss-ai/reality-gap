@@ -52,8 +52,7 @@ The `Makefile` handles dependency compilation and ensures compatibility with the
 
 - `data/raw` – raw dataset downloads e.g. from huggingface.
 - `data/standardized` – schema-compliant HF datasets (audio resampled, metadata normalized).
-- `data/tokenized` – token sequences plus auxiliary info for debugging/auditing.
-- `data/megatron` – final `.bin/.idx` files ready for Megatron/NeMo.
+- `data/tokenized` – final `.bin/.idx` files ready for Megatron/NeMo.
 - `scripts/` – driver scripts (`download_librispeech.sh`, `standardize_librispeech.py`, `tokenize_librispeech.py`, …).
 - `tokenizers/` – AudioTokenizer adapter layer plus Megatron writer helper.
 
@@ -122,7 +121,7 @@ python scripts/standardize_librispeech.py \
 ```bash
 python scripts/tokenize_librispeech.py \
   --standardized-root data/standardized/librispeech_clean \
-  --megatron-root data/megatron/librispeech_clean \
+  --tokenized-root data/tokenized/librispeech_clean \
   --stage-dir $SCRATCH/tokenized_tmp \
   --log-dir $SCRATCH/token_logs \
   --num-shards 1 \
@@ -131,8 +130,8 @@ python scripts/tokenize_librispeech.py \
 
 **Key options:**
 - Uses `AudioTokenizer` (WavTokenizer backend plus BOS/AUDIO/META wrapper).
-- Megatron-first: each split writes `data/megatron/<split>/tokens/{tokens.bin,tokens.idx,tokens.meta.json}` plus `logs/tokenization_stats.json`.
-- Pass `--write-tokenized` if you still need HF `save_to_disk` datasets for debugging (written under `--tokenized-root`).
+- Each split writes `data/tokenized/<split>/tokens/{tokens.bin,tokens.idx,tokens.meta.json}` plus `logs/tokenization_stats.json`.
+- Pass `--write-tokenized` if you still need HF `save_to_disk` datasets for debugging (written under `--hf-tokenized-root`).
 - `--stage-dir` can be pointed at `$SCRATCH` to keep intermediate `.bin/.idx` off Lustre until the split finishes.
 - Support for `--num-shards/--shard-id` lets you process subsets of a split (useful for distributed jobs).
 
