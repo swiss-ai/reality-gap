@@ -1,0 +1,62 @@
+# DOWNLOAD DEPENDENCIES (mixed but originally from 01-hf-download)
+# notebook stuff
+jupyterlab>=4.0
+ipykernel>=6.0
+notebook>=7.0
+
+# standard stuff, check if needed
+pandas>=2.0
+
+# Audio IO and DSP helpers
+soundfile>=0.12
+librosa>=0.10
+
+# pin torch versions like Pytorch NGC 24.11 although removed by Makefile
+torch==2.6.0
+torchaudio==2.6.0
+
+# ensure numpy<2.0 for compatibility with torch version of NGC
+numpy<2.0
+
+# huggingface stuff
+huggingface_hub>=0.23
+# datasets==3.3.2 # use version as defined below
+
+
+# WAVTOKENIZER DEPENDENCIES
+scipy
+soundfile
+pyyaml
+# huggingface_hub already
+transformers
+
+# Additional dependencies needed for WavTokenizer
+encodec==0.1.1
+einops==0.6.1
+pytorch-lightning==1.8.6
+tensorboardX==2.6
+hyperpyyaml
+pesq
+pystoi
+torch_complex
+
+# Optional but useful
+# jsonargparse[signatures]>=4.15.2
+# fairseq  # Large dependency, skip if not needed
+# torchcrepe  # For pitch tracking, skip if not needed
+# librosa  # Should already be installed
+
+
+
+# notebook stuff
+datasets==2.21.0  # For loading ESB diagnostic dataset (and for using ffmpeg instead of torchcodec)
+matplotlib  # For visualization in notebooks
+ipykernel  # For Jupyter kernel
+
+
+# For running scipts/tokenizer-evaluation.py
+static_ffmpeg
+stempeg
+# pesq # already installed
+# pystoi # already installed
+museval
