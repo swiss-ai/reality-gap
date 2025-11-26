@@ -10,6 +10,7 @@ Usage:
     python scripts/submit_missing_jobs.py --task samples
     python scripts/submit_missing_jobs.py --task both  # default
     python scripts/submit_missing_jobs.py --dry-run  # only show, don't submit
+    python scripts/submit_missing_jobs.py --local  # execute locally instead of submitting via SLURM
     python scripts/submit_missing_jobs.py --group-by language  # group by language instead of dataset
     python scripts/submit_missing_jobs.py --tokenizers xcodec2 cosyvoice2  # only submit for specific tokenizers
     python scripts/submit_missing_jobs.py --languages germany en_us  # only submit for specific languages
@@ -47,7 +48,8 @@ DATASETS = {
             "france", "germany", "greece", "iceland", "italy", "latvia", "lithuania",
             "malta", "norway", "portugal", "serbia", "slovakia", "slovenia",
             "sweden", "uk", "ukraine"
-        ]
+        ],
+        'expected_samples_per_language': 100  # Standard limit, but some languages may have fewer
     },
     'fleurs': {
         'languages': [
@@ -59,19 +61,22 @@ DATASETS = {
             "th_th", "vi_vn", "id_id",
             "af_za", "sw_ke", "am_et", "yo_ng",
             "ar_eg", "tr_tr", "he_il", "fa_ir"
-        ]
+        ],
+        'expected_samples_per_language': 100  # Standard limit, but some languages may have fewer
     },
     "naturelm": {
         "languages": [
             "Xeno-canto", "WavCaps", "NatureLM", "Watkins",
             "iNaturalist", "Animal Sound Archive"
-        ]
+        ],
+        'expected_samples_per_language': 100  # Standard limit, but some sources may have fewer
     },
     "gtzan": {
         "languages": [
             "blues", "classical", "country", "disco", "hiphop",
             "jazz", "metal", "pop", "reggae", "rock"
-        ]
+        ],
+        'expected_samples_per_language': 25  # GTZAN was downloaded with 25 samples per genre
     },
 }
 
@@ -85,12 +90,12 @@ LOGS_DIR.mkdir(exist_ok=True)
 # SLURM job template
 SLURM_TEMPLATE = """#!/bin/bash
 #SBATCH --account=infra01
-#SBATCH --environment=ngc-24.11
+#SBATCH --environment=./ngc-24.11.toml
 #SBATCH --job-name={job_name}
 #SBATCH --output={log_dir}/%j_{job_name}.out
 #SBATCH --error={log_dir}/%j_{job_name}.err
 #SBATCH --time=02:00:00
-#SBATCH --mem={memory}G
+#SBATCH --mem=128G
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=gpu
@@ -245,6 +250,18 @@ def validate_metrics_file(file_path: Path) -> bool:
     if not isinstance(data['num_samples'], int) or data['num_samples'] <= 0:
         return False
     
+    # Check if num_samples is complete (not significantly less than expected)
+    dataset_name = data.get('dataset')
+    if dataset_name and dataset_name in DATASETS:
+        expected_samples = DATASETS[dataset_name].get('expected_samples_per_language')
+        if expected_samples is not None:
+            # Allow 10% tolerance or at least 5 samples difference to account for failures
+            # But if num_samples is less than 80% of expected, consider it incomplete
+            tolerance = max(5, int(expected_samples * 0.1))
+            min_acceptable = expected_samples - tolerance
+            if data['num_samples'] < min_acceptable:
+                return False  # Significantly fewer samples than expected (likely incomplete)
+    
     # Check metrics structure
     metrics = data.get('metrics', {})
     if not isinstance(metrics, dict):
@@ -253,20 +270,25 @@ def validate_metrics_file(file_path: Path) -> bool:
     # Expected metric names
     expected_metrics = ['mse', 'snr_db', 'sdr_db', 'pesq', 'stoi', 'estoi']
     
-    # Check that if a metric exists and is not None, it has all required fields
+    # Check that all expected metrics exist and are not None (treat null metrics as incomplete)
     for metric_name in expected_metrics:
-        if metric_name in metrics and metrics[metric_name] is not None:
-            metric_data = metrics[metric_name]
-            if not isinstance(metric_data, dict):
+        if metric_name not in metrics:
+            return False  # Metric is missing
+        if metrics[metric_name] is None:
+            return False  # Metric is null (incomplete)
+        
+        # If metric exists and is not None, validate its structure
+        metric_data = metrics[metric_name]
+        if not isinstance(metric_data, dict):
+            return False
+        # Check required fields for non-null metrics
+        required_metric_fields = ['mean', 'std', 'min', 'max', 'median']
+        for field in required_metric_fields:
+            if field not in metric_data:
                 return False
-            # Check required fields for non-null metrics
-            required_metric_fields = ['mean', 'std', 'min', 'max', 'median']
-            for field in required_metric_fields:
-                if field not in metric_data:
-                    return False
-                # Check that values are numbers (not None)
-                if metric_data[field] is None:
-                    return False
+            # Check that values are numbers (not None)
+            if metric_data[field] is None:
+                return False
     
     # Check tokens_per_second structure
     tps = data.get('tokens_per_second', {})
@@ -362,37 +384,10 @@ def get_venv_path(tokenizer: str) -> str:
     return str(venv_path)
 
 
-def get_memory_for_tokenizer(tokenizer: str, dataset: str = None) -> int:
-    """
-    Get memory requirement (in GB) for a tokenizer-dataset combination.
-    
-    Args:
-        tokenizer: Tokenizer name
-        dataset: Dataset name (optional, for dataset-specific requirements)
-    
-    Returns:
-        Memory in GB
-    """
-    # Default memory
-    default_memory = 32
-    
-    # Tokenizer-specific memory requirements
-    memory_config = {
-        'xcodec2': 64,  # xcodec2 needs more memory, especially for naturelm
-        'wavtokenizer': 32,
-        'neucodec': 32,
-        'cosyvoice2': 32,
-    }
-    
-    # Dataset-specific overrides (can be combined with tokenizer)
-    if dataset == 'naturelm':
-        # NatureLM has large audio files, may need more memory
-        if tokenizer == 'xcodec2':
-            return 64
-        elif tokenizer in ['neucodec', 'wavtokenizer']:
-            return 48  # Slightly more for naturelm
-    
-    return memory_config.get(tokenizer, default_memory)
+def get_venv_python(tokenizer: str) -> str:
+    """Get the Python interpreter path from the venv."""
+    python_path = PROJECT_ROOT / f".venv-{tokenizer}" / "bin" / "python"
+    return str(python_path)
 
 
 def sanitize_job_name(tokenizer: str, identifier: str, task: str) -> str:
@@ -442,7 +437,7 @@ def is_job_running(tokenizer: str, identifier: str, task: str) -> bool:
         return False
 
 
-def submit_job(tokenizer: str, language: str = None, dataset: str = None, languages: List[str] = None, task: str = None, dry_run: bool = False) -> Tuple[bool, str]:
+def submit_job(tokenizer: str, language: str = None, dataset: str = None, languages: List[str] = None, task: str = None, dry_run: bool = False, local: bool = False) -> Tuple[bool, str]:
     """
     Submit a SLURM job for a tokenizer-language or tokenizer-dataset combination.
     
@@ -453,11 +448,12 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, langua
         languages: List of language names (for dataset-based jobs with specific languages)
         task: Task name (metrics or samples)
         dry_run: If True, only show what would be submitted
+        local: If True, execute locally instead of submitting via SLURM
     
     Returns:
         (success, status) tuple where:
         - success: True if job was submitted or would be submitted (dry-run)
-        - status: 'submitted', 'skipped', or 'failed'
+        - status: 'submitted', 'skipped', 'failed', or 'completed' (for local execution)
     """
     # Validate arguments: either language, or (dataset with optional languages list)
     if language is not None and (dataset is not None or languages is not None):
@@ -474,6 +470,14 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, langua
         print(f"  ⚠ Warning: venv not found: {venv_path}")
         return (False, 'failed')
     
+    # For local execution, also check if Python interpreter exists
+    venv_python = None
+    if local:
+        venv_python = get_venv_python(tokenizer)
+        if not Path(venv_python).exists():
+            print(f"  ⚠ Warning: venv Python interpreter not found: {venv_python}")
+            return (False, 'failed')
+    
     # Create identifier for job name
     if languages:
         identifier = dataset if dataset else f"{len(languages)}_languages"
@@ -481,8 +485,8 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, langua
         identifier = dataset if dataset else language
     job_name = sanitize_job_name(tokenizer, identifier, task)
     
-    # Check if a job for this combination is already running
-    if not dry_run and is_job_running(tokenizer, identifier, task):
+    # Check if a job for this combination is already running (only for SLURM jobs)
+    if not dry_run and not local and is_job_running(tokenizer, identifier, task):
         print(f"  ⊘ Skipped (job already running): {tokenizer} - {identifier} ({task})")
         return (False, 'skipped')
     
@@ -511,25 +515,56 @@ def submit_job(tokenizer: str, language: str = None, dataset: str = None, langua
         print(f"  ✗ Unknown task: {task}")
         return (False, 'failed')
     
-    # Get memory requirement for this tokenizer-dataset combination
-    memory = get_memory_for_tokenizer(tokenizer, dataset)
-    
     # Create SLURM script
     slurm_script = SLURM_TEMPLATE.format(
         job_name=job_name,
         log_dir=str(LOGS_DIR),
         venv_path=venv_path,
         project_root=str(PROJECT_ROOT),
-        memory=memory,
         command=command
     )
     
     if dry_run:
-        print(f"  [DRY RUN] Would submit: {tokenizer} - {identifier} ({task})")
+        if local:
+            print(f"  [DRY RUN] Would execute locally: {tokenizer} - {identifier} ({task})")
+        else:
+            print(f"  [DRY RUN] Would submit: {tokenizer} - {identifier} ({task})")
         print(f"    Job name: {job_name}")
         print(f"    Command: {command}")
         print()
         return (True, 'submitted')
+    
+    # Local execution
+    if local:
+        try:
+            print(f"  ▶ Executing locally: {tokenizer} - {identifier} ({task})")
+            print(f"    Command: {command}")
+            
+            # Replace 'python' with the venv Python interpreter path
+            # This handles 'python scripts/...' format
+            if command.startswith('python '):
+                command_with_venv = command.replace('python ', f'{venv_python} ', 1)
+            else:
+                # Fallback: prepend the venv Python
+                command_with_venv = f"{venv_python} {command}"
+            
+            # Execute directly (blocking, sequential execution)
+            result = subprocess.run(
+                command_with_venv,
+                shell=True,
+                cwd=str(PROJECT_ROOT),
+                check=False  # Don't raise on non-zero exit, we'll check it
+            )
+            
+            if result.returncode == 0:
+                print(f"  ✓ Completed: {tokenizer} - {identifier} ({task})")
+                return (True, 'completed')
+            else:
+                print(f"  ✗ Failed with exit code {result.returncode}: {tokenizer} - {identifier} ({task})")
+                return (False, 'failed')
+        except Exception as e:
+            print(f"  ✗ Failed to execute locally: {e}")
+            return (False, 'failed')
     
     # Submit via sbatch
     try:
@@ -567,6 +602,9 @@ Examples:
 
   # Dry-run: Only show what would be submitted, don't actually submit
   python scripts/submit_missing_jobs.py --dry-run
+
+  # Execute jobs locally instead of submitting via SLURM (useful on compute nodes)
+  python scripts/submit_missing_jobs.py --local
 
   # Submit only one job per task (useful after dry-run to test step by step)
   python scripts/submit_missing_jobs.py --submit-one
@@ -632,6 +670,12 @@ Examples:
         help='Only submit one job per task (useful after dry-run to test step by step)'
     )
     
+    parser.add_argument(
+        '--local',
+        action='store_true',
+        help='Execute jobs locally instead of submitting via SLURM (useful when running on a compute node)'
+    )
+    
     args = parser.parse_args()
     
     print("="*60)
@@ -640,6 +684,8 @@ Examples:
     print(f"Task(s): {args.task}")
     print(f"Group by: {args.group_by}")
     print(f"Dry-run: {args.dry_run}")
+    if args.local:
+        print(f"Local execution: Yes (executing jobs locally)")
     if args.submit_one:
         print(f"Submit one per task: Yes (only first job per task)")
     if args.validate_metrics:
@@ -701,8 +747,8 @@ Examples:
                 print(f"   [Submit-one mode: Only submitting first job]")
             for (tokenizer, dataset), languages in sorted(missing_by_dataset.items()):
                 print(f"   {tokenizer} - {dataset}: {len(languages)} languages")
-                success, status = submit_job(tokenizer, dataset=dataset, languages=languages, task="metrics", dry_run=args.dry_run)
-                if status == 'submitted':
+                success, status = submit_job(tokenizer, dataset=dataset, languages=languages, task="metrics", dry_run=args.dry_run, local=args.local)
+                if status in ['submitted', 'completed']:
                     total_submitted += 1
                     if args.submit_one:
                         break  # Only submit one job
@@ -717,8 +763,8 @@ Examples:
             if args.submit_one:
                 print(f"   [Submit-one mode: Only submitting first job]")
             for tokenizer, language in sorted(missing_metrics):
-                success, status = submit_job(tokenizer, language=language, task="metrics", dry_run=args.dry_run)
-                if status == 'submitted':
+                success, status = submit_job(tokenizer, language=language, task="metrics", dry_run=args.dry_run, local=args.local)
+                if status in ['submitted', 'completed']:
                     total_submitted += 1
                     if args.submit_one:
                         break  # Only submit one job
@@ -738,8 +784,8 @@ Examples:
                 print(f"   [Submit-one mode: Only submitting first job]")
             for (tokenizer, dataset), languages in sorted(missing_by_dataset.items()):
                 print(f"   {tokenizer} - {dataset}: {len(languages)} languages")
-                success, status = submit_job(tokenizer, dataset=dataset, languages=languages, task="samples", dry_run=args.dry_run)
-                if status == 'submitted':
+                success, status = submit_job(tokenizer, dataset=dataset, languages=languages, task="samples", dry_run=args.dry_run, local=args.local)
+                if status in ['submitted', 'completed']:
                     total_submitted += 1
                     if args.submit_one:
                         break  # Only submit one job
@@ -754,8 +800,8 @@ Examples:
             if args.submit_one:
                 print(f"   [Submit-one mode: Only submitting first job]")
             for tokenizer, language in sorted(missing_samples):
-                success, status = submit_job(tokenizer, language=language, task="samples", dry_run=args.dry_run)
-                if status == 'submitted':
+                success, status = submit_job(tokenizer, language=language, task="samples", dry_run=args.dry_run, local=args.local)
+                if status in ['submitted', 'completed']:
                     total_submitted += 1
                     if args.submit_one:
                         break  # Only submit one job
@@ -771,9 +817,15 @@ Examples:
     print("SUMMARY")
     print("="*60)
     if args.dry_run:
-        print(f"Jobs that would be submitted: {total_submitted}")
+        if args.local:
+            print(f"Jobs that would be executed: {total_submitted}")
+        else:
+            print(f"Jobs that would be submitted: {total_submitted}")
     else:
-        print(f"Successfully submitted: {total_submitted}")
+        if args.local:
+            print(f"Successfully completed: {total_submitted}")
+        else:
+            print(f"Successfully submitted: {total_submitted}")
         if total_skipped > 0:
             print(f"Skipped (already running): {total_skipped}")
         if total_failed > 0:
