@@ -10,6 +10,7 @@ import glob
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
+import matplotlib.cm as cm
 import seaborn as sns
 import numpy as np
 from pathlib import Path
@@ -356,11 +357,39 @@ class TokenizerAnalyzer:
         """
         Visualize language coverage for each tokenizer.
         Colors indicate number of valid metrics (0-6) for each language.
+        Languages are grouped by dataset on the x-axis.
         """
+        # Create mapping from language to dataset
+        language_to_dataset = {}
+        for tokenizer in self.tokenizers:
+            for data in self.tokenizer_data[tokenizer]:
+                lang = data['language']
+                dataset = data.get('dataset', 'unknown')
+                # If language already mapped, keep the first one (or most common)
+                if lang not in language_to_dataset:
+                    language_to_dataset[lang] = dataset
+        
+        # Group languages by dataset
+        dataset_groups = defaultdict(list)
+        for lang in self.all_languages:
+            dataset = language_to_dataset.get(lang, 'unknown')
+            dataset_groups[dataset].append(lang)
+        
+        # Sort datasets and languages within each dataset
+        sorted_datasets = sorted(dataset_groups.keys())
+        languages = []
+        dataset_boundaries = []  # Track where each dataset group starts
+        current_pos = 0
+        
+        for dataset in sorted_datasets:
+            dataset_languages = sorted(dataset_groups[dataset])
+            languages.extend(dataset_languages)
+            dataset_boundaries.append((current_pos, current_pos + len(dataset_languages), dataset))
+            current_pos += len(dataset_languages)
+        
         fig, ax = plt.subplots(1, 1, figsize=(14, max(8, len(self.all_languages) * 0.3)))
         
         # Create a matrix showing number of valid metrics for each tokenizer-language combination
-        languages = sorted(self.all_languages)
         coverage_data = []
         
         for lang in languages:
@@ -382,7 +411,7 @@ class TokenizerAnalyzer:
                        '#e67e22',   # Dark orange for 1 metric
                        '#f39c12',   # Orange for 2 metrics
                        '#f1c40f',   # Yellow for 3 metrics
-                       '#f1c40f',   # Yellow for 4 metrics
+                       '#d4e157',   # Yellow-green for 4 metrics
                        '#2ecc71',   # Light green for 5 metrics
                        '#27ae60']   # Normal green for 6 metrics (all complete)
         
@@ -399,18 +428,18 @@ class TokenizerAnalyzer:
         ax.set_yticks(range(len(self.tokenizers)))
         ax.set_yticklabels([t.upper() for t in self.tokenizers])
         
-        # Add text annotations showing number of metrics
-        for i in range(len(languages)):
-            for j in range(len(self.tokenizers)):
-                num_metrics = coverage_array[i, j]
-                text = str(int(num_metrics))
-                color = 'black' if num_metrics >= 3 else 'white'
-                
-                ax.text(i, j, text,
-                       ha="center", va="center", color=color, 
-                       fontsize=8, fontweight='bold')
+        # Add vertical lines to separate dataset groups
+        for start_pos, end_pos, dataset in dataset_boundaries:
+            # Draw line at the boundary between datasets (after the last language of previous dataset)
+            if start_pos > 0:
+                ax.axvline(x=start_pos - 0.5, color='black', linewidth=2, linestyle='--', alpha=0.5)
+            # Add dataset label in the middle of each group
+            middle_pos = (start_pos + end_pos - 1) / 2
+            ax.text(middle_pos, -0.5, dataset.upper(), 
+                   ha='center', va='top', fontsize=10, fontweight='bold',
+                   transform=ax.get_xaxis_transform())
         
-        ax.set_title('Language Coverage by Tokenizer\n(Color = Number of Valid Metrics, 0-6)', 
+        ax.set_title('Language Coverage by Tokenizer (Grouped by Dataset)\n(Color = Number of Valid Metrics, 0-6)', 
                     fontsize=14, fontweight='bold', pad=20)
         
         # Custom colorbar with labels
