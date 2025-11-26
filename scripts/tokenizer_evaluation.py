@@ -109,7 +109,7 @@ def resample_audio(audio, orig_sr, target_sr):
     
     resampled = signal.resample(audio, num_samples)
     return resampled
-    
+
 
 def calculate_sdr(reference, estimated):
     try:
@@ -161,6 +161,7 @@ def calculate_reconstruction_metrics(original, reconstructed, original_sr, recon
         metrics['sdr_db'] = sdr
     
     # 4. PESQ (Perceptual Evaluation of Speech Quality)
+    # With protection against segmentation faults through validation
     try:
         if original_sr != 16000:
             original_16k = resample_audio(original, original_sr, 16000)
@@ -176,19 +177,49 @@ def calculate_reconstruction_metrics(original, reconstructed, original_sr, recon
         original_16k_norm = original_16k / (np.abs(original_16k).max() + 1e-8)
         reconstructed_16k_norm = reconstructed_16k / (np.abs(reconstructed_16k).max() + 1e-8)
         
-        pesq_score = pesq(16000, original_16k_norm, reconstructed_16k_norm, 'wb')
-        metrics['pesq'] = float(pesq_score)
+        # PESQ requires min. 0.25s audio. We use 0.5s (8000 samples at 16kHz) as buffer.
+        MIN_PESQ_SAMPLES = 8000
+        
+        # Check length
+        if len(original_16k_norm) < MIN_PESQ_SAMPLES or len(reconstructed_16k_norm) < MIN_PESQ_SAMPLES:
+            metrics['pesq'] = None
+        # Check for absolute silence (often causes crashes)
+        elif np.max(np.abs(original_16k_norm)) < 1e-6 or np.max(np.abs(reconstructed_16k_norm)) < 1e-6:
+            metrics['pesq'] = None
+        # Check for NaNs or Infs
+        elif np.any(np.isnan(original_16k_norm)) or np.any(np.isnan(reconstructed_16k_norm)) or \
+             np.any(np.isinf(original_16k_norm)) or np.any(np.isinf(reconstructed_16k_norm)):
+            metrics['pesq'] = None
+        else:
+            try:
+                # The actual call
+                pesq_score = pesq(16000, original_16k_norm, reconstructed_16k_norm, 'wb')
+                metrics['pesq'] = float(pesq_score)
+            except Exception as e:
+                # Catches "No utterances detected" and other Python errors
+                metrics['pesq'] = None
     except Exception as e:
         print(f"PESQ calculation error: {e}")
         metrics['pesq'] = None
     
     # 5. STOI (Short-Time Objective Intelligibility)
+    # STOI requires minimum length and can crash with stack smashing on certain inputs
     try:
-        stoi_score = stoi(original_normalized, reconstructed_normalized, original_sr, extended=False)
-        metrics['stoi'] = float(stoi_score)
-        
-        estoi_score = stoi(original_normalized, reconstructed_normalized, original_sr, extended=True)
-        metrics['estoi'] = float(estoi_score)
+        # STOI requires at least 0.4 seconds of audio (minimum for STFT)
+        min_stoi_samples = int(0.4 * original_sr)
+        if len(original_normalized) < min_stoi_samples or len(reconstructed_normalized) < min_stoi_samples:
+            metrics['stoi'] = None
+            metrics['estoi'] = None
+        # Check for very quiet signals that can cause issues
+        elif np.max(np.abs(original_normalized)) < 1e-6 or np.max(np.abs(reconstructed_normalized)) < 1e-6:
+            metrics['stoi'] = None
+            metrics['estoi'] = None
+        else:
+            stoi_score = stoi(original_normalized, reconstructed_normalized, original_sr, extended=False)
+            metrics['stoi'] = float(stoi_score)
+            
+            estoi_score = stoi(original_normalized, reconstructed_normalized, original_sr, extended=True)
+            metrics['estoi'] = float(estoi_score)
     except Exception as e:
         print(f"STOI calculation error: {e}")
         metrics['stoi'] = None
@@ -287,6 +318,24 @@ def process_language(language, tokenizer, dataset_name, cache_dir):
             
             # Calculate metrics
             try:
+                # Validate audio data before metrics calculation to prevent crashes
+                # Check for reasonable length and values
+                if len(audio_array) < 100 or len(reconstructed_array) < 100:
+                    print(f"\nSkipping sample {idx}: Audio too short for metrics")
+                    failed += 1
+                    continue
+                
+                # Check for NaN or Inf values that could cause crashes
+                if np.any(np.isnan(audio_array)) or np.any(np.isinf(audio_array)):
+                    print(f"\nSkipping sample {idx}: Original audio contains NaN/Inf")
+                    failed += 1
+                    continue
+                
+                if np.any(np.isnan(reconstructed_array)) or np.any(np.isinf(reconstructed_array)):
+                    print(f"\nSkipping sample {idx}: Reconstructed audio contains NaN/Inf")
+                    failed += 1
+                    continue
+                
                 metrics = calculate_reconstruction_metrics(
                     audio_array,
                     reconstructed_array,
@@ -296,6 +345,9 @@ def process_language(language, tokenizer, dataset_name, cache_dir):
             except Exception as e:
                 print(f"\nError calculating metrics for sample {idx}: {e}")
                 failed += 1
+                # Clear GPU cache to prevent memory issues
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                 continue
             
             # Calculate statistics
@@ -316,6 +368,10 @@ def process_language(language, tokenizer, dataset_name, cache_dir):
             all_compression_ratios.append(compression_ratio)
             successful += 1
             
+            # Clear GPU cache periodically to prevent memory issues
+            if torch.cuda.is_available() and successful % 10 == 0:
+                torch.cuda.empty_cache()
+            
         except KeyboardInterrupt:
             print(f"\n\nInterrupted by user at sample {idx}")
             break
@@ -324,6 +380,9 @@ def process_language(language, tokenizer, dataset_name, cache_dir):
             print(f"\nUnexpected error processing sample {idx}: {e}")
             print(f"Traceback: {traceback.format_exc()}")
             failed += 1
+            # Clear GPU cache to prevent memory issues
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             continue
                 
     if not all_metrics:
