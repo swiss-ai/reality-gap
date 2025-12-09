@@ -1,0 +1,16 @@
+\begin{table*}[ht]
+\centering
+\caption{Tokenizer performance comparison across all datasets. Values represent mean $\pm$ standard deviation calculated via 100 bootstrap resamples over language means. Higher values indicate better performance for PESQ, STOI, eSTOI, SNR, and SDR; lower values are better for MSE. Best performance in each metric is shown in \textbf{bold}.}
+\label{tab:tokenizer_benchmark}
+\begin{tabular}{lcccccc}
+\toprule
+Model & PESQ $\uparrow$ & STOI $\uparrow$ & eSTOI $\uparrow$ & SNR (dB) $\uparrow$ & SDR (dB) $\uparrow$ & MSE $\downarrow$ \\
+\midrule
+\textbf{COSYVOICE2} & $1.144 \pm 0.007$ & $0.632 \pm 0.017$ & $0.453 \pm 0.016$ & $-3.590 \pm 0.097$ & $-3.727 \pm 0.107$ & $0.039 \pm 0.002$ \\
+\textbf{GLM4VOICE} & $1.070 \pm 0.005$ & $0.476 \pm 0.017$ & $0.260 \pm 0.012$ & $-3.475 \pm 0.133$ & $-3.619 \pm 0.169$ & $0.036 \pm 0.002$ \\
+\textbf{NEUCODEC} & $1.697 \pm 0.029$ & $0.741 \pm 0.015$ & $0.589 \pm 0.015$ & $-1.870 \pm 0.082$ & $-1.905 \pm 0.075$ & $0.029 \pm 0.002$ \\
+\textbf{WAVTOKENIZER} & $1.558 \pm 0.023$ & $0.690 \pm 0.016$ & $0.512 \pm 0.016$ & $\mathbf{1.136 \pm 0.104}$ & $\mathbf{1.081 \pm 0.102}$ & $\mathbf{0.016 \pm 0.002}$ \\
+\textbf{XCODEC2} & $\mathbf{1.906 \pm 0.041}$ & $\mathbf{0.765 \pm 0.016}$ & $\mathbf{0.627 \pm 0.017}$ & $0.322 \pm 0.160$ & $0.294 \pm 0.188$ & $0.020 \pm 0.002$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
