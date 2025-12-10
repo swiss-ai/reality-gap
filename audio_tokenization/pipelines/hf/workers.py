@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""
+Unified Ray workers for distributed audio tokenization.
+Handles audio-only tokenization mode.
+"""
+
+import time
+from pathlib import Path
+from typing import Dict, Optional
+import ray
+from tqdm import tqdm
+
+
+@ray.remote
+class ShardQueue:
+    """Dynamic queue for distributing shards to workers."""
+
+    def __init__(self, num_shards: int, initial_shards: Optional[list] = None):
+        self.num_shards = num_shards
+        if initial_shards is not None:
+            # Resume mode: only process specified shards
+            self.remaining_shards = list(initial_shards)
+        else:
+            # Normal mode: process all shards (0 to num_shards-1)
+            self.remaining_shards = list(range(num_shards))
+        self.current_index = 0  # Index to track position in remaining_shards
+        self.in_progress = {}  # shard_id -> (worker_id, start_time)
+        self.completed = []
+        self.failed = []
+
+    def get_next_shard(self, worker_id: int) -> Optional[int]:
+        """Get next shard index for a worker (work-stealing)."""
+        if self.current_index >= len(self.remaining_shards):
+            return None
+
+        shard_id = self.remaining_shards[self.current_index]
+        self.current_index += 1
+        self.in_progress[shard_id] = (worker_id, time.time())
+
+        return shard_id
+
+    def mark_completed(self, shard_id: int, stats: Dict):
+        """Mark shard as completed."""
+        if shard_id in self.in_progress:
+            del self.in_progress[shard_id]
+        self.completed.append((shard_id, stats))
+
+    def mark_failed(self, shard_id: int, error: str):
+        """Mark shard as failed."""
+        if shard_id in self.in_progress:
+            del self.in_progress[shard_id]
+        self.failed.append((shard_id, error))
+
+    def get_status(self) -> Dict:
+        """Get current processing status."""
+        return {
+            'processed': self.current_index,
+            'total': self.num_shards,
+            'in_progress': len(self.in_progress),
+            'completed': len(self.completed),
+            'failed': len(self.failed)
+        }
+
+
+from audio_tokenization.pipelines.base import BaseTokenizerWorker
+
+
+@ray.remote(num_gpus=1)
+class Worker(BaseTokenizerWorker):
+    """
+    HuggingFace dataset worker that extends BaseTokenizerWorker.
+    Adds HF-specific data loading, work queue processing, and rank-based output.
+    """
+
+    def __init__(
+        self,
+        tokenizer_path: str,
+        output_dir: str,
+        worker_id: int,
+        mode: str,
+        audio_field: str = "audio",
+    ):
+        """
+        Initialize HF worker with tokenizer and output configuration.
+
+        Args:
+            tokenizer_path: Path to tokenizer
+            output_dir: Directory for output files
+            worker_id: Unique worker identifier
+            mode: Tokenization mode ('audio_only')
+            audio_field: Field name for audio in dataset
+        """
+        # Initialize base tokenizer
+        super().__init__(
+            tokenizer_path=tokenizer_path,
+            worker_id=worker_id,
+            mode=mode,
+            audio_field=audio_field,
+        )
+
+        # Store output directory for per-shard files
+        self.output_dir = output_dir
+
+    def process_shard(self, shard_id: int, dataset_info: Dict, num_shards: int) -> Dict:
+        """
+        Process a complete shard and save to a separate output file.
+
+        Args:
+            shard_id: Index of the shard to process
+            dataset_info: Dataset metadata
+            num_shards: Total number of shards
+
+        Returns:
+            Processing statistics for this shard
+        """
+        self.logger.info(f"Processing shard {shard_id}/{num_shards}")
+        start_time = time.time()
+
+        # Load dataset shard (HF hub oder lokal)
+        dataset = self._load_dataset_for_worker(dataset_info)
+
+        # Get this specific shard
+        shard = dataset.shard(num_shards=num_shards, index=shard_id)
+
+        # Create per-shard output file with total shards in filename
+        # Import from vision_tokenization (shared implementation)
+        import sys
+        from pathlib import Path
+        _current_file = Path(__file__).resolve()
+        _repo_root = _current_file.parents[4]
+        _vision_tokenization_dir = _repo_root / "src" / "repos" / "benchmark-image-tokenzier"
+        _vision_tokenization_path = _vision_tokenization_dir / "vision_tokenization"
+        _vision_tokenization_parent = _vision_tokenization_path.parent
+
+        if str(_vision_tokenization_parent) not in sys.path:
+            sys.path.insert(0, str(_vision_tokenization_parent))
+
+        from vision_tokenization.pipelines.indexed_dataset_megatron import DType, IndexedDatasetBuilder
+
+        shard_output_path = Path(self.output_dir) / f"rank_{self.worker_id}_shard_{shard_id}_{num_shards}"
+        builder = IndexedDatasetBuilder(
+            f"{shard_output_path}.bin",
+            dtype=DType.optimal_dtype(len(self.tokenizer.text_tokenizer))
+        )
+
+        # Process all samples in the shard
+        stats = {
+            'samples': 0,
+            'tokens': 0,
+            'errors': 0,
+            'skipped': 0
+        }
+
+        iterator = tqdm(shard, total=len(shard), desc=f"Shard {shard_id}", unit="ex")
+        for sample in iterator:
+            # Extract data
+            audio, sampling_rate = self._extract_data(sample)
+
+            # Check sample status
+            status = self.get_sample_status(audio)
+
+            if status == 'data_skip':
+                stats['skipped'] += 1
+                continue
+
+            # Tokenize and save
+            try:
+                tokens_np = self.tokenize_sample(audio, sampling_rate)
+                if tokens_np is not None:
+                    builder.add_document(tokens_np, [len(tokens_np)])
+                    stats['samples'] += 1
+                    stats['tokens'] += len(tokens_np)
+                else:
+                    stats['errors'] += 1
+            except Exception as e:
+                self.logger.warning(f"Failed to process sample: {e}")
+                stats['errors'] += 1
+
+        # Finalize the shard file
+        builder.finalize(f"{shard_output_path}.idx")
+
+        elapsed = time.time() - start_time
+        self.logger.info(
+            f"Completed shard {shard_id}: {stats['samples']} samples, "
+            f"{stats['tokens']} tokens in {elapsed:.1f}s"
+        )
+
+        return {
+            'shard_id': shard_id,
+            'time': elapsed,
+            **stats
+        }
+
+    def _load_dataset_for_worker(self, dataset_info: Dict):
+        """Load dataset for this worker based on hub or local settings."""
+        from datasets import load_dataset, load_from_disk
+        dataset_path = dataset_info.get('dataset_path')
+        dataset_format = dataset_info.get('dataset_format') or "auto"
+        max_samples = dataset_info.get('max_samples')
+
+        if dataset_path:
+            path = Path(dataset_path)
+            if dataset_format == "auto":
+                # auto-detect like pipeline
+                if path.is_dir():
+                    dataset_format = "hf"
+                elif path.suffix.lower() == ".parquet":
+                    dataset_format = "parquet"
+                else:
+                    raise ValueError(f"Konnte Format für {path} nicht erkennen")
+
+            if dataset_format == "hf":
+                ds = load_from_disk(str(path))
+                if hasattr(ds, "keys"):
+                    split = dataset_info.get('split') or next(iter(ds.keys()))
+                    ds = ds[split]
+                if max_samples:
+                    ds = ds.select(range(min(max_samples, len(ds))))
+                return ds
+
+            if dataset_format == "parquet":
+                ds_dict = load_dataset("parquet", data_files=str(path))
+                split = dataset_info.get('split') or "train"
+                ds = ds_dict.get(split) or next(iter(ds_dict.values()))
+                if max_samples:
+                    ds = ds.select(range(min(max_samples, len(ds))))
+                return ds
+
+            raise ValueError(f"Unbekanntes dataset_format: {dataset_format}")
+
+        # Hub-Modus
+        ds = load_dataset(
+            dataset_info['name'],
+            name=dataset_info.get('config'),
+            split=dataset_info['split'],
+            cache_dir=dataset_info.get('cache_dir')
+        )
+        if max_samples:
+            ds = ds.select(range(min(max_samples, len(ds))))
+        return ds
+
+    def run_shards(self, shard_queue, dataset_info, num_shards, progress_actor=None) -> Dict:
+        """
+        Main worker loop for shard-based processing.
+
+        Args:
+            shard_queue: Ray remote shard queue for distribution
+            dataset_info: Dataset metadata
+            num_shards: Total number of shards
+            progress_actor: Optional progress tracking actor
+
+        Returns:
+            Final worker statistics
+        """
+        self.logger.info("Starting shard processing loop")
+
+        while True:
+            # Get next shard from queue
+            shard_id = ray.get(shard_queue.get_next_shard.remote(self.worker_id))
+
+            if shard_id is None:
+                self.logger.info("No more shards, finishing")
+                break
+
+            # Process the shard
+            try:
+                result = self.process_shard(shard_id, dataset_info, num_shards)
+                ray.get(shard_queue.mark_completed.remote(shard_id, result))
+
+                # Report progress if actor provided
+                if progress_actor:
+                    progress_actor.update.remote(result['samples'])
+
+                # Update global statistics
+                self.update_stats(
+                    samples=result['samples'],
+                    tokens=result['tokens'],
+                    errors=result['errors'],
+                    skipped=result.get('skipped', 0)
+                )
+
+            except Exception as e:
+                self.logger.error(f"Failed to process shard {shard_id}: {e}")
+                ray.get(shard_queue.mark_failed.remote(shard_id, str(e)))
+
+        # Return final statistics
+        return self.get_final_stats()
+

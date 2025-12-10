@@ -28,7 +28,7 @@ scipy
 soundfile
 pyyaml
 # huggingface_hub already
-transformers
+transformers==4.48.0
 
 # Additional dependencies needed for WavTokenizer
 encodec==0.1.1
@@ -54,9 +54,10 @@ matplotlib  # For visualization in notebooks
 ipykernel  # For Jupyter kernel
 
 
-# For running scipts/tokenizer-evaluation.py
+# For running audio_tokenization/
 static_ffmpeg
 stempeg
 # pesq # already installed
 # pystoi # already installed
 museval
+ray
