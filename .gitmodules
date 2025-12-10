@@ -32,3 +32,6 @@
 	path = src/repos/benchmark-image-tokenzier
 	url = https://github.com/swiss-ai/benchmark-image-tokenzier.git
 	branch = yxu-tokenization-refactor
+[submodule "src/repos/MiMo-Audio"]
+	path = src/repos/MiMo-Audio
+	url = https://github.com/XiaomiMiMo/MiMo-Audio.git

@@ -1,0 +1,45 @@
+# MiMo-Audio Tokenizer Minimal Requirements
+# Only packages actually used in the tokenization pipeline (encode/decode)
+#
+# IMPORTANT: This tokenizer requires GPU with flash_attn support
+#
+# Installation command (in two steps):
+# 1. Install torchaudio from source (must use --no-deps --no-build-isolation):
+#    uv pip install --system --break-system-packages --no-deps --no-build-isolation git+https://github.com/pytorch/audio.git@release/2.6
+# 2. Install remaining dependencies:
+#    uv pip install --system --break-system-packages -r requirements-mimo-tokenizer.txt
+#
+# For flash_attn (requires CUDA 12, install separately):
+#    uv pip install --system --break-system-packages flash-attn --no-build-isolation
+
+# PyTorch (required for model inference)
+# NOTE: torch, torchaudio should already be installed with CUDA support
+# DO NOT install them from this requirements file to avoid breaking CUDA
+# torchaudio must be installed separately (see installation command above)
+
+# Core dependencies for tokenizer
+numpy<2.0  # Must be <2.0 for compatibility
+einops  # Tensor operations (used in quantization)
+
+# Model loading and inference
+transformers>=4.49.0  # For PreTrainedModel base class
+accelerate>=0.26.0  # For device_map support in model loading
+
+# Flash Attention (REQUIRED - GPU only)
+# flash-attn>=2.5.0  # Install separately with --no-build-isolation
+
+# Triton (required by flash_attn)
+triton>=3.0.0
+
+# Audio processing
+soundfile>=0.12.0  # For audio I/O
+librosa>=0.10.0  # For audio decoding in datasets
+
+# Data processing
+pandas  # Required by datasets
+pyarrow  # Required by datasets
+
+# For running examples/notebooks
+datasets  # For loading test datasets
+matplotlib  # For visualization
+tqdm  # Progress bars

@@ -18,6 +18,7 @@ _TOKENIZER_IMPORTS = {
     'glm4voice': ('glm4voice', ['GLM4VoiceTokenizer']),
     'wavtokenizer': ('wavtokenizer', ['WavTokenizerWrapper']),
     'stepaudioeditx': ('stepaudioeditx', ['StepAudioEditXWrapper']),
+    'mimoaudio': ('mimoaudio', ['MiMoAudioTokenizer']),
 }
 
 # Try to import all tokenizers, but don't fail if dependencies are missing

@@ -182,11 +182,14 @@ class BaseAudioTokenizer(ABC, metaclass=RegisteredTokenizerMeta):
             if audio.shape[0] == 1:  # Single channel
                 audio = audio.unsqueeze(0)
         
-        # Resample if needed
+        # Resample if needed (do this before moving to device for efficiency)
         if sr and sr != self.sample_rate:
+            # Ensure audio is on CPU for resampling, then move to device after
+            if audio.is_cuda:
+                audio = audio.cpu()
             resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
             audio = resampler(audio)
-        
+
         # Move to device
         audio = audio.to(self.device)
         
