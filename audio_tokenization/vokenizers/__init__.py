@@ -1,13 +1,10 @@
-"""
-Audio Tokenizers for audio-language models.
+"""Audio tokenizer wrappers for the tokenization pipeline."""
 
-This module provides tokenizers for different data types:
-- AudioOnlyTokenizer: For pure audio tokenization
-"""
-
-from .audio.audio_only import AudioOnlyTokenizer
+from .base import AUDIO_STRUCTURE_TOKENS
+from .wavtokenizer import create_tokenizer, WavTokenizerAudioOnly
 
 __all__ = [
-    'AudioOnlyTokenizer',
+    "AUDIO_STRUCTURE_TOKENS",
+    "create_tokenizer",
+    "WavTokenizerAudioOnly",
 ]
-

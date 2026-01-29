@@ -1,0 +1,6 @@
+dataset_name: agkphysics/AudioSet
+config_name: full
+dataset_split: bal_train
+audio_field: audio
+cache_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/audioset_cache
+max_samples: 400  # null = no limit, set to integer to limit samples

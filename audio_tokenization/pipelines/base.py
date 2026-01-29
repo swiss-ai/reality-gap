@@ -1,33 +1,30 @@
 #!/usr/bin/env python3
 """
-Base pipeline class for tokenization and shared utilities.
-Adapted from vision_tokenization for audio modality.
+Base pipeline class for audio tokenization and shared utilities.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+import json
 import logging
+import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import ray
 import torch
 from tqdm import tqdm
 
 
 class BasePipeline(ABC):
-    """Abstract base class for tokenization pipelines."""
+    """Abstract base class for audio tokenization pipelines."""
 
-    def __init__(
-        self,
-        tokenizer_path: str,
-        output_dir: str,
-        num_gpus: int,
-        device: str,
-        **kwargs
-    ):
+    def __init__(self, tokenizer_path: str, output_dir: str, num_gpus: int, device: str, **kwargs):
         """
         Initialize base pipeline.
 
         Args:
-            tokenizer_path: Path to tokenizer
+            tokenizer_path: Path to omni-tokenizer
             output_dir: Output directory for tokenized data
             num_gpus: Number of parallel workers
             device: Device for tokenization (cuda/cpu)
@@ -72,37 +69,53 @@ class BasePipeline(ABC):
             Metadata dictionary
         """
         # Calculate aggregate statistics
-        total_samples = sum(r['samples_processed'] for r in results)
-        total_tokens = sum(r['tokens_generated'] for r in results)
-        total_errors = sum(r['errors'] for r in results)
-        total_skipped = sum(r.get('samples_skipped', 0) for r in results)
+        total_samples = sum(r["samples_processed"] for r in results)
+        total_tokens = sum(r["tokens_generated"] for r in results)
+        total_errors = sum(r["errors"] for r in results)
+        total_skipped = sum(r.get("samples_skipped", 0) for r in results)
+        total_duration_skipped = sum(r.get("duration_skipped", 0) for r in results)
+        total_audio_tokens = sum(r.get("audio_tokens", 0) for r in results)
+        total_text_tokens = sum(r.get("text_tokens", 0) for r in results)
 
         metadata = {
-            'statistics': {
-                'total_samples_processed': total_samples,
-                'samples_skipped': total_skipped,
-                'total_tokens': total_tokens,
-                'errors': total_errors
+            "statistics": {
+                "total_samples_processed": total_samples,
+                "samples_skipped": total_skipped,
+                "duration_skipped": total_duration_skipped,
+                "total_tokens": total_tokens,
+                "audio_tokens": total_audio_tokens,
+                "text_tokens": total_text_tokens,
+                "errors": total_errors,
             },
-            'averages': {
-                'tokens_per_sample': total_tokens / total_samples if total_samples > 0 else 0,
+            "averages": {
+                "tokens_per_sample": total_tokens / total_samples if total_samples > 0 else 0,
+                "audio_tokens_per_sample": total_audio_tokens / total_samples if total_samples > 0 else 0,
+                "text_tokens_per_sample": total_text_tokens / total_samples if total_samples > 0 else 0,
             },
-            'processing': {
-                'num_gpus': len(results),
-                'processing_time_seconds': processing_time,
-                'samples_per_second': total_samples / processing_time if processing_time > 0 else 0,
-                'tokens_per_second': total_tokens / processing_time if processing_time > 0 else 0
+            "token_distribution": {
+                "audio_percentage": total_audio_tokens / total_tokens * 100 if total_tokens > 0 else 0,
+                "text_percentage": total_text_tokens / total_tokens * 100 if total_tokens > 0 else 0,
             },
-            'worker_details': [
+            "processing": {
+                "num_gpus": len(results),
+                "processing_time_seconds": processing_time,
+                "samples_per_second": total_samples / processing_time if processing_time > 0 else 0,
+                "tokens_per_second": total_tokens / processing_time if processing_time > 0 else 0,
+            },
+            "worker_details": [
                 {
-                    'worker_id': i,
-                    'samples_processed': r['samples_processed'],
-                    'tokens_generated': r['tokens_generated'],
-                    'errors': r['errors'],
-                    'samples_skipped': r.get('samples_skipped', 0),
-                    'throughput': r.get('throughput', 0)
-                } for i, r in enumerate(results)
-            ]
+                    "worker_id": i,
+                    "samples_processed": r["samples_processed"],
+                    "tokens_generated": r["tokens_generated"],
+                    "audio_tokens": r.get("audio_tokens", 0),
+                    "text_tokens": r.get("text_tokens", 0),
+                    "errors": r["errors"],
+                    "samples_skipped": r.get("samples_skipped", 0),
+                    "duration_skipped": r.get("duration_skipped", 0),
+                    "throughput": r.get("throughput", 0),
+                }
+                for i, r in enumerate(results)
+            ],
         }
 
         # Add any additional kwargs to metadata
@@ -158,9 +171,43 @@ class ProgressActor:
         return self.processed
 
 
-class BaseTokenizerWorker:
+@dataclass
+class WorkerStats:
+    """Statistics tracked by workers."""
+    samples_processed: int = 0
+    tokens_generated: int = 0
+    audio_tokens: int = 0
+    text_tokens: int = 0
+    errors: int = 0
+    samples_skipped: int = 0
+    duration_skipped: int = 0
+    start_time: float = field(default_factory=time.time)
+    elapsed_time: float = 0.0
+    throughput: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "samples_processed": self.samples_processed,
+            "tokens_generated": self.tokens_generated,
+            "audio_tokens": self.audio_tokens,
+            "text_tokens": self.text_tokens,
+            "errors": self.errors,
+            "samples_skipped": self.samples_skipped,
+            "duration_skipped": self.duration_skipped,
+            "elapsed_time": self.elapsed_time,
+            "throughput": self.throughput,
+        }
+
+    def finalize(self) -> Dict[str, Any]:
+        """Finalize stats and return as dict."""
+        self.elapsed_time = time.time() - self.start_time
+        self.throughput = self.tokens_generated / self.elapsed_time if self.elapsed_time > 0 else 0
+        return self.to_dict()
+
+
+class BaseAudioTokenizerWorker:
     """
-    Base class for tokenization workers.
+    Base class for audio tokenization workers.
     Contains shared tokenizer initialization and processing logic.
     Subclasses handle output file creation and work distribution.
     """
@@ -169,82 +216,100 @@ class BaseTokenizerWorker:
         self,
         tokenizer_path: str,
         worker_id: int,
-        mode: str,  # "audio_only"
+        mode: str,  # "audio_only", "audio2text", "text2audio", or "sft"
         audio_field: str = "audio",
+        text_field: str = "text",
         device: str = None,
+        min_duration: Optional[float] = None,
+        max_duration: Optional[float] = None,
     ):
         self.worker_id = worker_id
         self.mode = mode
         self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
         self.audio_field = audio_field
+        self.text_field = text_field
+        self.min_duration = min_duration
+        self.max_duration = max_duration
 
         # Setup logging
         self.logger = logging.getLogger(f"Worker{worker_id:02d}")
         self.logger.setLevel(logging.INFO)
 
         # Import here to avoid circular imports
-        from audio_tokenization.vokenizers.audio import create_tokenizer
+        from audio_tokenization.vokenizers import create_tokenizer
 
         # Initialize tokenizer using factory function
         self.tokenizer = create_tokenizer(
-            mode=mode,
-            text_tokenizer_path=tokenizer_path,
+            omni_tokenizer_path=tokenizer_path,
             device=self.device,
         )
 
         # Initialize stats
-        import time
-        self.stats = {
-            'batches_processed': 0,
-            'samples_processed': 0,
-            'tokens_generated': 0,
-            'errors': 0,
-            'samples_skipped': 0,
-            'start_time': time.time()
-        }
+        self.stats = WorkerStats()
 
         self.logger.info(f"Worker {worker_id} initialized on {self.device} in {mode} mode")
 
-    def get_sample_status(self, audio) -> str:
+    def get_audio_duration(self, audio, sample_rate: int) -> float:
+        """Calculate audio duration in seconds."""
+        if isinstance(audio, torch.Tensor):
+            return audio.shape[-1] / sample_rate
+        elif hasattr(audio, "__len__"):
+            return len(audio) / sample_rate
+        return 0.0
+
+    def should_process_duration(self, duration: float) -> bool:
+        """
+        Check if audio meets duration criteria for filtering.
+
+        Args:
+            duration: Audio duration in seconds
+
+        Returns:
+            True if audio should be processed, False if it should be skipped
+        """
+        if self.min_duration and duration < self.min_duration:
+            return False
+        if self.max_duration and duration > self.max_duration:
+            return False
+        return True
+
+    def get_sample_status(self, audio, text) -> str:
         """
         Determine the processing status of a sample.
 
         Args:
             audio: Audio data (may be None)
+            text: Text data (may be None)
 
         Returns:
-            Status string: 'ok' or 'data_skip'
+            Status string: 'ok', 'data_skip', or 'duration_skip'
         """
         # Check for missing audio
         if audio is None:
-            return 'data_skip'
+            return "data_skip"
 
-        return 'ok'
+        # Check if mode requires text and it's missing
+        if self.mode in ["audio2text", "text2audio", "sft"] and not text:
+            return "data_skip"
 
-    def tokenize_sample(self, audio, sampling_rate: int = None) -> Optional[Any]:
+        return "ok"
+
+    def tokenize_sample(self, audio, sample_rate: int, text: str = None) -> Optional[Any]:
         """
         Tokenize a single sample (shared logic).
 
         Args:
-            audio: Input audio (numpy array or torch tensor)
-            sampling_rate: Sampling rate of the audio (optional, defaults to 16000)
+            audio: Input audio
+            sample_rate: Audio sample rate
+            text: Input text (may be None for audio-only mode)
 
         Returns:
-            Tokens (as tensor or numpy array), or None if error
+            Tokens (as list), or None if error
         """
         try:
-            import torch
-
             # Use unified tokenize method
-            if sampling_rate is None:
-                sampling_rate = 16000  # Default for audio tokenization
-
-            tokens = self.tokenizer.tokenize(audio=audio, sampling_rate=sampling_rate)
-
-            # Convert to numpy if needed
-            tokens_np = tokens.cpu().numpy() if torch.is_tensor(tokens) else tokens
-
-            return tokens_np
+            tokens = self.tokenizer.tokenize(audio, sample_rate)
+            return tokens
 
         except Exception as e:
             self.logger.warning(f"Error processing sample: {e}")
@@ -252,28 +317,25 @@ class BaseTokenizerWorker:
 
     def _extract_data(self, sample: Dict) -> tuple:
         """
-        Extract audio from sample based on mode.
+        Extract audio and/or text from sample based on mode.
         Can be overridden by specific implementations.
-
-        Returns:
-            Tuple of (audio, sampling_rate)
         """
         try:
             # Extract audio
-            audio = sample[self.audio_field]
-            # Unwrap single-item lists
-            if isinstance(audio, list) and len(audio) == 1:
-                audio = audio[0]
-            # HF Audio object: {"array": ..., "sampling_rate": ...}
-            if isinstance(audio, dict) and "array" in audio:
-                audio = audio["array"]
+            audio_data = sample[self.audio_field]
 
-            # Extract sampling_rate if available
-            sampling_rate = sample.get("sampling_rate", None)
-            if sampling_rate is None and isinstance(sample.get(self.audio_field), dict):
-                sampling_rate = sample[self.audio_field].get("sampling_rate", None)
+            # Handle HuggingFace audio format
+            if isinstance(audio_data, dict):
+                audio = audio_data.get("array")
+                sample_rate = audio_data.get("sampling_rate", 16000)
+            else:
+                audio = audio_data
+                sample_rate = sample.get("sample_rate", 16000)
 
-            return audio, sampling_rate
+            # Extract text (only for modes that need it)
+            text = sample[self.text_field] if self.mode in ["audio2text", "text2audio", "sft"] else None
+
+            return audio, sample_rate, text
 
         except KeyError as e:
             field = e.args[0]
@@ -282,18 +344,29 @@ class BaseTokenizerWorker:
                 f"Available fields: {', '.join(sample.keys())}"
             ) from None
 
-    def update_stats(self, samples: int = 0, tokens: int = 0, errors: int = 0,
-                     skipped: int = 0):
+    def update_stats(
+        self,
+        samples: int = 0,
+        tokens: int = 0,
+        errors: int = 0,
+        skipped: int = 0,
+        duration_skipped: int = 0,
+        audio_tokens: int = 0,
+        text_tokens: int = 0,
+    ):
         """Update worker statistics."""
-        self.stats['samples_processed'] += samples
-        self.stats['tokens_generated'] += tokens
-        self.stats['errors'] += errors
-        self.stats['samples_skipped'] += skipped
+        self.stats.samples_processed += samples
+        self.stats.tokens_generated += tokens
+        self.stats.audio_tokens += audio_tokens
+        self.stats.text_tokens += text_tokens
+        self.stats.errors += errors
+        self.stats.samples_skipped += skipped
+        self.stats.duration_skipped += duration_skipped
 
     def format_stats_message(self, prefix: str, stats: Dict, elapsed: float = None) -> str:
         """Format statistics into a clean log message."""
-        samples = stats.get('samples', stats.get('samples_processed', 0))
-        tokens = stats.get('tokens', stats.get('tokens_generated', 0))
+        samples = stats.get("samples", stats.get("samples_processed", 0))
+        tokens = stats.get("tokens", stats.get("tokens_generated", 0))
         avg_tokens = tokens / samples if samples > 0 else 0
 
         # Base message
@@ -303,10 +376,19 @@ class BaseTokenizerWorker:
         if elapsed and elapsed > 0:
             parts.append(f"{samples / elapsed:.1f} samples/s")
 
+        # Token breakdown (always show for non-audio_only modes)
+        if self.mode != "audio_only":
+            aud_tok = stats.get("audio_tokens", 0)
+            txt_tok = stats.get("text_tokens", 0)
+            if aud_tok > 0 or txt_tok > 0:
+                parts.append(f"[audio: {aud_tok}, txt: {txt_tok}]")
+
         # Skip counts
         skips = []
-        if stats.get('skipped', stats.get('samples_skipped', 0)) > 0:
+        if stats.get("skipped", stats.get("samples_skipped", 0)) > 0:
             skips.append(f"{stats.get('skipped', stats.get('samples_skipped', 0))} data_skip")
+        if stats.get("duration_skipped", 0) > 0:
+            skips.append(f"{stats['duration_skipped']} dur_skip")
         if skips:
             parts.append(f"({', '.join(skips)})")
 
@@ -314,14 +396,9 @@ class BaseTokenizerWorker:
 
     def get_final_stats(self) -> Dict:
         """Get final statistics for the worker."""
-        import time
+        stats_dict = self.stats.finalize()
 
-        elapsed = time.time() - self.stats['start_time']
-        self.stats['elapsed_time'] = elapsed
-        self.stats['throughput'] = self.stats['tokens_generated'] / elapsed if elapsed > 0 else 0
-
-        msg = self.format_stats_message(f"Worker {self.worker_id} finished", self.stats, elapsed)
+        msg = self.format_stats_message(f"Worker {self.worker_id} finished", stats_dict, self.stats.elapsed_time)
         self.logger.info(msg)
 
-        return self.stats
-
+        return stats_dict

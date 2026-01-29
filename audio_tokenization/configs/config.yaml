@@ -1,0 +1,21 @@
+defaults:
+  - dataset: audioset
+  - _self_
+
+# Pipeline settings
+output_dir: ./data/tokenized
+num_gpus: 4
+num_shards: 4
+device: cuda
+mode: audio_only  # audio_only, audio2text, text2audio, sft
+num_proc: 32
+
+# Tokenizer settings
+tokenizer_path: /capstor/store/cscs/swissai/infra01/MLLM/apertus_wavtokenizer  # Required: path to omni_tokenizer (must have audio tokens added)
+
+# Filtering
+min_duration: 1.0
+max_duration: 30.0
+
+# Resume
+resume: false

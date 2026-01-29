@@ -1,76 +1,71 @@
 #!/usr/bin/env python3
-"""
-Unified Ray workers for distributed audio tokenization.
-Handles audio-only tokenization mode.
-"""
+"""Ray workers for distributed audio tokenization."""
 
+import logging
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
+
 import ray
-from tqdm import tqdm
+import torch
+import numpy as np
+
+from audio_tokenization.pipelines.base import WorkerStats
+from megatron.core.datasets.indexed_dataset import IndexedDatasetBuilder, DType
+
+logger = logging.getLogger(__name__)
 
 
 @ray.remote
 class ShardQueue:
-    """Dynamic queue for distributing shards to workers."""
+    """Ray actor for work queue distribution."""
 
-    def __init__(self, num_shards: int, initial_shards: Optional[list] = None):
-        self.num_shards = num_shards
+    def __init__(self, total_shards: int, initial_shards: List[int] = None):
+        """
+        Initialize shard queue.
+
+        Args:
+            total_shards: Total number of shards
+            initial_shards: Optional list of specific shards to process (for resume)
+        """
+        self.total_shards = total_shards
         if initial_shards is not None:
-            # Resume mode: only process specified shards
-            self.remaining_shards = list(initial_shards)
+            self.pending = list(initial_shards)
         else:
-            # Normal mode: process all shards (0 to num_shards-1)
-            self.remaining_shards = list(range(num_shards))
-        self.current_index = 0  # Index to track position in remaining_shards
-        self.in_progress = {}  # shard_id -> (worker_id, start_time)
+            self.pending = list(range(total_shards))
         self.completed = []
         self.failed = []
 
-    def get_next_shard(self, worker_id: int) -> Optional[int]:
-        """Get next shard index for a worker (work-stealing)."""
-        if self.current_index >= len(self.remaining_shards):
-            return None
+    def get_next_shard(self) -> Optional[int]:
+        """Get next shard to process."""
+        if self.pending:
+            return self.pending.pop(0)
+        return None
 
-        shard_id = self.remaining_shards[self.current_index]
-        self.current_index += 1
-        self.in_progress[shard_id] = (worker_id, time.time())
+    def mark_completed(self, shard_id: int):
+        """Mark a shard as completed."""
+        self.completed.append(shard_id)
 
-        return shard_id
+    def mark_failed(self, shard_id: int):
+        """Mark a shard as failed."""
+        self.failed.append(shard_id)
 
-    def mark_completed(self, shard_id: int, stats: Dict):
-        """Mark shard as completed."""
-        if shard_id in self.in_progress:
-            del self.in_progress[shard_id]
-        self.completed.append((shard_id, stats))
-
-    def mark_failed(self, shard_id: int, error: str):
-        """Mark shard as failed."""
-        if shard_id in self.in_progress:
-            del self.in_progress[shard_id]
-        self.failed.append((shard_id, error))
-
-    def get_status(self) -> Dict:
-        """Get current processing status."""
+    def get_status(self) -> Dict[str, Any]:
+        """Get queue status."""
         return {
-            'processed': self.current_index,
-            'total': self.num_shards,
-            'in_progress': len(self.in_progress),
-            'completed': len(self.completed),
-            'failed': len(self.failed)
+            "total": self.total_shards,
+            "pending": len(self.pending),
+            "completed": len(self.completed),
+            "failed": len(self.failed),
         }
 
 
-from audio_tokenization.pipelines.base import BaseTokenizerWorker
-
-
 @ray.remote(num_gpus=1)
-class Worker(BaseTokenizerWorker):
-    """
-    HuggingFace dataset worker that extends BaseTokenizerWorker.
-    Adds HF-specific data loading, work queue processing, and rank-based output.
-    """
+class Worker:
+    """Ray worker for audio tokenization."""
+
+    # Valid modes for audio tokenization
+    VALID_MODES = ["audio_only", "audio2text", "text2audio", "sft"]
 
     def __init__(
         self,
@@ -79,210 +74,227 @@ class Worker(BaseTokenizerWorker):
         worker_id: int,
         mode: str,
         audio_field: str = "audio",
+        text_field: str = "text",
+        min_duration: Optional[float] = None,
+        max_duration: Optional[float] = None,
     ):
-        """
-        Initialize HF worker with tokenizer and output configuration.
+        self.tokenizer_path = tokenizer_path
+        self.output_dir = Path(output_dir)
+        self.worker_id = worker_id
+        self.mode = mode
+        self.audio_field = audio_field
+        self.text_field = text_field
+        self.min_duration = min_duration
+        self.max_duration = max_duration
 
-        Args:
-            tokenizer_path: Path to tokenizer
-            output_dir: Directory for output files
-            worker_id: Unique worker identifier
-            mode: Tokenization mode ('audio_only')
-            audio_field: Field name for audio in dataset
-        """
-        # Initialize base tokenizer
-        super().__init__(
-            tokenizer_path=tokenizer_path,
-            worker_id=worker_id,
-            mode=mode,
-            audio_field=audio_field,
-        )
+        # Validate mode
+        if mode not in self.VALID_MODES:
+            raise ValueError(f"Invalid mode: {mode}. Must be one of {self.VALID_MODES}")
 
-        # Store output directory for per-shard files
-        self.output_dir = output_dir
+        # Setup logging
+        self.logger = logging.getLogger(f"Worker{worker_id:02d}")
+        self.logger.setLevel(logging.INFO)
 
-    def process_shard(self, shard_id: int, dataset_info: Dict, num_shards: int) -> Dict:
-        """
-        Process a complete shard and save to a separate output file.
+        # Lazy loading
+        self._tokenizer = None
+        self._vocab_size = None
 
-        Args:
-            shard_id: Index of the shard to process
-            dataset_info: Dataset metadata
-            num_shards: Total number of shards
+        self.logger.info(f"Worker {worker_id} initialized in {mode} mode")
 
-        Returns:
-            Processing statistics for this shard
-        """
-        self.logger.info(f"Processing shard {shard_id}/{num_shards}")
-        start_time = time.time()
+    @property
+    def tokenizer(self):
+        """Lazy load tokenizer."""
+        if self._tokenizer is None:
+            from audio_tokenization.vokenizers import create_tokenizer
+            self._tokenizer = create_tokenizer(
+                omni_tokenizer_path=self.tokenizer_path,
+                device="cuda",
+            )
+        return self._tokenizer
 
-        # Load dataset shard (HF hub oder lokal)
-        dataset = self._load_dataset_for_worker(dataset_info)
+    @property
+    def vocab_size(self) -> int:
+        """Auto-detect vocab size from omni_tokenizer."""
+        if self._vocab_size is None:
+            from transformers import AutoTokenizer
+            omni_tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path)
+            self._vocab_size = len(omni_tokenizer)
+        return self._vocab_size
 
-        # Get this specific shard
-        shard = dataset.shard(num_shards=num_shards, index=shard_id)
+    def _get_audio_duration(self, audio, sample_rate: int) -> float:
+        """Calculate audio duration in seconds."""
+        if isinstance(audio, torch.Tensor):
+            return audio.shape[-1] / sample_rate
+        elif hasattr(audio, "__len__"):
+            return len(audio) / sample_rate
+        return 0.0
 
-        # Create per-shard output file with total shards in filename
-        # Import from vision_tokenization (shared implementation)
-        import sys
-        from pathlib import Path
-        _current_file = Path(__file__).resolve()
-        _repo_root = _current_file.parents[4]
-        _vision_tokenization_dir = _repo_root / "src" / "repos" / "benchmark-image-tokenzier"
-        _vision_tokenization_path = _vision_tokenization_dir / "vision_tokenization"
-        _vision_tokenization_parent = _vision_tokenization_path.parent
+    def _process_sample(self, sample: Dict, stats: WorkerStats) -> Optional[List[int]]:
+        """Process a single sample based on mode."""
+        if self.mode == "audio_only":
+            return self._process_audio_only(sample, stats)
+        elif self.mode == "audio2text":
+            return self._process_audio2text(sample, stats)
+        elif self.mode == "text2audio":
+            return self._process_text2audio(sample, stats)
+        elif self.mode == "sft":
+            return self._process_sft(sample, stats)
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
 
-        if str(_vision_tokenization_parent) not in sys.path:
-            sys.path.insert(0, str(_vision_tokenization_parent))
+    def _process_audio_only(self, sample: Dict, stats: WorkerStats) -> Optional[List[int]]:
+        """Process audio-only mode: just tokenize the audio."""
+        audio_data = sample.get(self.audio_field)
+        if audio_data is None:
+            stats.samples_skipped += 1
+            return None
 
-        from vision_tokenization.pipelines.indexed_dataset_megatron import DType, IndexedDatasetBuilder
+        # Handle HuggingFace audio format
+        if isinstance(audio_data, dict):
+            audio = audio_data.get("array")
+            sample_rate = audio_data.get("sampling_rate", 16000)
+        else:
+            audio = audio_data
+            sample_rate = sample.get("sample_rate", 16000)
 
-        shard_output_path = Path(self.output_dir) / f"rank_{self.worker_id}_shard_{shard_id}_{num_shards}"
-        builder = IndexedDatasetBuilder(
-            f"{shard_output_path}.bin",
-            dtype=DType.optimal_dtype(len(self.tokenizer.text_tokenizer))
-        )
+        if audio is None:
+            stats.samples_skipped += 1
+            return None
 
-        # Process all samples in the shard
-        stats = {
-            'samples': 0,
-            'tokens': 0,
-            'errors': 0,
-            'skipped': 0
-        }
+        # Check duration
+        duration = self._get_audio_duration(audio, sample_rate)
+        if self.min_duration and duration < self.min_duration:
+            stats.duration_skipped += 1
+            return None
+        if self.max_duration and duration > self.max_duration:
+            stats.duration_skipped += 1
+            return None
 
-        iterator = tqdm(shard, total=len(shard), desc=f"Shard {shard_id}", unit="ex")
-        for sample in iterator:
-            # Extract data
-            audio, sampling_rate = self._extract_data(sample)
+        # Tokenize
+        return self.tokenizer.tokenize(audio, sample_rate)
 
-            # Check sample status
-            status = self.get_sample_status(audio)
+    def _process_audio2text(self, sample: Dict, stats: WorkerStats) -> Optional[List[int]]:
+        """Process audio2text mode: audio input -> text output (e.g., ASR)."""
+        # TODO: Implement for future extension
+        raise NotImplementedError("audio2text mode not yet implemented")
 
-            if status == 'data_skip':
-                stats['skipped'] += 1
-                continue
+    def _process_text2audio(self, sample: Dict, stats: WorkerStats) -> Optional[List[int]]:
+        """Process text2audio mode: text input -> audio output (e.g., TTS)."""
+        # TODO: Implement for future extension
+        raise NotImplementedError("text2audio mode not yet implemented")
 
-            # Tokenize and save
+    def _process_sft(self, sample: Dict, stats: WorkerStats) -> Optional[List[int]]:
+        """Process SFT mode: supervised fine-tuning with text and audio."""
+        # TODO: Implement for future extension
+        raise NotImplementedError("sft mode not yet implemented")
+
+    def process_shard(self, shard_id: int, shard_data, total_shards: int) -> Dict[str, Any]:
+        """Process a single shard."""
+        stats = WorkerStats()
+        output_prefix = self.output_dir / f"rank_{self.worker_id}_shard_{shard_id}_{total_shards}"
+
+        # Megatron's builder takes .bin path, select optimal dtype based on vocab_size
+        bin_path = str(output_prefix) + ".bin"
+        idx_path = str(output_prefix) + ".idx"
+        dtype = DType.optimal_dtype(self.vocab_size)
+        builder = IndexedDatasetBuilder(bin_path, dtype=dtype)
+
+        for sample in shard_data:
             try:
-                tokens_np = self.tokenize_sample(audio, sampling_rate)
-                if tokens_np is not None:
-                    builder.add_document(tokens_np, [len(tokens_np)])
-                    stats['samples'] += 1
-                    stats['tokens'] += len(tokens_np)
-                else:
-                    stats['errors'] += 1
+                tokens = self._process_sample(sample, stats)
+
+                if tokens is not None:
+                    # Convert to torch tensor on CPU for Megatron's add_item
+                    if isinstance(tokens, torch.Tensor):
+                        tokens_tensor = tokens.cpu()
+                    else:
+                        tokens_tensor = torch.tensor(tokens, dtype=torch.int64)
+
+                    builder.add_item(tokens_tensor)
+                    builder.end_document()  # Each audio sample is its own document
+                    stats.samples_processed += 1
+                    stats.tokens_generated += len(tokens)
+
             except Exception as e:
-                self.logger.warning(f"Failed to process sample: {e}")
-                stats['errors'] += 1
+                self.logger.warning(f"Error tokenizing sample: {e}")
+                stats.errors += 1
 
-        # Finalize the shard file
-        builder.finalize(f"{shard_output_path}.idx")
+        builder.finalize(idx_path)
+        return stats.finalize()
 
-        elapsed = time.time() - start_time
-        self.logger.info(
-            f"Completed shard {shard_id}: {stats['samples']} samples, "
-            f"{stats['tokens']} tokens in {elapsed:.1f}s"
-        )
+    def run_shards(
+        self,
+        work_queue: ShardQueue,
+        dataset_info: Dict[str, Any],
+        num_shards: int,
+        progress_actor=None,
+    ) -> Dict[str, Any]:
+        """Run all assigned shards."""
+        from datasets import load_dataset
 
-        return {
-            'shard_id': shard_id,
-            'time': elapsed,
-            **stats
-        }
-
-    def _load_dataset_for_worker(self, dataset_info: Dict):
-        """Load dataset for this worker based on hub or local settings."""
-        from datasets import load_dataset, load_from_disk
-        dataset_path = dataset_info.get('dataset_path')
-        dataset_format = dataset_info.get('dataset_format') or "auto"
-        max_samples = dataset_info.get('max_samples')
-
-        if dataset_path:
-            path = Path(dataset_path)
-            if dataset_format == "auto":
-                # auto-detect like pipeline
-                if path.is_dir():
-                    dataset_format = "hf"
-                elif path.suffix.lower() == ".parquet":
-                    dataset_format = "parquet"
-                else:
-                    raise ValueError(f"Konnte Format für {path} nicht erkennen")
-
-            if dataset_format == "hf":
-                ds = load_from_disk(str(path))
-                if hasattr(ds, "keys"):
-                    split = dataset_info.get('split') or next(iter(ds.keys()))
-                    ds = ds[split]
-                if max_samples:
-                    ds = ds.select(range(min(max_samples, len(ds))))
-                return ds
-
-            if dataset_format == "parquet":
-                ds_dict = load_dataset("parquet", data_files=str(path))
-                split = dataset_info.get('split') or "train"
-                ds = ds_dict.get(split) or next(iter(ds_dict.values()))
-                if max_samples:
-                    ds = ds.select(range(min(max_samples, len(ds))))
-                return ds
-
-            raise ValueError(f"Unbekanntes dataset_format: {dataset_format}")
-
-        # Hub-Modus
-        ds = load_dataset(
-            dataset_info['name'],
-            name=dataset_info.get('config'),
-            split=dataset_info['split'],
-            cache_dir=dataset_info.get('cache_dir')
-        )
+        # Load dataset (with optional max_samples limit via split slicing)
+        split = dataset_info["split"]
+        max_samples = dataset_info.get("max_samples")
         if max_samples:
-            ds = ds.select(range(min(max_samples, len(ds))))
-        return ds
+            split = f"{split}[:{max_samples}]"  # e.g., "unbal_train[:400]"
 
-    def run_shards(self, shard_queue, dataset_info, num_shards, progress_actor=None) -> Dict:
-        """
-        Main worker loop for shard-based processing.
+        dataset = load_dataset(
+            dataset_info["name"],
+            name=dataset_info.get("config"),
+            split=split,
+            cache_dir=dataset_info.get("cache_dir"),
+        )
 
-        Args:
-            shard_queue: Ray remote shard queue for distribution
-            dataset_info: Dataset metadata
-            num_shards: Total number of shards
-            progress_actor: Optional progress tracking actor
-
-        Returns:
-            Final worker statistics
-        """
-        self.logger.info("Starting shard processing loop")
+        total_stats = WorkerStats()
 
         while True:
-            # Get next shard from queue
-            shard_id = ray.get(shard_queue.get_next_shard.remote(self.worker_id))
-
+            # Get next shard
+            shard_id = ray.get(work_queue.get_next_shard.remote())
             if shard_id is None:
-                self.logger.info("No more shards, finishing")
                 break
 
-            # Process the shard
             try:
-                result = self.process_shard(shard_id, dataset_info, num_shards)
-                ray.get(shard_queue.mark_completed.remote(shard_id, result))
+                # Get shard data
+                shard_data = dataset.shard(
+                    num_shards=num_shards,
+                    index=shard_id,
+                    contiguous=True,
+                )
 
-                # Report progress if actor provided
-                if progress_actor:
-                    progress_actor.update.remote(result['samples'])
+                self.logger.info(
+                    f"Worker {self.worker_id}: Processing shard {shard_id}/{num_shards} "
+                    f"({len(shard_data)} samples)"
+                )
 
-                # Update global statistics
-                self.update_stats(
-                    samples=result['samples'],
-                    tokens=result['tokens'],
-                    errors=result['errors'],
-                    skipped=result.get('skipped', 0)
+                # Process shard
+                shard_stats = self.process_shard(shard_id, shard_data, num_shards)
+
+                # Update totals
+                total_stats.samples_processed += shard_stats["samples_processed"]
+                total_stats.tokens_generated += shard_stats["tokens_generated"]
+                total_stats.errors += shard_stats["errors"]
+                total_stats.samples_skipped += shard_stats["samples_skipped"]
+                total_stats.duration_skipped += shard_stats["duration_skipped"]
+
+                # Update progress
+                if progress_actor is not None:
+                    ray.get(progress_actor.update.remote(shard_stats["samples_processed"]))
+
+                # Mark completed
+                ray.get(work_queue.mark_completed.remote(shard_id))
+
+                self.logger.info(
+                    f"Worker {self.worker_id}: Completed shard {shard_id}. "
+                    f"Processed: {total_stats.samples_processed}, Tokens: {total_stats.tokens_generated}"
                 )
 
             except Exception as e:
-                self.logger.error(f"Failed to process shard {shard_id}: {e}")
-                ray.get(shard_queue.mark_failed.remote(shard_id, str(e)))
+                self.logger.error(f"Worker {self.worker_id}: Error processing shard {shard_id}: {e}")
+                ray.get(work_queue.mark_failed.remote(shard_id))
+                total_stats.errors += 1
 
-        # Return final statistics
-        return self.get_final_stats()
+        # Finalize stats
+        final_stats = total_stats.finalize()
+        final_stats["worker_id"] = self.worker_id
 
+        return final_stats
