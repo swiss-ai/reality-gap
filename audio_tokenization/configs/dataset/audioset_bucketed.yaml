@@ -1,0 +1,18 @@
+# AudioSet dataset with bucket-based filtering
+# Buckets are computed at 24kHz (WavTokenizer's native rate)
+# Bucket 240000 = 240000 samples / 24000 Hz = 10 seconds
+
+dataset_name: agkphysics/AudioSet
+config_name: full
+dataset_split: bal_train
+audio_field: audio
+cache_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/audioset_cache
+max_samples: null  # null = no limit, set to integer to limit samples
+
+# Bucket configuration
+bucket:
+  enabled: true
+  metadata_dir: /iopsstor/scratch/cscs/xyixuan/studys/multimodal-data/01-dataset-download/audio_set/length_buckets
+  target_bucket: 240000  # Single bucket: 10-second clips (17288 samples)
+  # Alternative: use target_buckets for multiple buckets
+  # target_buckets: [216000, 240000]  # Multiple buckets

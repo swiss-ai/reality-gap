@@ -229,7 +229,23 @@ class Worker:
         num_shards: int,
         progress_actor=None,
     ) -> Dict[str, Any]:
-        """Run all assigned shards."""
+        """Run all assigned shards.
+
+        Args:
+            work_queue: Ray actor for shard distribution
+            dataset_info: Dict containing dataset loading parameters:
+                - name: Dataset name
+                - config: Dataset config name
+                - split: Dataset split
+                - cache_dir: Cache directory
+                - max_samples: Optional sample limit (applied via split slicing)
+                - filtered_indices: Optional list of indices for bucket filtering
+            num_shards: Total number of shards
+            progress_actor: Optional Ray actor for progress tracking
+
+        Returns:
+            Dict with worker statistics
+        """
         from datasets import load_dataset
 
         # Load dataset (with optional max_samples limit via split slicing)
@@ -244,6 +260,14 @@ class Worker:
             split=split,
             cache_dir=dataset_info.get("cache_dir"),
         )
+
+        # Apply index filtering if provided (for bucket-based filtering)
+        filtered_indices = dataset_info.get("filtered_indices")
+        if filtered_indices is not None:
+            self.logger.info(
+                f"Worker {self.worker_id}: Applying index filter ({len(filtered_indices)} samples)"
+            )
+            dataset = dataset.select(filtered_indices)
 
         total_stats = WorkerStats()
 

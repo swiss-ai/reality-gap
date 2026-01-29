@@ -21,10 +21,8 @@ def main(cfg: DictConfig):
     # Print config
     logger.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
-    # Import here to avoid slow imports before config is loaded
-    from audio_tokenization.pipelines.hf import HFDatasetPipeline
-
-    pipeline = HFDatasetPipeline(
+    # Common pipeline arguments
+    common_args = dict(
         tokenizer_path=cfg.tokenizer_path,
         output_dir=cfg.output_dir,
         dataset_name=cfg.dataset.dataset_name,
@@ -43,6 +41,28 @@ def main(cfg: DictConfig):
         text_field=cfg.dataset.get("text_field", "text"),
         resume=cfg.get("resume", False),
     )
+
+    # Check if bucket filtering is enabled
+    bucket_cfg = cfg.dataset.get("bucket", {})
+    if bucket_cfg.get("enabled", False):
+        # Use bucketed pipeline with pre-filtering
+        from audio_tokenization.pipelines.hf import BucketedHFDatasetPipeline
+
+        # Get target bucket(s) - support both singular and plural config keys
+        target_buckets = bucket_cfg.get("target_bucket") or bucket_cfg.get("target_buckets")
+
+        logger.info(f"Using BucketedHFDatasetPipeline with target_buckets={target_buckets}")
+
+        pipeline = BucketedHFDatasetPipeline(
+            bucket_metadata_dir=bucket_cfg.metadata_dir,
+            target_buckets=target_buckets,
+            **common_args,
+        )
+    else:
+        # Use standard pipeline
+        from audio_tokenization.pipelines.hf import HFDatasetPipeline
+
+        pipeline = HFDatasetPipeline(**common_args)
 
     result = pipeline.run()
 
