@@ -77,6 +77,7 @@ class Worker:
         text_field: str = "text",
         min_duration: Optional[float] = None,
         max_duration: Optional[float] = None,
+        batch_size: int = 1,
     ):
         self.tokenizer_path = tokenizer_path
         self.output_dir = Path(output_dir)
@@ -86,6 +87,7 @@ class Worker:
         self.text_field = text_field
         self.min_duration = min_duration
         self.max_duration = max_duration
+        self.batch_size = batch_size
 
         # Validate mode
         if mode not in self.VALID_MODES:
@@ -99,7 +101,7 @@ class Worker:
         self._tokenizer = None
         self._vocab_size = None
 
-        self.logger.info(f"Worker {worker_id} initialized in {mode} mode")
+        self.logger.info(f"Worker {worker_id} initialized in {mode} mode (batch_size={batch_size})")
 
     @property
     def tokenizer(self):
@@ -188,8 +190,37 @@ class Worker:
         # TODO: Implement for future extension
         raise NotImplementedError("sft mode not yet implemented")
 
+    def _extract_audio(self, sample: Dict) -> tuple:
+        """Extract audio array and sample rate from a sample.
+
+        Returns:
+            (audio_array, sample_rate) or (None, None) if invalid
+        """
+        audio_data = sample.get(self.audio_field)
+        if audio_data is None:
+            return None, None
+
+        # Handle HuggingFace audio format
+        if isinstance(audio_data, dict):
+            audio = audio_data.get("array")
+            sample_rate = audio_data.get("sampling_rate", 16000)
+        else:
+            audio = audio_data
+            sample_rate = sample.get("sample_rate", 16000)
+
+        return audio, sample_rate
+
+    def _check_duration(self, audio, sample_rate: int) -> bool:
+        """Check if audio meets duration criteria."""
+        duration = self._get_audio_duration(audio, sample_rate)
+        if self.min_duration and duration < self.min_duration:
+            return False
+        if self.max_duration and duration > self.max_duration:
+            return False
+        return True
+
     def process_shard(self, shard_id: int, shard_data, total_shards: int) -> Dict[str, Any]:
-        """Process a single shard."""
+        """Process a single shard with optional batching."""
         stats = WorkerStats()
         output_prefix = self.output_dir / f"rank_{self.worker_id}_shard_{shard_id}_{total_shards}"
 
@@ -199,28 +230,98 @@ class Worker:
         dtype = DType.optimal_dtype(self.vocab_size)
         builder = IndexedDatasetBuilder(bin_path, dtype=dtype)
 
-        for sample in shard_data:
-            try:
-                tokens = self._process_sample(sample, stats)
+        if self.batch_size > 1 and self.mode == "audio_only":
+            # Batched processing for audio_only mode
+            self._process_shard_batched(shard_data, builder, stats)
+        else:
+            # Single-sample processing (original behavior)
+            for sample in shard_data:
+                try:
+                    tokens = self._process_sample(sample, stats)
 
-                if tokens is not None:
-                    # Convert to torch tensor on CPU for Megatron's add_item
+                    if tokens is not None:
+                        # Convert to torch tensor on CPU for Megatron's add_item
+                        if isinstance(tokens, torch.Tensor):
+                            tokens_tensor = tokens.cpu()
+                        else:
+                            tokens_tensor = torch.tensor(tokens, dtype=torch.int64)
+
+                        builder.add_item(tokens_tensor)
+                        builder.end_document()  # Each audio sample is its own document
+                        stats.samples_processed += 1
+                        stats.tokens_generated += len(tokens)
+
+                except Exception as e:
+                    self.logger.warning(f"Error tokenizing sample: {e}")
+                    stats.errors += 1
+
+        builder.finalize(idx_path)
+        return stats.finalize()
+
+    def _process_shard_batched(self, shard_data, builder, stats: WorkerStats):
+        """Process shard using batched tokenization for efficiency.
+
+        Groups samples into batches and tokenizes them together on GPU.
+        Requires all samples in a batch to have the same length (use bucket filtering).
+        """
+        batch_audios = []
+        batch_sample_rate = None
+
+        def flush_batch():
+            """Process accumulated batch."""
+            nonlocal batch_audios, batch_sample_rate
+
+            if not batch_audios:
+                return
+
+            try:
+                # Tokenize entire batch at once
+                tokens_list = self.tokenizer.tokenize_batch(batch_audios, batch_sample_rate)
+
+                for tokens in tokens_list:
                     if isinstance(tokens, torch.Tensor):
                         tokens_tensor = tokens.cpu()
                     else:
                         tokens_tensor = torch.tensor(tokens, dtype=torch.int64)
 
                     builder.add_item(tokens_tensor)
-                    builder.end_document()  # Each audio sample is its own document
+                    builder.end_document()
                     stats.samples_processed += 1
                     stats.tokens_generated += len(tokens)
 
             except Exception as e:
-                self.logger.warning(f"Error tokenizing sample: {e}")
-                stats.errors += 1
+                self.logger.warning(f"Error tokenizing batch of {len(batch_audios)}: {e}")
+                stats.errors += len(batch_audios)
 
-        builder.finalize(idx_path)
-        return stats.finalize()
+            # Reset batch
+            batch_audios = []
+            batch_sample_rate = None
+
+        for sample in shard_data:
+            audio, sample_rate = self._extract_audio(sample)
+
+            if audio is None:
+                stats.samples_skipped += 1
+                continue
+
+            if not self._check_duration(audio, sample_rate):
+                stats.duration_skipped += 1
+                continue
+
+            # Check if sample rate matches current batch
+            if batch_sample_rate is not None and sample_rate != batch_sample_rate:
+                # Different sample rate, flush current batch first
+                flush_batch()
+
+            batch_sample_rate = sample_rate
+            batch_audios.append(audio)
+
+            # Flush when batch is full
+            if len(batch_audios) >= self.batch_size:
+                flush_batch()
+
+        # Flush remaining samples
+        flush_batch()
 
     def run_shards(
         self,

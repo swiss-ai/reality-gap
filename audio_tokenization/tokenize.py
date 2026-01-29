@@ -40,6 +40,7 @@ def main(cfg: DictConfig):
         audio_field=cfg.dataset.get("audio_field", "audio"),
         text_field=cfg.dataset.get("text_field", "text"),
         resume=cfg.get("resume", False),
+        batch_size=cfg.get("batch_size", 1),
     )
 
     # Check if bucket filtering is enabled

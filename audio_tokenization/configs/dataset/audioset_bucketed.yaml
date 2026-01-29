@@ -1,6 +1,11 @@
 # AudioSet dataset with bucket-based filtering
 # Buckets are computed at 24kHz (WavTokenizer's native rate)
 # Bucket 240000 = 240000 samples / 24000 Hz = 10 seconds
+#
+# Usage:
+#   python -m audio_tokenization.tokenize dataset=audioset_bucketed batch_size=8
+#
+# With bucket filtering, all samples have same length, enabling efficient batch processing.
 
 dataset_name: agkphysics/AudioSet
 config_name: full

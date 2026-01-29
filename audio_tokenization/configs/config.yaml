@@ -9,6 +9,8 @@ num_shards: 4
 device: cuda
 mode: audio_only  # audio_only, audio2text, text2audio, sft
 num_proc: 32
+batch_size: 32  # Batch size for tokenization (use with bucket filtering for same-length batches)
+                # For 10-second clips (bucket 240000), batch_size up to 256 works well
 
 # Tokenizer settings
 tokenizer_path: /capstor/store/cscs/swissai/infra01/MLLM/apertus_wavtokenizer  # Required: path to omni_tokenizer (must have audio tokens added)

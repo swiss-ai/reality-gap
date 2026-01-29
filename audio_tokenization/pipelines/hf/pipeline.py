@@ -38,6 +38,7 @@ class HFDatasetPipeline(BasePipeline):
         audio_field: str = "audio",
         text_field: str = "text",
         resume: bool = False,
+        batch_size: int = 1,
         **kwargs,
     ):
         super().__init__(tokenizer_path, output_dir, num_gpus, device, **kwargs)
@@ -57,6 +58,7 @@ class HFDatasetPipeline(BasePipeline):
         self.audio_field = audio_field
         self.text_field = text_field
         self.resume = resume
+        self.batch_size = batch_size
 
         # Validate mode
         valid_modes = ["audio_only", "audio2text", "text2audio", "sft"]
@@ -215,10 +217,11 @@ class HFDatasetPipeline(BasePipeline):
                 text_field=self.text_field,
                 min_duration=self.min_duration,
                 max_duration=self.max_duration,
+                batch_size=self.batch_size,
             )
             self.workers.append(worker)
 
-        self.logger.info(f"Setup {self.num_gpus} workers for {self.mode} mode")
+        self.logger.info(f"Setup {self.num_gpus} workers for {self.mode} mode (batch_size={self.batch_size})")
 
     def process(self) -> Dict[str, Any]:
         """Process the dataset using shard-based approach."""
