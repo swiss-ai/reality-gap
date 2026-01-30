@@ -3,9 +3,10 @@
 # Bucket 240000 = 240000 samples / 24000 Hz = 10 seconds
 #
 # Usage:
-#   python -m audio_tokenization.tokenize dataset=audioset_bucketed batch_size=8
+#   python -m audio_tokenization.tokenize dataset=audioset_bucketed batch_size=256
 #
-# With bucket filtering, all samples have same length, enabling efficient batch processing.
+# With single-bucket filtering, all samples have same length, enabling efficient batch processing.
+# For multiple buckets, run pipeline multiple times with different target_bucket values.
 
 dataset_name: agkphysics/AudioSet
 config_name: full
@@ -14,10 +15,9 @@ audio_field: audio
 cache_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/audioset_cache
 max_samples: null  # null = no limit, set to integer to limit samples
 
-# Bucket configuration
+# Bucket configuration (single bucket only)
 bucket:
   enabled: true
   metadata_dir: /iopsstor/scratch/cscs/xyixuan/studys/multimodal-data/01-dataset-download/audio_set/length_buckets
-  target_bucket: 240000  # Single bucket: 10-second clips (17288 samples)
-  # Alternative: use target_buckets for multiple buckets
-  # target_buckets: [216000, 240000]  # Multiple buckets
+  target_bucket: 240000  # 10-second clips at 24kHz (17288 samples in bal_train)
+  shuffle_seed: 42       # Fixed seed for shuffling indices (ensures even shard distribution and resumability)

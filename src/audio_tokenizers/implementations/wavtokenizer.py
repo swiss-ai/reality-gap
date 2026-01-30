@@ -180,11 +180,10 @@ class WavTokenizerBase(BaseAudioTokenizer):
         if isinstance(audio, np.ndarray):
             audio = torch.from_numpy(audio).float()
 
-        # Ensure audio is on CPU for resampling (torchaudio.Resample creates CPU kernels)
-        audio = audio.cpu()
-
-        # Resample if necessary
+        # Resample if necessary (requires CPU for torchaudio.Resample)
         if sr != self.sample_rate:
+            # Only move to CPU if resampling is needed
+            audio = audio.cpu()
             # Use cached resampler or create new one
             resampler_key = f"{sr}_{self.sample_rate}"
             if resampler_key not in self._resamplers:

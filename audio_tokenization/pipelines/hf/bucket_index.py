@@ -2,7 +2,7 @@
 """Bucket metadata utility for length-indexed batch tokenization."""
 
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 
 class BucketIndex:
@@ -71,30 +71,29 @@ class BucketIndex:
         self._loaded = True
         return self
 
-    def get_indices(self, buckets: Union[int, List[int]]) -> List[int]:
-        """Get HuggingFace dataset indices for given bucket(s).
+    def get_indices(self, bucket: int) -> List[int]:
+        """Get HuggingFace dataset indices for a single bucket.
 
         Args:
-            buckets: Single bucket length or list of bucket lengths
+            bucket: Single bucket length (e.g., 240000 for 10-sec at 24kHz)
 
         Returns:
-            Sorted list of dataset indices matching the bucket(s)
+            Sorted list of dataset indices matching the bucket
 
         Raises:
             RuntimeError: If metadata hasn't been loaded yet
+            ValueError: If bucket not found
         """
         if not self._loaded:
             raise RuntimeError("BucketIndex not loaded. Call load() first.")
 
-        if isinstance(buckets, int):
-            buckets = [buckets]
+        if bucket not in self._bucket_to_indices:
+            available = self.get_available_buckets()[:10]
+            raise ValueError(
+                f"Bucket {bucket} not found. Available buckets (first 10): {available}"
+            )
 
-        indices = []
-        for bucket in buckets:
-            if bucket in self._bucket_to_indices:
-                indices.extend(self._bucket_to_indices[bucket])
-
-        return sorted(indices)
+        return sorted(self._bucket_to_indices[bucket])
 
     def get_available_buckets(self) -> List[int]:
         """List all available bucket lengths.

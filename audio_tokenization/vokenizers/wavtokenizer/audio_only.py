@@ -188,17 +188,17 @@ class WavTokenizerAudioOnly:
 
         batch_size = len(audios)
 
-        # Convert all to tensors and stack into batch
-        tensors = []
-        for audio in audios:
-            if isinstance(audio, np.ndarray):
-                audio = torch.from_numpy(audio).float()
-            if audio.dim() == 1:
-                audio = audio.unsqueeze(0)  # (T,) -> (1, T)
-            tensors.append(audio)
-
-        # Stack into batch: (B, T)
-        batch_audio = torch.cat(tensors, dim=0)  # (B, T)
+        # Stack numpy arrays first (fast CPU operation), then single transfer to GPU
+        first = audios[0]
+        if isinstance(first, np.ndarray):
+            # Stack all numpy arrays at once, then move to GPU in single transfer
+            stacked = np.stack(audios, axis=0)  # (B, T) numpy
+            batch_audio = torch.from_numpy(stacked).float().to(self.device, non_blocking=True)
+        else:
+            # Already tensors - stack and move
+            batch_audio = torch.stack([a if a.dim() == 1 else a.squeeze(0) for a in audios], dim=0)
+            if batch_audio.device != self.device:
+                batch_audio = batch_audio.to(self.device, non_blocking=True)
 
         # Encode entire batch at once (handles resampling internally)
         batch_tokens, _ = self.wavtokenizer.encode(batch_audio, sr=sample_rate)

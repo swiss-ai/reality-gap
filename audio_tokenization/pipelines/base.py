@@ -19,7 +19,15 @@ from tqdm import tqdm
 class BasePipeline(ABC):
     """Abstract base class for audio tokenization pipelines."""
 
-    def __init__(self, tokenizer_path: str, output_dir: str, num_gpus: int, device: str, **kwargs):
+    def __init__(
+        self,
+        tokenizer_path: str,
+        output_dir: str,
+        num_gpus: int,
+        device: str,
+        target_sample_rate: Optional[int] = None,
+        **kwargs,
+    ):
         """
         Initialize base pipeline.
 
@@ -34,6 +42,7 @@ class BasePipeline(ABC):
         self.output_dir = output_dir
         self.num_gpus = num_gpus
         self.device = device
+        self.target_sample_rate = target_sample_rate
 
         # Setup logging
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -153,20 +162,97 @@ class BasePipeline(ABC):
 
 @ray.remote
 class ProgressActor:
-    """Lightweight actor for collecting progress updates without polling."""
+    """Actor for collecting progress updates and W&B logging."""
 
-    def __init__(self, total_samples: int, desc: str = "Samples processed"):
+    def __init__(
+        self,
+        total_samples: int,
+        total_shards: int = 0,
+        wandb_enabled: bool = False,
+        desc: str = "Samples processed",
+    ):
         self.total_samples = total_samples
+        self.total_shards = total_shards
         self.processed = 0
+        self.shards_completed = 0
         self.pbar = tqdm(total=total_samples, desc=desc)
+
+        # W&B state
+        self.wandb_enabled = wandb_enabled
+        self._wandb = None
+        if wandb_enabled:
+            import wandb
+            self._wandb = wandb
+
+        # Tracking
+        self.start_time = time.time()
+        self.shard_history: List[Dict[str, Any]] = []
 
     def update(self, samples: int):
         """Update progress bar with completed samples."""
         self.processed += samples
         self.pbar.update(samples)
 
+    def log_shard(
+        self,
+        shard_id: int,
+        worker_id: int,
+        samples_processed: int,
+        tokens_generated: int,
+        errors: int,
+        duration_seconds: float,
+    ):
+        """Log shard completion with metrics to W&B."""
+        self.shards_completed += 1
+        elapsed_total = time.time() - self.start_time
+
+        shard_metrics = {
+            "shard_id": shard_id,
+            "worker_id": worker_id,
+            "samples_processed": samples_processed,
+            "tokens_generated": tokens_generated,
+            "errors": errors,
+            "duration_seconds": duration_seconds,
+            "samples_per_second": samples_processed / duration_seconds if duration_seconds > 0 else 0,
+            "tokens_per_second": tokens_generated / duration_seconds if duration_seconds > 0 else 0,
+        }
+        self.shard_history.append(shard_metrics)
+
+        if self.wandb_enabled and self._wandb:
+            self._wandb.log({
+                # Per-shard metrics
+                "shard/id": shard_id,
+                "shard/worker_id": worker_id,
+                "shard/samples_processed": samples_processed,
+                "shard/tokens_generated": tokens_generated,
+                "shard/errors": errors,
+                "shard/duration_seconds": duration_seconds,
+                "shard/samples_per_second": shard_metrics["samples_per_second"],
+                "shard/tokens_per_second": shard_metrics["tokens_per_second"],
+                # Cumulative progress
+                "progress/shards_completed": self.shards_completed,
+                "progress/shards_total": self.total_shards,
+                "progress/shards_percent": self.shards_completed / self.total_shards * 100 if self.total_shards > 0 else 0,
+                "progress/samples_processed": self.processed,
+                "progress/samples_total": self.total_samples,
+                "progress/samples_percent": self.processed / self.total_samples * 100 if self.total_samples > 0 else 0,
+                "progress/elapsed_seconds": elapsed_total,
+                "progress/avg_samples_per_second": self.processed / elapsed_total if elapsed_total > 0 else 0,
+            })
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get summary statistics."""
+        elapsed = time.time() - self.start_time
+        return {
+            "total_processed": self.processed,
+            "shards_completed": self.shards_completed,
+            "elapsed_seconds": elapsed,
+            "avg_samples_per_second": self.processed / elapsed if elapsed > 0 else 0,
+            "shard_history": self.shard_history,
+        }
+
     def close(self):
-        """Close the progress bar."""
+        """Close the progress bar and return final count."""
         self.pbar.close()
         return self.processed
 
