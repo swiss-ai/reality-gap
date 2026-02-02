@@ -36,6 +36,7 @@ def run_shards_shared(worker, work_queue, dataset, num_shards: int, progress_act
             total_stats.errors += shard_stats["errors"]
             total_stats.samples_skipped += shard_stats["samples_skipped"]
             total_stats.duration_skipped += shard_stats["duration_skipped"]
+            total_stats.frequency_skipped += shard_stats.get("frequency_skipped", 0)
 
             if progress_actor is not None:
                 progress_actor.update.remote(shard_stats["samples_processed"])

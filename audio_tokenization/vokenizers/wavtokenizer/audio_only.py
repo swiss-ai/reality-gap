@@ -38,10 +38,14 @@ class WavTokenizerAudioOnly:
         self,
         omni_tokenizer_path: str,
         device: str = "cuda",
+        torch_compile: bool = True,
+        trim_last_tokens: int = 5,
         **kwargs,
     ):
         self.device = device
         self.omni_tokenizer_path = omni_tokenizer_path
+        self.torch_compile = torch_compile
+        self.trim_last_tokens = max(0, int(trim_last_tokens))
 
         # Lazy load
         self._wavtokenizer = None
@@ -55,7 +59,7 @@ class WavTokenizerAudioOnly:
     @property
     def wavtokenizer(self) -> WavTokenizer40:
         if self._wavtokenizer is None:
-            self._wavtokenizer = WavTokenizer40(device=self.device)
+            self._wavtokenizer = WavTokenizer40(device=self.device, torch_compile=self.torch_compile)
         return self._wavtokenizer
 
     @property
@@ -160,7 +164,8 @@ class WavTokenizerAudioOnly:
         output[0] = self.bos_id
         output[1] = self.audio_start_id
         # Apply offset and copy audio tokens
-        output[2:2 + num_audio_tokens] = tokens + self.audio_token_offset
+        if num_audio_tokens:
+            output[2:2 + num_audio_tokens] = tokens + self.audio_token_offset
         output[-2] = self.audio_end_id
         output[-1] = self.eos_id
 
@@ -168,8 +173,10 @@ class WavTokenizerAudioOnly:
 
     def tokenize_batch(
         self,
-        audios: list,
+        audios: Union[list, np.ndarray, torch.Tensor],
         sample_rate: int,
+        orig_audio_samples: Optional[list] = None,
+        pad_audio_samples: Optional[int] = None,
     ) -> list:
         """Tokenize a batch of audio samples efficiently on GPU.
 
@@ -177,50 +184,115 @@ class WavTokenizerAudioOnly:
         Use bucket filtering to ensure same-length samples.
 
         Args:
-            audios: List of audio arrays (np.ndarray or torch.Tensor), all same length
+            audios: List/array/tensor of audio samples, all same length
             sample_rate: Sample rate of all audio samples
+            orig_audio_samples: Original (unpadded) sample lengths per audio
+            pad_audio_samples: Padding length in samples (used to trim padded tails)
 
         Returns:
             List of token tensors, each: [BOS, audio_start, audio_tokens..., audio_end, EOS]
         """
-        if not audios:
+        if audios is None:
             return []
 
-        batch_size = len(audios)
-
-        # Stack numpy arrays first (fast CPU operation), then single transfer to GPU
-        first = audios[0]
-        if isinstance(first, np.ndarray):
-            # Stack all numpy arrays at once, then move to GPU in single transfer
-            stacked = np.stack(audios, axis=0)  # (B, T) numpy
-            batch_audio = torch.from_numpy(stacked).float().to(self.device, non_blocking=True)
-        else:
-            # Already tensors - stack and move
-            batch_audio = torch.stack([a if a.dim() == 1 else a.squeeze(0) for a in audios], dim=0)
+        if isinstance(audios, np.ndarray):
+            if audios.size == 0:
+                return []
+            if audios.ndim == 1:
+                audios = audios[None, :]
+            batch_audio = torch.from_numpy(audios).float()
             if batch_audio.device != self.device:
                 batch_audio = batch_audio.to(self.device, non_blocking=True)
+            batch_size = batch_audio.shape[0]
+        elif isinstance(audios, torch.Tensor):
+            if audios.numel() == 0:
+                return []
+            batch_audio = audios
+            if batch_audio.dim() == 1:
+                batch_audio = batch_audio.unsqueeze(0)
+            elif batch_audio.dim() == 3:
+                batch_audio = batch_audio.squeeze(1)
+            if batch_audio.device != self.device:
+                batch_audio = batch_audio.to(self.device, non_blocking=True)
+            batch_size = batch_audio.shape[0]
+        else:
+            if not audios:
+                return []
+            batch_size = len(audios)
+            first = audios[0]
+            # Stack numpy arrays first (fast CPU operation), then single transfer to GPU
+            if isinstance(first, np.ndarray):
+                stacked = np.stack(audios, axis=0)  # (B, T) numpy
+                batch_audio = torch.from_numpy(stacked).float().to(self.device, non_blocking=True)
+            else:
+                # Already tensors - stack and move
+                batch_audio = torch.stack([a if a.dim() == 1 else a.squeeze(0) for a in audios], dim=0)
+                if batch_audio.device != self.device:
+                    batch_audio = batch_audio.to(self.device, non_blocking=True)
 
         # Encode entire batch at once (handles resampling internally)
         batch_tokens, _ = self.wavtokenizer.encode(batch_audio, sr=sample_rate)
         # batch_tokens shape: (B, N) where N is number of audio tokens per sample
 
         # Get dimensions
-        num_audio_tokens = batch_tokens.shape[1]
         device = batch_tokens.device
 
-        # Pre-allocate output for entire batch
-        # Structure per sample: BOS + audio_start + audio_tokens + audio_end + EOS
-        total_size = 1 + 1 + num_audio_tokens + 1 + 1
-        batch_output = torch.empty(batch_size, total_size, dtype=torch.long, device=device)
+        if orig_audio_samples is None:
+            num_audio_tokens = batch_tokens.shape[1]
 
-        # Fill structure tokens (same for all samples)
+            # Pre-allocate output for entire batch
+            # Structure per sample: BOS + audio_start + audio_tokens + audio_end + EOS
+            total_size = 1 + 1 + num_audio_tokens + 1 + 1
+            batch_output = torch.empty(batch_size, total_size, dtype=torch.long, device=device)
+
+            # Fill structure tokens (same for all samples)
+            batch_output[:, 0] = self.bos_id
+            batch_output[:, 1] = self.audio_start_id
+            batch_output[:, -2] = self.audio_end_id
+            batch_output[:, -1] = self.eos_id
+
+            if num_audio_tokens:
+                # Apply offset and copy audio tokens for all samples at once
+                batch_output[:, 2:2 + num_audio_tokens] = (
+                    batch_tokens[:, :num_audio_tokens] + self.audio_token_offset
+                )
+
+            # Return as list of tensors (one per sample)
+            return [batch_output[i] for i in range(batch_size)]
+
+        if len(orig_audio_samples) != batch_size:
+            raise ValueError("orig_audio_samples length must match batch size")
+
+        if pad_audio_samples is None and orig_audio_samples:
+            pad_audio_samples = max(int(n) for n in orig_audio_samples)
+
+        orig_array = np.asarray(orig_audio_samples, dtype=np.int64)
+        ds = int(self.wavtokenizer.downsample_rate)
+        token_counts = (orig_array + ds - 1) // ds
+
+        if self.trim_last_tokens and pad_audio_samples is not None:
+            pad_val = int(pad_audio_samples)
+            mask = orig_array < pad_val
+            if mask.any():
+                token_counts = token_counts - (self.trim_last_tokens * mask.astype(np.int64))
+                token_counts = np.maximum(token_counts, 0)
+
+        max_count = int(token_counts.max()) if token_counts.size else 0
+        total_size = 1 + 1 + max_count + 1 + 1
+        batch_output = torch.empty((batch_size, total_size), dtype=torch.long, device=device)
         batch_output[:, 0] = self.bos_id
         batch_output[:, 1] = self.audio_start_id
-        batch_output[:, -2] = self.audio_end_id
-        batch_output[:, -1] = self.eos_id
 
-        # Apply offset and copy audio tokens for all samples at once
-        batch_output[:, 2:2 + num_audio_tokens] = batch_tokens + self.audio_token_offset
+        if max_count:
+            batch_output[:, 2:2 + max_count] = batch_tokens[:, :max_count] + self.audio_token_offset
 
-        # Return as list of tensors (one per sample)
-        return [batch_output[i] for i in range(batch_size)]
+        end_pos = torch.as_tensor(token_counts, device=device) + 2
+        rows = torch.arange(batch_size, device=device)
+        batch_output[rows, end_pos] = self.audio_end_id
+        batch_output[rows, end_pos + 1] = self.eos_id
+
+        outputs = []
+        for i, count in enumerate(token_counts.tolist()):
+            outputs.append(batch_output[i, : 1 + 1 + count + 1 + 1])
+
+        return outputs

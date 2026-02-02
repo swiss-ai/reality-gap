@@ -5,6 +5,7 @@ Handles both audio-only and SFT tokenization modes.
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -35,15 +36,17 @@ class HFDatasetPipeline(BasePipeline):
         cache_dir: Optional[str] = None,
         min_duration: Optional[float] = None,
         max_duration: Optional[float] = None,
+        min_sample_rate: Optional[int] = None,
         max_samples: Optional[int] = None,
         audio_field: str = "audio",
         text_field: str = "text",
         resume: bool = False,
         batch_size: int = 1,
-        dataloader_workers: int = 0,
+        decode_workers_per_gpu: int = 0,
         dataloader_prefetch_factor: int = 2,
         dataloader_persistent_workers: bool = True,
         target_sample_rate: Optional[int] = None,
+        torch_compile: bool = True,
         wandb_config: Optional[Dict[str, Any]] = None,
         ray_config: Optional[Dict[str, Any]] = None,
         **kwargs,
@@ -56,6 +59,8 @@ class HFDatasetPipeline(BasePipeline):
             target_sample_rate=target_sample_rate,
             **kwargs,
         )
+
+        self.torch_compile = torch_compile
 
         # W&B config
         self.wandb_config = wandb_config or {}
@@ -77,12 +82,13 @@ class HFDatasetPipeline(BasePipeline):
 
         self.min_duration = min_duration
         self.max_duration = max_duration
+        self.min_sample_rate = min_sample_rate
         self.max_samples = max_samples
         self.audio_field = audio_field
         self.text_field = text_field
         self.resume = resume
         self.batch_size = batch_size
-        self.dataloader_workers = dataloader_workers
+        self.decode_workers_per_gpu = decode_workers_per_gpu
         self.dataloader_prefetch_factor = dataloader_prefetch_factor
         self.dataloader_persistent_workers = dataloader_persistent_workers
 
@@ -105,6 +111,51 @@ class HFDatasetPipeline(BasePipeline):
         # Validate shard assignment mode
         if self.shard_assignment not in {"shared", "static"}:
             raise ValueError("shard_assignment must be 'shared' or 'static'")
+
+    def _get_split_name(self) -> str:
+        """Extract split name from dataset_split (handles slicing notation)."""
+        return self.dataset_split.split("[", 1)[0]
+
+    def _sanitize_component(self, value: str) -> str:
+        return re.sub(r"[^\w.-]+", "-", value).strip("-")
+
+    def _build_output_subdir(self, extra_suffix: Optional[str] = None) -> str:
+        dataset_label = self._sanitize_component(self.dataset_name.split("/")[-1])
+        split_label = self._sanitize_component(self._get_split_name())
+        parts = [dataset_label]
+        if self.config_name:
+            parts.append(self._sanitize_component(self.config_name))
+        if split_label:
+            parts.append(split_label)
+        parts.append(self.mode)
+        if extra_suffix:
+            parts.append(self._sanitize_component(extra_suffix))
+        return "_".join(parts)
+
+    def _get_node_count(self) -> int:
+        for var in ("SLURM_JOB_NUM_NODES", "SLURM_NNODES"):
+            value = os.environ.get(var)
+            if value:
+                try:
+                    return int(value)
+                except ValueError:
+                    pass
+        try:
+            resources = ray.cluster_resources()
+            nodes = [key for key in resources if key.startswith("node:")]
+            if nodes:
+                return len(nodes)
+        except Exception:
+            pass
+        if self.num_gpus and self.num_gpus % 4 == 0:
+            return max(1, self.num_gpus // 4)
+        return 0
+
+    def _append_node_suffix(self, name: str) -> str:
+        node_count = self._get_node_count()
+        if node_count > 1:
+            return f"{name}_nd{node_count}"
+        return name
 
     def _get_completed_shards(self) -> set:
         """Get list of already completed shards by checking for .idx files."""
@@ -178,10 +229,11 @@ class HFDatasetPipeline(BasePipeline):
             "num_shards": self.num_shards,
             "shard_assignment": self.shard_assignment,
             "batch_size": self.batch_size,
-            "dataloader_workers": self.dataloader_workers,
+            "decode_workers_per_gpu": self.decode_workers_per_gpu,
             "dataloader_prefetch_factor": self.dataloader_prefetch_factor,
             "dataloader_persistent_workers": self.dataloader_persistent_workers,
             "target_sample_rate": self.target_sample_rate,
+            "min_sample_rate": self.min_sample_rate,
             "min_duration": self.min_duration,
             "max_duration": self.max_duration,
             "tokenizer_path": self.tokenizer_path,
@@ -228,9 +280,8 @@ class HFDatasetPipeline(BasePipeline):
 
         self._validate_shard_counts()
 
-        # Auto-create output subdirectory based on config_name and mode if config_name is provided
-        if self.config_name:
-            self.output_dir = str(Path(self.output_dir) / f"{self.config_name}_{self.mode}")
+        # Auto-create output subdirectory from dataset/config/split/mode
+        self.output_dir = str(Path(self.output_dir) / self._build_output_subdir())
 
         self.logger.info(f"Output directory: {self.output_dir}")
 
@@ -241,9 +292,8 @@ class HFDatasetPipeline(BasePipeline):
         if self.wandb_enabled:
             wandb_name = self.wandb_config.get("name")
             if wandb_name is None:
-                # Auto-generate name from dataset and mode
-                config_suffix = f"_{self.config_name}" if self.config_name else ""
-                wandb_name = f"{self.dataset_name.split('/')[-1]}{config_suffix}_{self.mode}"
+                # Auto-generate name from dataset/config/split/mode
+                wandb_name = self._append_node_suffix(self._build_output_subdir())
 
             wandb_run_config = self._build_wandb_run_config()
 
@@ -256,6 +306,7 @@ class HFDatasetPipeline(BasePipeline):
                     name=wandb_name,
                     tags=self.wandb_config.get("tags", []),
                     config=wandb_run_config,
+                    total_samples=self.total_samples,
                     log_interval_seconds=self.wandb_log_interval,
                 )
                 self.logger.info("W&B live logger actor initialized")
@@ -334,7 +385,7 @@ class HFDatasetPipeline(BasePipeline):
         # Start unified workers
         self.workers = []
         for i in range(self.num_gpus):
-            worker_cpus = self.dataloader_workers + 2 if self.dataloader_workers > 0 else 1
+            worker_cpus = self.decode_workers_per_gpu + 2 if self.decode_workers_per_gpu > 0 else 1
             worker = Worker.options(num_cpus=worker_cpus).remote(
                 tokenizer_path=self.tokenizer_path,
                 output_dir=self.output_dir,
@@ -344,12 +395,14 @@ class HFDatasetPipeline(BasePipeline):
                 text_field=self.text_field,
                 min_duration=self.min_duration,
                 max_duration=self.max_duration,
+                min_sample_rate=self.min_sample_rate,
                 batch_size=self.batch_size,
-                dataloader_workers=self.dataloader_workers,
+                decode_workers_per_gpu=self.decode_workers_per_gpu,
                 dataloader_prefetch_factor=self.dataloader_prefetch_factor,
                 dataloader_persistent_workers=self.dataloader_persistent_workers,
                 target_sample_rate=self.target_sample_rate,
                 target_bucket=getattr(self, 'target_bucket', None),
+                torch_compile=self.torch_compile,
                 wandb_logger=self._wandb_logger if self.wandb_live else None,
                 wandb_log_interval_seconds=self.wandb_log_interval if self.wandb_live else None,
             )
@@ -387,7 +440,7 @@ class HFDatasetPipeline(BasePipeline):
         results = ray.get(worker_futures)
 
         # Get final progress
-        total_processed = ray.get(self.progress_actor.close.remote())
+        ray.get(self.progress_actor.close.remote())
 
         # Calculate summary statistics
         total_samples_processed = sum(r["samples_processed"] for r in results)
@@ -414,6 +467,7 @@ class HFDatasetPipeline(BasePipeline):
                             "shard/errors": shard_stats.get("errors", 0),
                             "shard/samples_skipped": shard_stats.get("samples_skipped", 0),
                             "shard/duration_skipped": shard_stats.get("duration_skipped", 0),
+                            "shard/frequency_skipped": shard_stats.get("frequency_skipped", 0),
                             "shard/elapsed_time": elapsed,
                             "shard/samples_per_second": samples / elapsed if elapsed > 0 else 0,
                             "shard/tokens_per_second": tokens / elapsed if elapsed > 0 else 0,
@@ -453,7 +507,6 @@ class HFDatasetPipeline(BasePipeline):
         self._merge_results()
 
         return {
-            "total_processed": total_processed,
             "total_samples": total_samples_processed,
             "total_tokens": total_tokens,
             "total_errors": total_errors,
@@ -490,6 +543,7 @@ class HFDatasetPipeline(BasePipeline):
             audio_filtering={
                 "min_duration": self.min_duration,
                 "max_duration": self.max_duration,
+                "min_sample_rate": self.min_sample_rate,
             },
         )
 

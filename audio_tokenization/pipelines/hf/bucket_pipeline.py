@@ -7,7 +7,7 @@ Pre-filters samples by length bucket before distribution to workers.
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import ray
@@ -61,7 +61,8 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
         self.bucket_metadata_dir = bucket_metadata_dir
         self.target_bucket = target_bucket
         self.shuffle_seed = shuffle_seed
-        self._filtered_indices: Optional[List[int]] = None
+        self._filtered_indices: Optional[np.ndarray] = None
+        self._filtered_indices_ref = None
         self.bucket_index: Optional[BucketIndex] = None
 
     def _get_split_name(self) -> str:
@@ -142,14 +143,17 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
         self.logger.info(f"Loaded bucket index with {len(bucket_counts)} buckets, {len(self.bucket_index)} total samples")
 
         # Get filtered indices for target bucket (single bucket only)
-        self._filtered_indices = self.bucket_index.get_indices(self.target_bucket)
+        self._filtered_indices = np.array(
+            self.bucket_index.get_indices(self.target_bucket),
+            dtype=np.int64,
+        )
         self.logger.info(
             f"Bucket filter: target={self.target_bucket} -> {len(self._filtered_indices)} samples"
         )
 
         # Shuffle indices with fixed seed for even shard distribution and reproducibility
         rng = np.random.default_rng(seed=self.shuffle_seed)
-        self._filtered_indices = list(rng.permutation(self._filtered_indices))
+        self._filtered_indices = rng.permutation(self._filtered_indices)
         self.logger.info(f"Shuffled indices with seed={self.shuffle_seed} for even shard distribution")
 
         # Apply max_samples limit if specified
@@ -158,14 +162,16 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
             self.logger.info(f"Applied max_samples limit: {self.max_samples} samples")
 
         self.total_samples = len(self._filtered_indices)
+        self._filtered_indices_ref = ray.put(self._filtered_indices)
 
         self.logger.info(f"Processing {self.total_samples} samples")
 
         self._validate_shard_counts()
 
-        # Auto-create output subdirectory
-        if self.config_name:
-            self.output_dir = str(Path(self.output_dir) / f"{self.config_name}_{self.mode}_bucket_{self.target_bucket}")
+        # Auto-create output subdirectory from dataset/config/split/mode/bucket
+        self.output_dir = str(
+            Path(self.output_dir) / self._build_output_subdir(extra_suffix=f"bucket_{self.target_bucket}")
+        )
 
         self.logger.info(f"Output directory: {self.output_dir}")
 
@@ -180,9 +186,10 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
         if self.wandb_enabled:
             wandb_name = self.wandb_config.get("name")
             if wandb_name is None:
-                # Auto-generate name from dataset, mode, and bucket
-                config_suffix = f"_{self.config_name}" if self.config_name else ""
-                wandb_name = f"{self.dataset_name.split('/')[-1]}{config_suffix}_{self.mode}_bucket_{self.target_bucket}"
+                # Auto-generate name from dataset/config/split/mode/bucket
+                wandb_name = self._append_node_suffix(
+                    self._build_output_subdir(extra_suffix=f"bucket_{self.target_bucket}")
+                )
 
             wandb_run_config = self._build_wandb_run_config()
             wandb_run_config.update({
@@ -200,6 +207,7 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
                     name=wandb_name,
                     tags=self.wandb_config.get("tags", []),
                     config=wandb_run_config,
+                    total_samples=self.total_samples,
                     log_interval_seconds=self.wandb_log_interval,
                 )
                 self.logger.info("W&B live logger actor initialized")
@@ -229,8 +237,8 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
             "cache_dir": self.cache_dir,
             "total_samples": self.total_samples,
             "max_samples": self.max_samples if self._filtered_indices is None else None,
-            # NEW: Pass filtered indices for bucket-based filtering
-            "filtered_indices": self._filtered_indices,
+            # NEW: Pass filtered indices via object store to share across workers
+            "filtered_indices_ref": self._filtered_indices_ref,
         }
 
         # Start workers processing shards
@@ -251,7 +259,7 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
         results = ray.get(worker_futures)
 
         # Get final progress
-        total_processed = ray.get(self.progress_actor.close.remote())
+        ray.get(self.progress_actor.close.remote())
 
         # Calculate summary statistics
         total_samples_processed = sum(r["samples_processed"] for r in results)
@@ -278,6 +286,7 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
                             "shard/errors": shard_stats.get("errors", 0),
                             "shard/samples_skipped": shard_stats.get("samples_skipped", 0),
                             "shard/duration_skipped": shard_stats.get("duration_skipped", 0),
+                            "shard/frequency_skipped": shard_stats.get("frequency_skipped", 0),
                             "shard/elapsed_time": elapsed,
                             "shard/samples_per_second": samples / elapsed if elapsed > 0 else 0,
                             "shard/tokens_per_second": tokens / elapsed if elapsed > 0 else 0,
@@ -319,7 +328,6 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
         self._merge_results()
 
         return {
-            "total_processed": total_processed,
             "total_samples": total_samples_processed,
             "total_tokens": total_tokens,
             "total_errors": total_errors,
@@ -352,6 +360,7 @@ class BucketedHFDatasetPipeline(HFDatasetPipeline):
             audio_filtering={
                 "min_duration": self.min_duration,
                 "max_duration": self.max_duration,
+                "min_sample_rate": self.min_sample_rate,
             },
             bucket_filtering={
                 "metadata_dir": self.bucket_metadata_dir,

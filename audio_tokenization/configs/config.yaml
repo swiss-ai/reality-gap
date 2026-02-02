@@ -1,18 +1,18 @@
 defaults:
-  - dataset: audioset
+  - dataset: audioset_bucketed
   - _self_
 
 # Pipeline settings
 output_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/tokenized
 num_gpus: ???
-num_shards: ???
+shards_per_gpu: 1                     # Shards per GPU (1 = minimal idle time, higher = safer checkpoints for long runs)
 device: cuda
 mode: audio_only                      # audio_only, audio2text, text2audio, sft
-shard_assignment: static              # shared (queue-based) or static (pre-assigned shards)
-dataloader_workers: 48                # multiprocessing decode/resample per worker
-dataloader_prefetch_factor: 4         # prefetch batches per worker (higher hides decode/resample latency)
+shard_assignment: shared              # shared (queue-based) or static (pre-assigned shards)
+decode_workers_per_gpu: 16            # multiprocessing decode/resample per GPU worker
+dataloader_prefetch_factor: 8         # prefetch batches per worker (higher hides decode/resample latency)
 dataloader_persistent_workers: true   # keep loader workers alive across batches
-batch_size: 256                       # Batch size for tokenization (use with bucket filtering for same-length batches)
+batch_size: 12                        # Batch size for tokenization (use with bucket filtering for same-length batches)
                                       # For 10-second clips (bucket 240000), batch_size up to 256 works well
 
 # Ray config (for multi-node)
@@ -23,12 +23,14 @@ ray:
 
 # Tokenizer settings
 tokenizer:
-  path: /capstor/store/cscs/swissai/infra01/MLLM/apertus_wavtokenizer  # Required: path to omni_tokenizer (must have audio tokens added)
+  path: /capstor/store/cscs/swissai/infra01/MLLM/tokenizer/apertus_emu3.5_wavtokenizer  # Required: path to omni_tokenizer (must have audio tokens added)
   sampling_rate: 24000                                                 # Target sampling rate for decoding/resampling
+  torch_compile: false                                                 
 
 # Filtering
 min_duration: 1.0
-max_duration: 30.0
+max_duration: 200.0
+min_sample_rate: ${tokenizer.sampling_rate}
 
 # Resume
 resume: false
@@ -36,9 +38,9 @@ resume: false
 # Weights & Biases logging
 wandb:
   enabled: true
-  live: true           # If true, log live progress from a dedicated Ray actor
+  live: true               # If true, log live progress from a dedicated Ray actor
   log_interval_seconds: 1  # Live logging interval (seconds)
   project: audio-tokenization
-  entity: null  # W&B team/username, null = default
-  name: null    # Run name, null = auto-generated
-  tags: []      # Optional tags for filtering runs
+  entity: null             # W&B team/username, null = default
+  name: null               # Run name, null = auto-generated
+  tags: []                 # Optional tags for filtering runs

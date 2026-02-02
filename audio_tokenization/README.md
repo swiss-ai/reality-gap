@@ -31,7 +31,7 @@ decode and resample audio to the target rate (24kHz for WavTokenizer):
 dataset = dataset.cast_column(audio_field, Audio(sampling_rate=target_sample_rate))
 ```
 
-Audio decoding and resampling are CPU-bound, single-threaded operations. The `dataloader_workers`
+Audio decoding and resampling are CPU-bound, single-threaded operations. The `decode_workers_per_gpu`
 parameter controls how many parallel processes handle this in PyTorch's DataLoader, allowing multiple
 audio files to be decoded/resampled simultaneously while the GPU processes the current batch.
 
@@ -128,7 +128,7 @@ num_gpus: 4
 num_shards: 16
 batch_size: 256
 shard_assignment: static              # shared or static
-dataloader_workers: 16                # multiprocessing decode/resample per worker
+decode_workers_per_gpu: 16            # multiprocessing decode/resample per GPU worker
 
 # Tokenizer settings
 tokenizer:

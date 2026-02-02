@@ -174,7 +174,10 @@ class IndexedDatasetBuilder:
             tensor (torch.Tensor): The item to add to the data file
             mode (int, optional): The mode for the item. Defaults to 0.
         """
-        np_array = np.array(tensor.numpy() if hasattr(tensor, "numpy") else tensor, dtype=self.dtype)
+        if isinstance(tensor, torch.Tensor):
+            np_array = np.array(tensor.cpu().detach().numpy(), dtype=self.dtype)
+        else:
+            np_array = np.array(tensor, dtype=self.dtype)
         self.data_file.write(np_array.tobytes(order="C"))
         self.sequence_lengths.append(np_array.size)
         if self.multimodal:
@@ -190,7 +193,10 @@ class IndexedDatasetBuilder:
             lengths (List[int]): The lengths of each item in the document
             modes (Optional[List[int]], optional): The modes for each item in the document. Defaults to None.
         """
-        np_array = np.array(tensor, dtype=self.dtype)
+        if isinstance(tensor, torch.Tensor):
+            np_array = np.array(tensor.cpu().detach().numpy(), dtype=self.dtype)
+        else:
+            np_array = np.array(tensor, dtype=self.dtype)
         self.data_file.write(np_array.tobytes(order="C"))
         self.sequence_lengths.extend(lengths)
         self.document_indices.append(len(self.sequence_lengths))

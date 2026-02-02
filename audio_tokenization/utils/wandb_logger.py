@@ -17,6 +17,7 @@ class WandbLoggerActor:
         name: str,
         tags: Optional[list],
         config: Optional[Dict[str, Any]],
+        total_samples: Optional[int] = None,
         log_interval_seconds: int = 10,
     ):
         import wandb
@@ -32,6 +33,7 @@ class WandbLoggerActor:
         )
 
         self.log_interval_seconds = max(1, int(log_interval_seconds))
+        self.total_samples_target = int(total_samples) if total_samples else 0
         self.start_time = time.time()
         self.last_log_time = self.start_time
         self.step = 0
@@ -42,6 +44,7 @@ class WandbLoggerActor:
         self.total_errors = 0
         self.total_skipped = 0
         self.total_duration_skipped = 0
+        self.total_frequency_skipped = 0
 
         # Window accumulators
         self.window_samples = 0
@@ -49,6 +52,7 @@ class WandbLoggerActor:
         self.window_errors = 0
         self.window_skipped = 0
         self.window_duration_skipped = 0
+        self.window_frequency_skipped = 0
 
     def update(
         self,
@@ -57,6 +61,7 @@ class WandbLoggerActor:
         errors: int = 0,
         skipped: int = 0,
         duration_skipped: int = 0,
+        frequency_skipped: int = 0,
     ) -> None:
         """Accumulate counts and log at the configured interval."""
         self.total_samples += samples
@@ -64,12 +69,14 @@ class WandbLoggerActor:
         self.total_errors += errors
         self.total_skipped += skipped
         self.total_duration_skipped += duration_skipped
+        self.total_frequency_skipped += frequency_skipped
 
         self.window_samples += samples
         self.window_tokens += tokens
         self.window_errors += errors
         self.window_skipped += skipped
         self.window_duration_skipped += duration_skipped
+        self.window_frequency_skipped += frequency_skipped
 
         self._maybe_log()
 
@@ -86,16 +93,32 @@ class WandbLoggerActor:
         window_tokens_per_sec = self.window_tokens / elapsed if elapsed > 0 else 0
         avg_samples_per_sec = self.total_samples / total_elapsed if total_elapsed > 0 else 0
         avg_tokens_per_sec = self.total_tokens / total_elapsed if total_elapsed > 0 else 0
+        samples_percent = (
+            self.total_samples / self.total_samples_target * 100
+            if self.total_samples_target > 0
+            else 0
+        )
+        remaining_samples = max(0, self.total_samples_target - self.total_samples)
+        eta_seconds = (
+            remaining_samples / avg_samples_per_sec
+            if self.total_samples_target > 0 and avg_samples_per_sec > 0
+            else 0
+        )
 
         self._wandb.log(
             {
                 "live/samples_per_second": window_samples_per_sec,
                 "live/tokens_per_second": window_tokens_per_sec,
                 "progress/samples_processed": self.total_samples,
+                "progress/samples_total": self.total_samples_target,
+                "progress/samples_percent": samples_percent,
+                "progress/eta_seconds": eta_seconds,
+                "progress/eta_minutes": eta_seconds / 60 if eta_seconds else 0,
                 "progress/tokens_generated": self.total_tokens,
                 "progress/errors": self.total_errors,
                 "progress/samples_skipped": self.total_skipped,
                 "progress/duration_skipped": self.total_duration_skipped,
+                "progress/frequency_skipped": self.total_frequency_skipped,
                 "progress/elapsed_seconds": total_elapsed,
                 "progress/avg_samples_per_second": avg_samples_per_sec,
                 "progress/avg_tokens_per_second": avg_tokens_per_sec,
@@ -111,6 +134,7 @@ class WandbLoggerActor:
         self.window_errors = 0
         self.window_skipped = 0
         self.window_duration_skipped = 0
+        self.window_frequency_skipped = 0
 
     def log_final(self, metrics: Dict[str, Any]) -> None:
         """Log final summary metrics."""

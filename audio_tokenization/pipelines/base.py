@@ -83,6 +83,7 @@ class BasePipeline(ABC):
         total_errors = sum(r["errors"] for r in results)
         total_skipped = sum(r.get("samples_skipped", 0) for r in results)
         total_duration_skipped = sum(r.get("duration_skipped", 0) for r in results)
+        total_frequency_skipped = sum(r.get("frequency_skipped", 0) for r in results)
         total_audio_tokens = sum(r.get("audio_tokens", 0) for r in results)
         total_text_tokens = sum(r.get("text_tokens", 0) for r in results)
 
@@ -91,6 +92,7 @@ class BasePipeline(ABC):
                 "total_samples_processed": total_samples,
                 "samples_skipped": total_skipped,
                 "duration_skipped": total_duration_skipped,
+                "frequency_skipped": total_frequency_skipped,
                 "total_tokens": total_tokens,
                 "audio_tokens": total_audio_tokens,
                 "text_tokens": total_text_tokens,
@@ -121,6 +123,7 @@ class BasePipeline(ABC):
                     "errors": r["errors"],
                     "samples_skipped": r.get("samples_skipped", 0),
                     "duration_skipped": r.get("duration_skipped", 0),
+                    "frequency_skipped": r.get("frequency_skipped", 0),
                     "throughput": r.get("throughput", 0),
                 }
                 for i, r in enumerate(results)
@@ -267,6 +270,7 @@ class WorkerStats:
     errors: int = 0
     samples_skipped: int = 0
     duration_skipped: int = 0
+    frequency_skipped: int = 0
     start_time: float = field(default_factory=time.time)
     elapsed_time: float = 0.0
     throughput: float = 0.0
@@ -280,6 +284,7 @@ class WorkerStats:
             "errors": self.errors,
             "samples_skipped": self.samples_skipped,
             "duration_skipped": self.duration_skipped,
+            "frequency_skipped": self.frequency_skipped,
             "elapsed_time": self.elapsed_time,
             "throughput": self.throughput,
         }

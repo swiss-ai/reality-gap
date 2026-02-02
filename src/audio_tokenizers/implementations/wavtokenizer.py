@@ -45,16 +45,19 @@ class WavTokenizerBase(BaseAudioTokenizer):
     model_variant = "large-600"
     _downsample_rate = 600
 
-    def __init__(self, device: str = "cuda", checkpoint: Optional[str] = None):
+    def __init__(self, device: str = "cuda", checkpoint: Optional[str] = None, torch_compile: bool = True):
         """
         Initialize WavTokenizer.
 
         Args:
             device: Device to run the model on
             checkpoint: Optional path to local checkpoint
+            torch_compile: Whether to use torch.compile for speedup (default True).
+                          Set to False for variable-length audio to avoid recompilation overhead.
         """
         self.device = device
         self.checkpoint = checkpoint
+        self.torch_compile = torch_compile
 
         # Cache for resamplers (to avoid recreating and ensure correct device)
         self._resamplers = {}
@@ -96,6 +99,12 @@ class WavTokenizerBase(BaseAudioTokenizer):
     def downsample_rate(self) -> int:
         """Downsampling rate from audio samples to tokens."""
         return self._downsample_rate
+
+    def tokens_from_waveform_samples(self, num_waveform_samples: int) -> int:
+        """Return token length from waveform sample count (ceil division)."""
+        if num_waveform_samples < 0:
+            raise ValueError("num_waveform_samples must be non-negative")
+        return (num_waveform_samples + self.downsample_rate - 1) // self.downsample_rate
 
     def encode_audio(self, audio: torch.Tensor) -> torch.Tensor:
         """
@@ -322,12 +331,23 @@ class WavTokenizer40(WavTokenizerBase):
             self.model = self.model.to(self.device)
             self.model.eval()
 
-            # Compile encoder for ~1.3x speedup (fuses padding + conv operations)
-            self.model.feature_extractor.encodec.encoder = torch.compile(
-                self.model.feature_extractor.encodec.encoder
-            )
-
-            logger.info(f"WavTokenizer large-600 loaded successfully (40 tokens/s, compiled)")
+            # Optionally compile encoder for ~1.3x speedup (fuses padding + conv operations)
+            # Disable for variable-length audio to avoid recompilation overhead per unique length
+            if self.torch_compile:
+                try:
+                    import torch._dynamo as dynamo
+                    dynamo.config.recompile_limit = int(
+                        os.environ.get("WAVTOKENIZER_DYNAMO_RECOMPILE_LIMIT", "64")
+                    )
+                except Exception:
+                    pass
+                self.model.feature_extractor.encodec.encoder = torch.compile(
+                    self.model.feature_extractor.encodec.encoder,
+                    dynamic=False,
+                )
+                logger.info(f"WavTokenizer large-600 loaded successfully (40 tokens/s, compiled)")
+            else:
+                logger.info(f"WavTokenizer large-600 loaded successfully (40 tokens/s, eager mode)")
 
         except Exception as e:
             logger.error(f"Error loading WavTokenizer: {e}")

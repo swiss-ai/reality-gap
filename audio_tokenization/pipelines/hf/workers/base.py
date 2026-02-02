@@ -34,15 +34,18 @@ class Worker:
         min_duration: Optional[float] = None,
         max_duration: Optional[float] = None,
         batch_size: int = 1,
-        dataloader_workers: int = 0,
+        decode_workers_per_gpu: int = 0,
         dataloader_prefetch_factor: int = 2,
         dataloader_persistent_workers: bool = True,
         target_sample_rate: Optional[int] = None,
+        min_sample_rate: Optional[int] = None,
         target_bucket: Optional[int] = None,
+        torch_compile: bool = True,
         wandb_logger=None,
         wandb_log_interval_seconds: Optional[int] = None,
     ):
         self.tokenizer_path = tokenizer_path
+        self.torch_compile = torch_compile
         self.output_dir = Path(output_dir)
         self.worker_id = worker_id
         self.mode = mode
@@ -51,10 +54,11 @@ class Worker:
         self.min_duration = min_duration
         self.max_duration = max_duration
         self.batch_size = batch_size
-        self.dataloader_workers = dataloader_workers
+        self.decode_workers_per_gpu = decode_workers_per_gpu
         self.dataloader_prefetch_factor = dataloader_prefetch_factor
         self.dataloader_persistent_workers = dataloader_persistent_workers
         self.target_sample_rate = target_sample_rate
+        self.min_sample_rate = min_sample_rate
         self.target_bucket = target_bucket
         self.wandb_logger = wandb_logger
         self._wandb_flush_interval = (
@@ -69,6 +73,7 @@ class Worker:
             "errors": 0,
             "skipped": 0,
             "duration_skipped": 0,
+            "frequency_skipped": 0,
         }
 
         if mode not in self.VALID_MODES:
@@ -82,7 +87,7 @@ class Worker:
 
         self.logger.info(
             f"Worker {worker_id} initialized in {mode} mode "
-            f"(batch_size={batch_size}, dataloader_workers={dataloader_workers}, "
+            f"(batch_size={batch_size}, decode_workers_per_gpu={decode_workers_per_gpu}, "
             f"prefetch_factor={dataloader_prefetch_factor}, target_sample_rate={target_sample_rate})"
         )
 
@@ -93,6 +98,7 @@ class Worker:
         errors: int = 0,
         skipped: int = 0,
         duration_skipped: int = 0,
+        frequency_skipped: int = 0,
     ) -> None:
         if self.wandb_logger is None:
             return
@@ -101,6 +107,7 @@ class Worker:
         self._wandb_pending["errors"] += errors
         self._wandb_pending["skipped"] += skipped
         self._wandb_pending["duration_skipped"] += duration_skipped
+        self._wandb_pending["frequency_skipped"] += frequency_skipped
         self._wandb_flush_if_due()
 
     def _wandb_flush_if_due(self, force: bool = False) -> None:
@@ -119,6 +126,7 @@ class Worker:
             errors=self._wandb_pending["errors"],
             skipped=self._wandb_pending["skipped"],
             duration_skipped=self._wandb_pending["duration_skipped"],
+            frequency_skipped=self._wandb_pending["frequency_skipped"],
         )
         for key in self._wandb_pending:
             self._wandb_pending[key] = 0
@@ -131,6 +139,7 @@ class Worker:
             self._tokenizer = create_tokenizer(
                 omni_tokenizer_path=self.tokenizer_path,
                 device="cuda",
+                torch_compile=self.torch_compile,
             )
         return self._tokenizer
 
@@ -175,6 +184,10 @@ class Worker:
 
         if audio is None:
             stats.samples_skipped += 1
+            return None
+
+        if self.min_sample_rate and sample_rate < self.min_sample_rate:
+            stats.frequency_skipped += 1
             return None
 
         duration = self._get_audio_duration(audio, sample_rate)
@@ -233,6 +246,7 @@ class Worker:
                 prev_errors = stats.errors
                 prev_skipped = stats.samples_skipped
                 prev_duration_skipped = stats.duration_skipped
+                prev_frequency_skipped = stats.frequency_skipped
                 try:
                     with torch.inference_mode():
                         tokens = self._process_sample(sample, stats)
@@ -254,6 +268,7 @@ class Worker:
                     errors=stats.errors - prev_errors,
                     skipped=stats.samples_skipped - prev_skipped,
                     duration_skipped=stats.duration_skipped - prev_duration_skipped,
+                    frequency_skipped=stats.frequency_skipped - prev_frequency_skipped,
                 )
 
         finalize_shard_writer(builder, tmp_bin, tmp_idx, bin_path, idx_path)
@@ -262,11 +277,11 @@ class Worker:
 
     def _process_shard_batched(self, shard_data, builder, stats: WorkerStats) -> None:
         def iter_batches():
-            if self.dataloader_workers and self.dataloader_workers > 0:
+            if self.decode_workers_per_gpu and self.decode_workers_per_gpu > 0:
                 loader = DataLoader(
                     shard_data,
                     batch_size=self.batch_size,
-                    num_workers=self.dataloader_workers,
+                    num_workers=self.decode_workers_per_gpu,
                     collate_fn=lambda x: x,
                     drop_last=False,
                     persistent_workers=self.dataloader_persistent_workers,
@@ -298,6 +313,7 @@ class Worker:
             dataset_info,
             self.audio_field,
             self.target_sample_rate,
+            min_sample_rate=self.min_sample_rate,
             logger=self.logger,
         )
 

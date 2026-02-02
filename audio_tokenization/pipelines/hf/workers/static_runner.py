@@ -65,11 +65,11 @@ def run_shards_static(worker, shard_ids: List[int], dataset, num_shards: int, pr
 
     loader_kwargs = dict(
         batch_size=worker.batch_size,
-        num_workers=worker.dataloader_workers,
+        num_workers=worker.decode_workers_per_gpu,
         collate_fn=lambda x: x,
         drop_last=False,
     )
-    if worker.dataloader_workers and worker.dataloader_workers > 0:
+    if worker.decode_workers_per_gpu and worker.decode_workers_per_gpu > 0:
         loader_kwargs["persistent_workers"] = worker.dataloader_persistent_workers
         loader_kwargs["prefetch_factor"] = worker.dataloader_prefetch_factor
 
@@ -102,6 +102,7 @@ def run_shards_static(worker, shard_ids: List[int], dataset, num_shards: int, pr
                     prev_errors = current_stats.errors
                     prev_skipped = current_stats.samples_skipped
                     prev_duration_skipped = current_stats.duration_skipped
+                    prev_frequency_skipped = current_stats.frequency_skipped
                     try:
                         with torch.inference_mode():
                             tokens = worker._process_sample(sample, current_stats)
@@ -120,6 +121,7 @@ def run_shards_static(worker, shard_ids: List[int], dataset, num_shards: int, pr
                         errors=current_stats.errors - prev_errors,
                         skipped=current_stats.samples_skipped - prev_skipped,
                         duration_skipped=current_stats.duration_skipped - prev_duration_skipped,
+                        frequency_skipped=current_stats.frequency_skipped - prev_frequency_skipped,
                     )
             current_batch = []
 
@@ -136,6 +138,7 @@ def run_shards_static(worker, shard_ids: List[int], dataset, num_shards: int, pr
         total_stats.errors += shard_stats["errors"]
         total_stats.samples_skipped += shard_stats["samples_skipped"]
         total_stats.duration_skipped += shard_stats["duration_skipped"]
+        total_stats.frequency_skipped += shard_stats.get("frequency_skipped", 0)
 
         if progress_actor is not None:
             progress_actor.update.remote(shard_stats["samples_processed"])
@@ -177,6 +180,7 @@ def run_shards_static(worker, shard_ids: List[int], dataset, num_shards: int, pr
                 prev_errors = current_stats.errors
                 prev_skipped = current_stats.samples_skipped
                 prev_duration_skipped = current_stats.duration_skipped
+                prev_frequency_skipped = current_stats.frequency_skipped
                 try:
                     with torch.inference_mode():
                         tokens = worker._process_sample(sample, current_stats)
@@ -195,6 +199,7 @@ def run_shards_static(worker, shard_ids: List[int], dataset, num_shards: int, pr
                     errors=current_stats.errors - prev_errors,
                     skipped=current_stats.samples_skipped - prev_skipped,
                     duration_skipped=current_stats.duration_skipped - prev_duration_skipped,
+                    frequency_skipped=current_stats.frequency_skipped - prev_frequency_skipped,
                 )
 
     if current_shard_id is not None:

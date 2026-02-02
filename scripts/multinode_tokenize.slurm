@@ -5,7 +5,7 @@
 #SBATCH --environment=nemo
 #SBATCH --output=/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/logs/multinode_tok_%j.out
 #SBATCH --error=/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer/logs/multinode_tok_%j.err
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=4
 #SBATCH --gpus-per-node=4
@@ -46,16 +46,16 @@ echo ""
 
 # Calculate total resources
 TOTAL_GPUS=$((SLURM_JOB_NUM_NODES * 4))
-TOTAL_SHARDS=$((TOTAL_GPUS * 4))  # 4 shards per GPU
 
 echo "Total GPUs: ${TOTAL_GPUS}"
-echo "Total shards: ${TOTAL_SHARDS}"
 echo ""
-
+ 
 # Run head/worker and driver under a single srun so the driver is on the head node
 srun -N ${SLURM_JOB_NUM_NODES} --tasks-per-node=1 -u bash -c '
     set -e
     export PYTHONPATH=/iopsstor/scratch/cscs/xyixuan/benchmark-audio-tokenizer:$PYTHONPATH
+    export FFMPEG_PATH=/users/xyixuan/.local/ffmpeg/bin/ffmpeg
+    export LD_LIBRARY_PATH=/users/xyixuan/.local/ffmpeg/lib:$LD_LIBRARY_PATH
 
     # Install torchaudio in the same container instance
     echo "Installing torchaudio on $(hostname -s)..."
@@ -87,9 +87,8 @@ srun -N ${SLURM_JOB_NUM_NODES} --tasks-per-node=1 -u bash -c '
             dataset=audioset_bucketed \
             dataset.bucket.target_bucket=240000 \
             num_gpus='"${TOTAL_GPUS}"' \
-            num_shards='"${TOTAL_SHARDS}"' \
             ray.address="'"${RAY_ADDRESS}"'" \
-            wandb.name="multinode_'"${SLURM_JOB_NUM_NODES}"'nodes_'"${TOTAL_GPUS}"'gpus" \
+            wandb.name="hf_audio_tokenization_'"${SLURM_JOB_NUM_NODES}"'nodes" \
             wandb.tags="[benchmark,multinode,'"${SLURM_JOB_NUM_NODES}"'nodes]"
 
         echo ""
