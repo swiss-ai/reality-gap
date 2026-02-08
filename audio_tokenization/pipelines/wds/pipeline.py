@@ -13,7 +13,7 @@ import ray
 
 from audio_tokenization.pipelines.base import BasePipeline, ProgressActor
 from audio_tokenization.utils.ray_utils import init_ray
-from audio_tokenization.pipelines.hf.workers.shard_assignment import ShardQueue
+from audio_tokenization.pipelines.shard_assignment import ShardQueue
 from .workers import WDSWorker
 
 
@@ -42,6 +42,7 @@ class WDSDatasetPipeline(BasePipeline):
         target_bucket: Optional[int] = None,
         silence_unique_threshold: Optional[int] = None,
         torch_compile: bool = True,
+        trim_last_tokens: int = 5,
         decode_workers_per_gpu: int = 0,
         dataloader_prefetch_factor: int = 2,
         resume: bool = False,
@@ -74,6 +75,7 @@ class WDSDatasetPipeline(BasePipeline):
         self.target_bucket = target_bucket
         self.silence_unique_threshold = silence_unique_threshold
         self.torch_compile = torch_compile
+        self.trim_last_tokens = max(0, int(trim_last_tokens))
         self.min_sample_rate = min_sample_rate
         self.decode_workers_per_gpu = int(decode_workers_per_gpu)
         self.dataloader_prefetch_factor = int(dataloader_prefetch_factor)
@@ -175,6 +177,29 @@ class WDSDatasetPipeline(BasePipeline):
 
         return completed
 
+    def _count_samples_from_metadata(self) -> int:
+        """Count total samples from metadata files."""
+        if not self.metadata_path:
+            return 0
+        metadata_path = Path(self.metadata_path)
+        if not metadata_path.exists():
+            return 0
+
+        total = 0
+        if metadata_path.is_dir():
+            # Per-shard metadata: count lines in each TSV (minus header)
+            for shard_path in self.shard_paths:
+                shard_name = f"{Path(shard_path).parent.name}/{Path(shard_path).stem}".lower()
+                tsv_path = metadata_path / f"{shard_name.replace('/', '_')}.tsv"
+                if tsv_path.exists():
+                    with open(tsv_path) as f:
+                        total += sum(1 for _ in f) - 1  # minus header
+        else:
+            # Single TSV: count all lines minus header
+            with open(metadata_path) as f:
+                total = sum(1 for _ in f) - 1
+        return max(0, total)
+
     def setup(self):
         self.logger.info(f"Initializing Ray with {self.num_gpus} workers")
         init_ray(self.ray_config, self.num_gpus)
@@ -188,6 +213,11 @@ class WDSDatasetPipeline(BasePipeline):
         self.logger.info(f"Resolved {self.num_shards} shards")
         if self.max_samples:
             self.logger.warning("max_samples is not enforced for WDS pipelines (streaming shards).")
+
+        # Count total samples from metadata if available
+        if self.metadata_path:
+            self.total_samples = self._count_samples_from_metadata()
+            self.logger.info(f"Total samples from metadata: {self.total_samples}")
 
         # Auto-create output subdirectory
         self.output_dir = str(Path(self.output_dir) / self._build_output_subdir())
@@ -217,6 +247,7 @@ class WDSDatasetPipeline(BasePipeline):
                 "target_bucket": self.target_bucket,
                 "silence_unique_threshold": self.silence_unique_threshold,
                 "tokenizer_path": self.tokenizer_path,
+                "trim_last_tokens": self.trim_last_tokens,
                 "ray_address": self.ray_config.get("address"),
             }
 
@@ -294,6 +325,7 @@ class WDSDatasetPipeline(BasePipeline):
                 target_bucket=self.target_bucket,
                 silence_unique_threshold=self.silence_unique_threshold,
                 torch_compile=self.torch_compile,
+                trim_last_tokens=self.trim_last_tokens,
                 decode_workers_per_gpu=self.decode_workers_per_gpu,
                 dataloader_prefetch_factor=self.dataloader_prefetch_factor,
                 metadata_path=self.metadata_path,
@@ -398,6 +430,7 @@ class WDSDatasetPipeline(BasePipeline):
             tokenizer={
                 "path": self.tokenizer_path,
                 "sampling_rate": self.target_sample_rate,
+                "trim_last_tokens": self.trim_last_tokens,
             },
             audio_filtering={
                 "min_duration": self.min_duration,

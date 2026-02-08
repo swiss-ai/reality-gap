@@ -62,6 +62,75 @@ def _copy_modality_mapping_files(
             print(f"  Copied {info['mapping_file']}")
 
 
+# Modality registry: name -> (mapping_file, offset_key, vocab_size_key, start_token, end_token)
+MODALITY_REGISTRY = {
+    "vision": ("vision_token_mapping.json", "vision_token_offset", "visual_vocab_size", "<|img_start|>", "<|img_end|>"),
+    "audio": ("audio_token_mapping.json", "audio_token_offset", "audio_vocab_size", "<|audio_start|>", "<|audio_end|>"),
+}
+
+
+def _read_modality_info(output_path: str, name: str, tokenizer) -> Dict[str, Any] | None:
+    """Read modality info from its mapping file. Returns None if not found or incomplete."""
+    if name not in MODALITY_REGISTRY:
+        return None
+
+    mapping_file, offset_key, vocab_key, start_token, end_token = MODALITY_REGISTRY[name]
+    mapping_path = os.path.join(output_path, mapping_file)
+
+    if not os.path.exists(mapping_path):
+        return None
+
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if offset_key not in data:
+        return None
+
+    start_token_id = tokenizer.convert_tokens_to_ids(start_token)
+    end_token_id = tokenizer.convert_tokens_to_ids(end_token)
+
+    if start_token_id == tokenizer.unk_token_id:
+        raise ValueError(
+            f"Modality start token {start_token} not found in tokenizer at {output_path}"
+        )
+    if end_token_id == tokenizer.unk_token_id:
+        raise ValueError(
+            f"Modality end token {end_token} not found in tokenizer at {output_path}"
+        )
+
+    return {
+        "name": name,
+        "offset": data[offset_key],
+        "vocab_size": data.get(vocab_key),
+        # Store modality boundary markers as token IDs.
+        "start_token": start_token_id,
+        "end_token": end_token_id,
+    }
+
+
+def _build_omnimodal_config(output_path: str, base_vocab_size: int, tokenizer) -> Dict[str, Any]:
+    """
+    Build omnimodal_config from all present modality mapping files.
+
+    Stores raw data only - omni_special_vocab_size computed at load time as:
+        first_modality_offset - omni_special_token_offset
+    """
+    modalities = [
+        info for name in MODALITY_REGISTRY
+        if (info := _read_modality_info(output_path, name, tokenizer)) is not None
+    ]
+
+    if not modalities:
+        return {}
+
+    modalities.sort(key=lambda m: m["offset"])
+
+    return {
+        "omni_special_token_offset": base_vocab_size,
+        "modalities": modalities,
+    }
+
+
 def _update_tokenizer_config(
     config_path: str,
     stats: Dict[str, Any],
@@ -81,6 +150,7 @@ def _update_tokenizer_config(
         "type": audio_tokenizer_name,
         "codebook_size": audio_vocab_size,
     }
+
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
 
@@ -349,6 +419,18 @@ def add_audio_tokens(
             announce=False,
         )
 
+        # Refresh omnimodal_config so modality boundary tokens are stored as token IDs.
+        config_path = os.path.join(output_path, "tokenizer_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            tokenizer_for_config = AutoTokenizer.from_pretrained(output_path, use_fast=True)
+            omnimodal_config = _build_omnimodal_config(output_path, base_vocab_size, tokenizer_for_config)
+            if omnimodal_config:
+                config["omnimodal_config"] = omnimodal_config
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(config, f, indent=2)
+
         stats["final_vocab_size"] = current_vocab_size
         return tokenizer, stats
 
@@ -413,6 +495,18 @@ def add_audio_tokens(
         audio_mapping[i] = token_id
 
     _save_audio_mapping(output_path, audio_mapping, audio_vocab_size, stats["final_vocab_size"], audio_tokenizer_name)
+
+    # Now update tokenizer_config.json with omnimodal_config (after mapping files exist)
+    config_path = os.path.join(output_path, "tokenizer_config.json")
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    tokenizer_for_config = AutoTokenizer.from_pretrained(output_path, use_fast=True)
+    omnimodal_config = _build_omnimodal_config(output_path, base_vocab_size, tokenizer_for_config)
+    if omnimodal_config:
+        config["omnimodal_config"] = omnimodal_config
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+        print(f"Updated omnimodal_config in tokenizer_config.json")
 
     # Verification
     print("\n" + "=" * 60)

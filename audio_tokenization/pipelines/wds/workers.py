@@ -17,7 +17,7 @@ import torch
 import webdataset as wds
 
 from audio_tokenization.pipelines.base import WorkerStats
-from audio_tokenization.pipelines.hf.workers.shard_io import open_shard_writer, finalize_shard_writer
+from audio_tokenization.pipelines.shard_io import open_shard_writer, finalize_shard_writer
 
 
 # =============================================================================
@@ -333,6 +333,7 @@ class WDSWorker:
         target_bucket: Optional[int] = None,
         silence_unique_threshold: Optional[int] = None,
         torch_compile: bool = True,
+        trim_last_tokens: int = 5,
         decode_workers_per_gpu: int = 0,
         dataloader_prefetch_factor: int = 2,
         ffmpeg_path: Optional[str] = None,
@@ -367,6 +368,7 @@ class WDSWorker:
         self.target_bucket = target_bucket
         self.silence_unique_threshold = silence_unique_threshold
         self.torch_compile = torch_compile
+        self.trim_last_tokens = max(0, int(trim_last_tokens))
         self.decode_workers_per_gpu = decode_workers_per_gpu
         self.dataloader_prefetch_factor = dataloader_prefetch_factor
 
@@ -401,7 +403,12 @@ class WDSWorker:
     def tokenizer(self):
         if self._tokenizer is None:
             from audio_tokenization.vokenizers import create_tokenizer
-            self._tokenizer = create_tokenizer(self.tokenizer_path, device="cuda", torch_compile=self.torch_compile)
+            self._tokenizer = create_tokenizer(
+                omni_tokenizer_path=self.tokenizer_path,
+                device="cuda",
+                torch_compile=self.torch_compile,
+                trim_last_tokens=self.trim_last_tokens,
+            )
         return self._tokenizer
 
     @property
