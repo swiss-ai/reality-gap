@@ -75,6 +75,11 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
     output_dir = cfg["output_dir"]
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
+    # Clean up stale .tmp files from killed runs (e.g. OOM kill).
+    for tmp in Path(output_dir).glob(f"rank_{rank:04d}_*.tmp"):
+        logger.warning(f"[rank {rank}] Removing stale temp file: {tmp.name}")
+        tmp.unlink()
+
     # ------------------------------------------------------------------
     # 1. Build CutSet (prepared Shar load + filters/resample safety-net)
     # ------------------------------------------------------------------
@@ -415,7 +420,7 @@ def _save_metadata(
     metadata = {
         "dataset_type": "lhotse",
         "dataset_name": cfg.get("dataset_name", ""),
-        "dataset_split": cfg.get("dataset_split", ""),
+        "shar_dir": cfg.get("shar_dir", ""),
         "source_type": cfg.get("source_type", "shar"),
         "mode": cfg.get("mode", "audio_only"),
         "tokenizer_path": cfg.get("tokenizer_path", ""),
@@ -440,18 +445,28 @@ def _save_metadata(
 # ---------------------------------------------------------------------------
 
 
+def _infer_shar_label(cfg: Dict[str, Any]) -> str:
+    """Derive a human-readable label from ``shar_dir``.
+
+    E.g. ``/data/audioset_unbal_train_shar`` → ``audioset_unbal_train_shar``.
+    For multiple dirs, joins their names with ``+``.
+    Falls back to sanitised ``dataset_name`` if ``shar_dir`` is not set.
+    """
+    shar_dir = cfg.get("shar_dir")
+    if shar_dir:
+        dirs = shar_dir if isinstance(shar_dir, (list, tuple)) else [shar_dir]
+        return "+".join(Path(d).name for d in dirs)
+    return re.sub(r"[^\w.-]+", "-", cfg.get("dataset_name", "unknown")).strip("-")
+
+
 def _build_output_subdir(cfg: Dict[str, Any]) -> str:
     """Build a dataset-specific subdirectory name to avoid checkpoint collisions.
 
-    Format: ``{dataset}_{split}_lhotse_{mode}[_dur{min}-{max}]``
+    Format: ``{shar_label}_lhotse_{mode}[_dur{min}-{max}]``
     """
-    def _sanitize(value: str) -> str:
-        return re.sub(r"[^\w.-]+", "-", value).strip("-")
-
-    dataset_label = _sanitize(cfg.get("dataset_name", "unknown"))
-    split_label = _sanitize(cfg.get("dataset_split", "train"))
+    shar_label = _infer_shar_label(cfg)
     mode = cfg.get("mode", "audio_only")
-    parts = [dataset_label, split_label, "lhotse", mode]
+    parts = [shar_label, "lhotse", mode]
 
     min_dur = cfg.get("min_duration")
     max_dur = cfg.get("max_duration")

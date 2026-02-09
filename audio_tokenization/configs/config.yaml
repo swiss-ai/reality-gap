@@ -3,6 +3,7 @@ defaults:
   - _self_
 
 # Pipeline settings
+output_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/tokenized
 
 num_gpus: ???
 device: cuda
@@ -33,14 +34,9 @@ min_sample_rate: 16000
 # Resume
 resume: false
 
-# Optional post-success merge of rank/chunk .bin/.idx into one indexed dataset
-merge:
-  enabled: false
-  output_prefix: null       # null -> <pipeline_output_dir>/merged
-  input_dirs: null          # null -> [pipeline_output_dir]
-  recursive: false
-  force: false
-  multimodal: false
+# Merge rank/chunk .bin/.idx into one indexed dataset after tokenization
+# Not implemented yet
+merge: false
 
 # Weights & Biases logging
 wandb:

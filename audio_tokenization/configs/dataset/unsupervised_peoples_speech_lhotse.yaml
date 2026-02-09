@@ -2,10 +2,12 @@
 # Requires pre-built Shar data (run prepare_wds_to_shar first).
 dataset_type: lhotse
 dataset_name: unsupervised_peoples_speech
-dataset_split: train
 
-# Pre-built Shar directory (from prepare_wds_to_shar)
-shar_dir: null
+# Pre-built Shar directories (from prepare_wds_to_shar)
+# Supports a single path or a list of paths.
+shar_dir:
+  - /iopsstor/scratch/cscs/xyixuan/audio-datasets/peoples_speech_dirty_shar_audio_only
+  - /iopsstor/scratch/cscs/xyixuan/audio-datasets/peoples_speech_clean_shar_audio_only
 shar_index_filename: shar_index.json
 
 # Dynamic bucketing sampler
@@ -13,7 +15,7 @@ shar_index_filename: shar_index.json
 #   600s → ~300 audio_s/s, ~4 GB     (conservative)
 #  1500s → ~700 audio_s/s, ~22 GB    (2.3x throughput, safe on GH200 80GB)
 #  3000s → ~1100 audio_s/s, ~44 GB   (3.7x, aggressive)
-max_batch_duration: 1500.0
+max_batch_duration: 2000.0
 max_batch_cuts: null
 num_buckets: 20
 bucket_buffer_size: 20000
@@ -21,11 +23,11 @@ sampler_shuffle: true
 sampler_seed: 42
 
 # DataLoader prefetching (CPU decode overlaps GPU tokenization)
-num_workers: 4
-prefetch_factor: 4
+num_workers: 32
+prefetch_factor: 6
 
 # Micro-shard checkpointing interval (in batches)
-checkpoint_interval_batches: 500
+checkpoint_interval_batches: 2000
 
 # Hard-drop audio below 16kHz before resampling to target SR.
 # 16kHz→24kHz upsampling is fine (Nyquist 8kHz covers speech).

@@ -88,14 +88,13 @@ def main(cfg: DictConfig):
             "trim_last_tokens": trim_last_tokens,
             "output_dir": cfg.output_dir,
             "dataset_name": cfg.dataset.dataset_name,
-            "dataset_split": cfg.dataset.get("dataset_split", "train"),
             "mode": cfg.get("mode", "audio_only"),
             "resume": cfg.get("resume", False),
             "min_duration": cfg.dataset.get("min_duration", cfg.get("min_duration")),
             "max_duration": cfg.dataset.get("max_duration", cfg.get("max_duration")),
             "min_sample_rate": cfg.dataset.get("min_sample_rate", min_sample_rate),
             # Shar data (pre-built by prepare_hf_to_shar / prepare_wds_to_shar)
-            "shar_dir": cfg.dataset.get("shar_dir"),
+            "shar_dir": OmegaConf.to_container(cfg.dataset.shar_dir, resolve=True),
             "shar_index_filename": cfg.dataset.get("shar_index_filename", "shar_index.json"),
             # Dynamic bucketing sampler
             "max_batch_duration": cfg.dataset.get("max_batch_duration", 1500.0),

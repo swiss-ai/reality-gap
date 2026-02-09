@@ -28,10 +28,15 @@ import glob
 import json
 import logging
 import multiprocessing as mp
-import shutil
 import time
-from collections import defaultdict
 from pathlib import Path
+
+from audio_tokenization.utils.prepare_data.common import (
+    SUCCESS_MARKER_FILE,
+    build_shar_index_from_parts,
+    mark_partition_success,
+    setup_partition_dir,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 WORKER_ASSIGNMENT_FILE = "_worker_assignment.json"
-WORKER_SUCCESS_FILE = "_SUCCESS"
+WORKER_SUCCESS_FILE = SUCCESS_MARKER_FILE
 
 
 # ---------------------------------------------------------------------------
@@ -124,19 +129,14 @@ def _convert_worker(args_tuple):
     worker_id, tar_paths, shar_dir, target_sr, shard_size, shar_format, min_sr, text_ext = args_tuple
 
     worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
-    success_marker = worker_dir / WORKER_SUCCESS_FILE
-
-    # Resume: reuse only if worker completed successfully.
-    if success_marker.is_file():
-        logger.info(f"Worker {worker_id}: reusing completed Shar in {worker_dir}")
+    if setup_partition_dir(
+        worker_dir,
+        success_marker_name=WORKER_SUCCESS_FILE,
+        reuse_log=f"Worker {worker_id}: reusing completed Shar in {worker_dir}",
+        reset_log=f"Worker {worker_id}: removing partial output in {worker_dir}",
+        logger=logger,
+    ):
         return {"worker_id": worker_id, "written": -1, "skipped": 0, "errors": 0, "elapsed": 0}
-
-    # Partial output from interrupted runs is unsafe to reuse.
-    if worker_dir.is_dir():
-        logger.warning(f"Worker {worker_id}: removing partial output in {worker_dir}")
-        shutil.rmtree(worker_dir)
-
-    worker_dir.mkdir(parents=True, exist_ok=True)
 
     # SoX resampling backend (per-process state)
     try:
@@ -184,7 +184,7 @@ def _convert_worker(args_tuple):
         f"Worker {worker_id} done in {elapsed:.1f}s: "
         f"{written} written, {skipped} skipped, {errors} errors"
     )
-    success_marker.write_text("ok\n")
+    mark_partition_success(worker_dir, success_marker_name=WORKER_SUCCESS_FILE)
     return {"worker_id": worker_id, "written": written, "skipped": skipped, "errors": errors, "elapsed": elapsed}
 
 
@@ -192,48 +192,21 @@ def _convert_worker(args_tuple):
 # Index builder
 # ---------------------------------------------------------------------------
 
-def build_shar_index(shar_root: Path, index_filename: str = "shar_index.json"):
+def build_shar_index(shar_root: Path, num_workers: int, index_filename: str = "shar_index.json"):
     """Build a merged ``shar_index.json`` from all ``worker_*`` directories.
 
     The index maps field names (``cuts``, ``recording``, ...) to sorted lists
     of absolute file paths, so that ``CutSet.from_shar(fields=...)`` can load
     all worker outputs as a single logical CutSet.
     """
-    fields = defaultdict(list)
-
-    for worker_dir in sorted(shar_root.glob("worker_*")):
-        if not worker_dir.is_dir():
-            continue
-
-        success_marker = worker_dir / WORKER_SUCCESS_FILE
-        if not success_marker.is_file():
-            if any(worker_dir.glob("cuts*.jsonl.gz")):
-                logger.warning(f"Skipping partial worker dir (missing _SUCCESS): {worker_dir}")
-            continue
-
-        if not any(worker_dir.glob("cuts*.jsonl.gz")):
-            logger.warning(f"Skipping worker dir with _SUCCESS but no cuts manifests: {worker_dir}")
-            continue
-
-        for p in sorted(worker_dir.iterdir()):
-            if not p.is_file():
-                continue
-            field = p.name.split(".")[0]
-            if field == "cuts" and p.suffix == ".gz":
-                fields["cuts"].append(str(p))
-            elif p.suffix in (".tar", ".gz"):
-                fields[field].append(str(p))
-
-    if not fields.get("cuts"):
-        raise FileNotFoundError(f"No Shar cuts found under {shar_root}")
-
-    payload = {
-        "version": 1,
-        "fields": {k: sorted(v) for k, v in fields.items()},
-    }
-    index_path = shar_root / index_filename
-    index_path.write_text(json.dumps(payload, indent=2))
-    logger.info(f"Wrote merged index: {index_path} ({len(fields['cuts'])} cut shards)")
+    worker_dirs = [shar_root / f"worker_{wid:02d}" for wid in range(num_workers)]
+    index_path, cuts_count = build_shar_index_from_parts(
+        shar_root=shar_root,
+        part_dirs=worker_dirs,
+        index_filename=index_filename,
+        success_marker_name=WORKER_SUCCESS_FILE,
+    )
+    logger.info(f"Wrote merged index: {index_path} ({cuts_count} cut shards)")
 
 
 # ---------------------------------------------------------------------------
@@ -376,8 +349,8 @@ def main():
     )
 
     # Build merged index for pipeline compatibility
-    build_shar_index(args.shar_dir)
-    (args.shar_dir / "_SUCCESS").write_text("ok\n")
+    build_shar_index(args.shar_dir, num_workers=num_workers)
+    mark_partition_success(args.shar_dir, success_marker_name=WORKER_SUCCESS_FILE)
     logger.info("All done!")
 
 

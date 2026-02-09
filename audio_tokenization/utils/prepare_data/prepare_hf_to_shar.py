@@ -26,17 +26,26 @@ Usage:
 """
 
 import argparse
-import json
 import logging
-from collections import defaultdict
 from multiprocessing import Process
 from pathlib import Path
+
+from audio_tokenization.utils.prepare_data.common import (
+    SUCCESS_MARKER_FILE,
+    build_shar_index_from_parts,
+    mark_partition_success,
+    setup_partition_dir,
+    validate_or_write_prepare_state,
+)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+PART_SUCCESS_MARKER = SUCCESS_MARKER_FILE
+PREPARE_STATE_FILE = "_PREPARE_STATE.json"
 
 
 # ---------------------------------------------------------------------------
@@ -51,19 +60,20 @@ def convert_worker(rank: int, world_size: int, args):
     """Convert one shard of the HF dataset to Shar format.
 
     Each worker writes to its own ``part-{rank:05d}/`` directory.
-    Skips if that directory already contains Shar manifests (resume-safe).
+    Reuses output only when ``part-*/_SUCCESS`` exists.
     """
     import datasets
     from lhotse import CutSet
 
     output_dir = args.shar_dir / f"part-{rank:05d}"
-
-    # Resume: skip if this partition was already converted
-    if any(output_dir.glob("cuts*.jsonl.gz")):
-        logger.info(f"[worker {rank}] Reusing existing Shar in {output_dir}")
+    if setup_partition_dir(
+        output_dir,
+        success_marker_name=PART_SUCCESS_MARKER,
+        reuse_log=f"[worker {rank}] Reusing completed Shar in {output_dir}",
+        reset_log=f"[worker {rank}] Removing partial Shar output in {output_dir}",
+        logger=logger,
+    ):
         return
-
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load HF dataset (arrow-backed, no audio decoding happens here)
     load_kwargs = {"split": args.dataset_split}
@@ -81,6 +91,7 @@ def convert_worker(rank: int, world_size: int, args):
 
     if len(ds) == 0:
         logger.warning(f"[worker {rank}] Empty shard, skipping")
+        mark_partition_success(output_dir, success_marker_name=PART_SUCCESS_MARKER)
         return
 
     # Wrap as Lhotse CutSet (byte-backed: audio decoded lazily during to_shar)
@@ -100,6 +111,7 @@ def convert_worker(rank: int, world_size: int, args):
         num_jobs=1,
         verbose=(rank == 0),
     )
+    mark_partition_success(output_dir, success_marker_name=PART_SUCCESS_MARKER)
     logger.info(f"[worker {rank}] Done → {output_dir}")
 
 
@@ -107,43 +119,53 @@ def convert_worker(rank: int, world_size: int, args):
 # Index builder
 # ---------------------------------------------------------------------------
 
-def build_shar_index(shar_root: Path, index_filename: str):
+def build_shar_index(shar_root: Path, index_filename: str, world_size: int):
     """Build a merged ``shar_index.json`` from all ``part-*`` directories.
 
     The index maps field names (``cuts``, ``recording``, ...) to sorted lists
     of absolute file paths, so that ``CutSet.from_shar(fields=...)`` can load
     all partitions as a single logical CutSet.
     """
-    fields = defaultdict(list)
-
-    for part_dir in sorted(shar_root.glob("part-*")):
-        if not part_dir.is_dir() or not any(part_dir.glob("cuts*.jsonl.gz")):
-            continue
-
-        for p in sorted(part_dir.iterdir()):
-            if not p.is_file():
-                continue
-            field = p.name.split(".")[0]
-            if field == "cuts" and p.suffix == ".gz":
-                fields["cuts"].append(str(p))
-            elif p.suffix in (".tar", ".gz"):
-                fields[field].append(str(p))
-
-    if not fields.get("cuts"):
-        raise FileNotFoundError(f"No Shar cuts found under {shar_root}")
-
-    payload = {
-        "version": 1,
-        "fields": {k: sorted(v) for k, v in fields.items()},
-    }
-    index_path = shar_root / index_filename
-    index_path.write_text(json.dumps(payload, indent=2))
-    logger.info(f"Wrote merged index: {index_path} ({len(fields['cuts'])} cut shards)")
+    part_dirs = [shar_root / f"part-{rank:05d}" for rank in range(world_size)]
+    index_path, cuts_count = build_shar_index_from_parts(
+        shar_root=shar_root,
+        part_dirs=part_dirs,
+        index_filename=index_filename,
+        success_marker_name=PART_SUCCESS_MARKER,
+    )
+    logger.info(f"Wrote merged index: {index_path} ({cuts_count} cut shards)")
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+def _validate_or_write_prepare_state(args) -> None:
+    """Persist/validate resume-critical run config.
+
+    HF sharding uses ``ds.shard(num_shards=num_workers, ...)``. Resuming with a
+    different ``--num_workers`` changes worker-to-sample assignment and can
+    produce overlaps/gaps if old partitions are reused.
+    """
+    state_path = args.shar_dir / PREPARE_STATE_FILE
+    expected = {
+        "dataset_name": args.dataset_name,
+        "config_name": args.config_name,
+        "dataset_split": args.dataset_split,
+        "num_workers": int(args.num_workers),
+    }
+    wrote = validate_or_write_prepare_state(
+        state_path,
+        expected=expected,
+        invariant_keys=("dataset_name", "config_name", "dataset_split", "num_workers"),
+        guidance=(
+            "Use the same dataset + --num_workers to resume this output directory, "
+            f"or remove {args.shar_dir} and restart from scratch."
+        ),
+    )
+    if wrote:
+        logger.info(f"Wrote prepare state: {state_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -155,8 +177,8 @@ def main():
     parser.add_argument("--config_name", default="full")
     parser.add_argument("--dataset_split", default="bal_train")
     parser.add_argument("--audio_field", default="audio")
-    parser.add_argument("--text_field", default="text",
-                        help="HF column for transcription text (set to '' to skip)")
+    parser.add_argument("--text_field", default=None,
+                        help="HF column for transcription text (e.g. 'sentence', 'text')")
     parser.add_argument("--cache_dir", type=Path,
                         default=Path("/capstor/store/cscs/swissai/infra01/audio-datasets/audioset_cache"))
 
@@ -179,6 +201,7 @@ def main():
     name = args.dataset_name.rsplit("/", 1)[-1].lower()
     args.shar_dir = args.shar_base_dir / f"{name}_{args.dataset_split}_shar"
     args.shar_dir.mkdir(parents=True, exist_ok=True)
+    _validate_or_write_prepare_state(args)
 
     logger.info(f"Converting {args.dataset_name} ({args.dataset_split}) → {args.shar_dir}")
     logger.info(f"Using {args.num_workers} parallel workers")
@@ -198,8 +221,8 @@ def main():
         raise RuntimeError(f"Workers {failed} failed")
 
     # Merge all part-* into a single index
-    build_shar_index(args.shar_dir, args.shar_index_filename)
-    (args.shar_dir / "_SUCCESS").write_text("ok\n")
+    build_shar_index(args.shar_dir, args.shar_index_filename, args.num_workers)
+    mark_partition_success(args.shar_dir, success_marker_name=PART_SUCCESS_MARKER)
     logger.info("All done!")
 
 

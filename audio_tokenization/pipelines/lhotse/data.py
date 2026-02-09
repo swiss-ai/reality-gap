@@ -64,34 +64,57 @@ def build_cutset(cfg: Dict[str, Any], rank: int, world_size: int):
 
 
 def _load_shar_cutset(cfg, rank):
-    """Load a CutSet from prepared Shar manifests."""
+    """Load a CutSet from one or more prepared Shar directories.
+
+    ``shar_dir`` may be a single path (str) or a list of paths.  When
+    multiple directories are given their shar indexes are merged so that
+    ``CutSet.from_shar`` sees one unified pool of shards.
+    """
     from lhotse import CutSet
 
     shar_dir = cfg.get("shar_dir")
     if not shar_dir:
         raise ValueError("Lhotse tokenization requires 'shar_dir' with prepared Shar data.")
 
-    shar_path = Path(shar_dir)
-    if not shar_path.is_dir():
-        raise FileNotFoundError(f"Shar directory does not exist: {shar_dir}")
+    # Normalise to a list so single-dir and multi-dir use the same code path.
+    shar_dirs = shar_dir if isinstance(shar_dir, (list, tuple)) else [shar_dir]
 
     index_name = cfg.get("shar_index_filename", SHAR_INDEX_FILENAME)
-    index_path = shar_path / index_name
-    if index_path.is_file():
-        with open(index_path) as f:
-            fields = json.load(f).get("fields", {})
-        if "cuts" not in fields:
-            raise ValueError(f"Shar index missing required 'cuts' field: {index_path}")
-        logger.info(f"[rank {rank}] Loading merged Shar index from {index_path}")
-        return CutSet.from_shar(fields=fields, split_for_dataloading=False, shuffle_shards=True)
-    elif _shar_exists(shar_dir):
-        logger.info(f"[rank {rank}] Loading top-level Shar from {shar_dir}")
-        return CutSet.from_shar(in_dir=shar_dir, split_for_dataloading=False, shuffle_shards=True)
-    else:
-        raise FileNotFoundError(
-            f"No Shar manifests found in {shar_dir}. "
-            "Run prepare_hf_to_shar or prepare_wds_to_shar first."
-        )
+    merged_fields: dict[str, list[str]] = {}
+
+    for sd in shar_dirs:
+        shar_path = Path(sd)
+        if not shar_path.is_dir():
+            raise FileNotFoundError(f"Shar directory does not exist: {sd}")
+
+        index_path = shar_path / index_name
+        if index_path.is_file():
+            with open(index_path) as f:
+                fields = json.load(f).get("fields", {})
+            if "cuts" not in fields:
+                raise ValueError(f"Shar index missing required 'cuts' field: {index_path}")
+            logger.info(f"[rank {rank}] Loading Shar index from {index_path}")
+        elif _shar_exists(sd):
+            raise FileNotFoundError(
+                f"Shar directory {sd} has manifests but no {index_name}. "
+                "Build the index first."
+            )
+        else:
+            raise FileNotFoundError(
+                f"No Shar manifests found in {sd}. "
+                "Run prepare_hf_to_shar or prepare_wds_to_shar first."
+            )
+
+        for field, paths in fields.items():
+            merged_fields.setdefault(field, []).extend(paths)
+
+    # Sort for determinism.
+    merged_fields = {k: sorted(v) for k, v in merged_fields.items()}
+    logger.info(
+        f"[rank {rank}] Merged {len(shar_dirs)} shar dir(s): "
+        f"{len(merged_fields.get('cuts', []))} cut shards"
+    )
+    return CutSet.from_shar(fields=merged_fields, split_for_dataloading=False, shuffle_shards=True)
 
 
 def _shar_exists(shar_dir: str) -> bool:
