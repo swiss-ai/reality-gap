@@ -24,12 +24,14 @@ Usage:
 """
 
 import argparse
+from collections import Counter
 import glob
 import json
 import logging
 import multiprocessing as mp
 import time
 from pathlib import Path
+from typing import Optional
 
 from audio_tokenization.utils.prepare_data.common import (
     SUCCESS_MARKER_FILE,
@@ -37,8 +39,17 @@ from audio_tokenization.utils.prepare_data.common import (
     mark_partition_success,
     setup_partition_dir,
 )
+from audio_tokenization.utils.prepare_data.vad_segmenting import (
+    VADChunkingConfig,
+    canonical_sample_key,
+    load_vad_from_per_shard_dir,
+    shard_name_from_tar_path,
+    split_cut_by_vad,
+    vad_per_shard_file,
+)
 
 logging.basicConfig(
+    
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(processName)s] %(name)s: %(message)s",
 )
@@ -46,6 +57,8 @@ logger = logging.getLogger(__name__)
 
 WORKER_ASSIGNMENT_FILE = "_worker_assignment.json"
 WORKER_SUCCESS_FILE = SUCCESS_MARKER_FILE
+WORKER_STATS_FILE = "worker_stats.json"
+PREPARE_SUMMARY_FILE = "prepare_summary.json"
 
 
 # ---------------------------------------------------------------------------
@@ -56,11 +69,27 @@ AUDIO_SUFFIXES = (".wav", ".flac", ".mp3")
 TEXT_SUFFIX = ".txt"
 
 
-def _to_mono(cut):
-    return cut.to_mono(mono_downmix=True) if cut.num_channels > 1 else cut
+def _to_mono(cut, mono_downmix=False, stats=None):
+    if cut.num_channels <= 1:
+        return cut
+    if mono_downmix:
+        try:
+            result = cut.to_mono(mono_downmix=True)
+            # Force-load to catch AudioLoadingError from broken headers now,
+            # rather than letting it bubble up later in SharWriter.
+            result.load_audio()
+            return result
+        except Exception:
+            if stats is not None:
+                stats["downmix_fallback_ch0"] += 1
+            # Broken header — fall back to channel 0.
+    result = cut.to_mono(mono_downmix=False)
+    if isinstance(result, list):
+        return result[0]  # Take first channel (channel 0)
+    return result
 
 
-def iter_tar_cuts(tar_paths, text_ext=TEXT_SUFFIX):
+def iter_tar_cuts(tar_paths, text_ext=TEXT_SUFFIX, stats: Optional[Counter] = None):
     """Iterate over WDS tar shards and yield Lhotse cuts with supervisions.
 
     Uses ``tarfile`` directly instead of the ``webdataset`` library to avoid
@@ -86,6 +115,8 @@ def iter_tar_cuts(tar_paths, text_ext=TEXT_SUFFIX):
                     try:
                         texts[key] = tf.extractfile(member).read().decode("utf-8").strip()
                     except Exception:
+                        if stats is not None:
+                            stats["text_decode_failed"] += 1
                         pass
                 elif member.name.endswith(AUDIO_SUFFIXES):
                     audio_members.append(member)
@@ -94,13 +125,20 @@ def iter_tar_cuts(tar_paths, text_ext=TEXT_SUFFIX):
             for member in audio_members:
                 key = member.name.rsplit(".", 1)[0]
                 try:
-                    audio_bytes = tf.extractfile(member).read()
+                    extracted = tf.extractfile(member)
+                    if extracted is None:
+                        if stats is not None:
+                            stats["missing_payload"] += 1
+                        raise ValueError("tar member has no readable payload")
+                    audio_bytes = extracted.read()
                     recording = Recording.from_bytes(data=audio_bytes, recording_id=key)
+                    # Lazy: only reads the audio header, no decoding yet.
+                    cut = recording.to_cut()
                 except Exception as e:
-                    logger.warning(f"Skipping {key}: failed to decode audio ({e})")
+                    if stats is not None:
+                        stats["failed_build_cut"] += 1
+                    logger.warning(f"Skipping {key}: failed to build cut ({e})")
                     continue
-
-                cut = _to_mono(recording.to_cut())
 
                 text = texts.get(key)
                 if text:
@@ -112,6 +150,8 @@ def iter_tar_cuts(tar_paths, text_ext=TEXT_SUFFIX):
                         text=text,
                     )]
 
+                if stats is not None:
+                    stats["cuts_yielded"] += 1
                 yield cut
 
 
@@ -126,9 +166,25 @@ def _convert_worker(args_tuple):
     Resume is considered complete only when ``worker_XX/_SUCCESS`` exists.
     Partial output (cuts manifests without marker) is deleted and recomputed.
     """
-    worker_id, tar_paths, shar_dir, target_sr, shard_size, shar_format, min_sr, text_ext = args_tuple
+    (
+        worker_id,
+        tar_paths,
+        shar_dir,
+        target_sr,
+        shard_size,
+        shar_format,
+        min_sr,
+        text_ext,
+        mono_downmix,
+        vad_per_shard_dir,
+        vad_max_chunk_sec,
+        vad_min_chunk_sec,
+        vad_sample_rate,
+        vad_max_merge_gap_sec,
+    ) = args_tuple
 
     worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
+    worker_stats_path = worker_dir / WORKER_STATS_FILE
     if setup_partition_dir(
         worker_dir,
         success_marker_name=WORKER_SUCCESS_FILE,
@@ -136,7 +192,23 @@ def _convert_worker(args_tuple):
         reset_log=f"Worker {worker_id}: removing partial output in {worker_dir}",
         logger=logger,
     ):
-        return {"worker_id": worker_id, "written": -1, "skipped": 0, "errors": 0, "elapsed": 0}
+        reused_worker_stats = {}
+        if worker_stats_path.is_file():
+            try:
+                reused_worker_stats = json.loads(worker_stats_path.read_text())
+            except Exception:
+                reused_worker_stats = {}
+        return {
+            "worker_id": worker_id,
+            "written": -1,
+            "skipped": 0,
+            "errors": 0,
+            "elapsed": 0,
+            "total_duration_sec": reused_worker_stats.get("total_duration_sec", 0.0),
+            "reused": True,
+            "reason_counts": {},
+            "worker_stats": reused_worker_stats,
+        }
 
     # SoX resampling backend (per-process state)
     try:
@@ -147,25 +219,76 @@ def _convert_worker(args_tuple):
 
     from lhotse.shar import SharWriter
 
+    use_vad_segmenting = bool(vad_per_shard_dir)
+    reason_counts = Counter()
+
+    # Load VAD entries from per-shard files for this worker's tar shards.
+    if use_vad_segmenting:
+        vad_cfg = VADChunkingConfig(
+            max_chunk_sec=float(vad_max_chunk_sec),
+            min_chunk_sec=float(vad_min_chunk_sec),
+            sample_rate=int(vad_sample_rate),
+            max_merge_gap_sec=float(vad_max_merge_gap_sec),
+        )
+        vad_lookup, lang_lookup = load_vad_from_per_shard_dir(
+            Path(vad_per_shard_dir), tar_paths, with_lang=True, logger=logger,
+        )
+    else:
+        vad_cfg = None
+        vad_lookup = {}
+        lang_lookup = {}
+
     t0 = time.time()
     written = skipped = errors = 0
+    total_duration_sec = 0.0
+    runtime_counts = Counter()
 
     with SharWriter(
         output_dir=str(worker_dir),
         fields={"recording": shar_format},
         shard_size=shard_size,
     ) as writer:
-        for cut in iter_tar_cuts(tar_paths, text_ext=text_ext):
+        for cut in iter_tar_cuts(tar_paths, text_ext=text_ext, stats=runtime_counts):
             try:
                 if min_sr and cut.sampling_rate < min_sr:
                     skipped += 1
+                    runtime_counts["skipped_min_sr"] += 1
                     continue
 
                 if target_sr and cut.sampling_rate != target_sr:
                     cut = cut.resample(target_sr)
+                    runtime_counts["resampled"] += 1
 
-                writer.write(cut)
-                written += 1
+                # No intermediate WAV dump: decode -> optional resample -> split -> write.
+                if use_vad_segmenting:
+                    out_cuts, reason = split_cut_by_vad(
+                        cut=cut,
+                        sample_key=cut.recording_id,
+                        vad_lookup=vad_lookup,
+                        cfg=vad_cfg,
+                    )
+                    reason_counts[reason] += 1
+                else:
+                    out_cuts = [cut]
+
+                if not out_cuts:
+                    skipped += 1
+                    runtime_counts["skipped_empty_output"] += 1
+                    continue
+
+                sample_lang = lang_lookup.get(
+                    canonical_sample_key(cut.recording_id)
+                ) if lang_lookup else None
+
+                for out_cut in out_cuts:
+                    out_cut = _to_mono(out_cut, mono_downmix=mono_downmix, stats=runtime_counts)
+                    if sample_lang is not None:
+                        out_cut.custom = out_cut.custom or {}
+                        out_cut.custom["lang"] = sample_lang
+                    writer.write(out_cut)
+                    written += 1
+                    total_duration_sec += out_cut.duration
+                    runtime_counts["cuts_written"] += 1
 
                 if written % 1000 == 0:
                     elapsed = time.time() - t0
@@ -176,6 +299,7 @@ def _convert_worker(args_tuple):
 
             except Exception as e:
                 errors += 1
+                runtime_counts["processing_errors"] += 1
                 if errors <= 5:
                     logger.warning(f"Worker {worker_id} error on {cut.id}: {e}")
 
@@ -184,8 +308,35 @@ def _convert_worker(args_tuple):
         f"Worker {worker_id} done in {elapsed:.1f}s: "
         f"{written} written, {skipped} skipped, {errors} errors"
     )
+    if use_vad_segmenting and reason_counts:
+        logger.info(f"Worker {worker_id} VAD reasons: {dict(reason_counts)}")
+
+    worker_stats = {
+        "worker_id": worker_id,
+        "elapsed_sec": elapsed,
+        "written": written,
+        "skipped": skipped,
+        "errors": errors,
+        "total_duration_sec": total_duration_sec,
+        "reused": False,
+        "vad_enabled": use_vad_segmenting,
+        "runtime_counts": dict(runtime_counts),
+        "reason_counts": dict(reason_counts),
+    }
+    worker_stats_path.write_text(json.dumps(worker_stats, indent=2) + "\n")
+
     mark_partition_success(worker_dir, success_marker_name=WORKER_SUCCESS_FILE)
-    return {"worker_id": worker_id, "written": written, "skipped": skipped, "errors": errors, "elapsed": elapsed}
+    return {
+        "worker_id": worker_id,
+        "written": written,
+        "skipped": skipped,
+        "errors": errors,
+        "elapsed": elapsed,
+        "total_duration_sec": total_duration_sec,
+        "reused": False,
+        "reason_counts": dict(reason_counts),
+        "worker_stats": worker_stats,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -262,20 +413,77 @@ def _write_worker_assignment(shar_dir: Path, num_workers: int, resolved_shards):
     return path
 
 
-def main():
+def _run_aggregate(shar_root: Path):
+    """Read prepare_summary.json from all node_*/ dirs, sum totals, and print."""
+    node_dirs = sorted(shar_root.glob("node_*"))
+    if not node_dirs:
+        # Fallback: check if shar_root itself has a summary (single-node run).
+        single = shar_root / PREPARE_SUMMARY_FILE
+        if single.is_file():
+            node_dirs = [shar_root]
+        else:
+            raise FileNotFoundError(
+                f"No node_*/ dirs (or {PREPARE_SUMMARY_FILE}) found under {shar_root}"
+            )
+
+    summaries = []
+    for nd in node_dirs:
+        sp = nd / PREPARE_SUMMARY_FILE
+        if not sp.is_file():
+            logger.warning(f"Missing {sp}, skipping")
+            continue
+        summaries.append(json.loads(sp.read_text()))
+
+    if not summaries:
+        raise FileNotFoundError(f"No {PREPARE_SUMMARY_FILE} found in any node dir")
+
+    total_written = 0
+    total_skipped = 0
+    total_errors = 0
+    total_duration_sec = 0.0
+    total_elapsed_sec = 0.0
+    agg_reason = Counter()
+    agg_runtime = Counter()
+
+    for s in summaries:
+        total_written += s.get("total_written", 0)
+        total_skipped += s.get("total_skipped", 0)
+        total_errors += s.get("total_errors", 0)
+        total_duration_sec += s.get("total_duration_sec", 0.0)
+        total_elapsed_sec = max(total_elapsed_sec, s.get("elapsed_sec", 0.0))
+        agg_reason.update(s.get("reason_counts", {}))
+        agg_runtime.update(s.get("runtime_counts", {}))
+
+    total_hours = total_duration_sec / 3600.0
+
+    print()
+    print(f"=== Aggregate stats from {len(summaries)} node(s) under {shar_root} ===")
+    print(f"  Samples written:  {total_written:>12d}")
+    print(f"  Samples skipped:  {total_skipped:>12d}")
+    print(f"  Errors:           {total_errors:>12d}")
+    print(f"  Total hours:      {total_hours:>12.1f}")
+    print(f"  Max wall-time:    {total_elapsed_sec:>12.1f}s")
+    if agg_reason:
+        print(f"  VAD reasons:      {dict(agg_reason)}")
+    if agg_runtime:
+        print(f"  Runtime counters: {dict(agg_runtime)}")
+    print()
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Convert standard WDS → Lhotse Shar (parallel)",
     )
 
     # Input
-    parser.add_argument("--wds-shards", type=str, required=True,
-                        help="Glob pattern for WDS tar shards")
+    parser.add_argument("--wds-shards", type=str, nargs="+", default=None,
+                        help="Glob patterns or file paths for WDS tar shards")
 
     # Shar output
-    parser.add_argument("--shar-dir", type=Path, required=True,
+    parser.add_argument("--shar-dir", type=Path, default=None,
                         help="Output directory for Shar format")
-    parser.add_argument("--shard-size", type=int, default=1000,
-                        help="Samples per Shar shard (default: 1000)")
+    parser.add_argument("--shard-size", type=int, default=5000,
+                        help="Samples per Shar shard (default: 5000)")
     parser.add_argument("--shar-format", type=str, default="flac",
                         choices=["flac", "wav", "mp3", "opus"],
                         help="Audio format in Shar (default: flac)")
@@ -285,6 +493,8 @@ def main():
                         help="Target sample rate (default: 24000)")
     parser.add_argument("--min-sr", type=int, default=16000,
                         help="Drop audio below this sample rate (default: 16000)")
+    parser.add_argument("--no-mono-downmix", action="store_true",
+                        help="Select channel 0 instead of averaging stereo channels")
 
     # Text
     parser.add_argument("--text-ext", type=str, default=".txt",
@@ -293,12 +503,54 @@ def main():
     # Parallelism
     parser.add_argument("--num-workers", type=int, default=None,
                         help="Number of parallel workers (default: one per WDS shard)")
+    parser.add_argument("--vad-segmentation", action="store_true",
+                        help="Split long recordings into speech-aware segments during prepare")
+    parser.add_argument("--vad-per-shard-dir", type=Path, default=None,
+                        help="Directory of per-shard VAD JSONL files (required with --vad-segmentation)")
+    parser.add_argument("--vad-max-chunk-sec", type=float, default=200.0,
+                        help="Target max duration while packing VAD segments")
+    parser.add_argument("--vad-min-chunk-sec", type=float, default=10.0,
+                        help="Drop chunks shorter than this duration")
+    parser.add_argument("--vad-sample-rate", type=int, default=16000,
+                        help="Sample rate used to decode VAD timestamp units")
+    parser.add_argument("--vad-max-merge-gap-sec", type=float, default=0.5,
+                        help="Merge adjacent VAD spans when silence gap <= this threshold")
 
-    args = parser.parse_args()
+    parser.add_argument("--aggregate", type=Path, default=None, metavar="SHAR_ROOT",
+                        help="Aggregate stats from completed multi-node runs and exit. "
+                             "Reads prepare_summary.json from all node_*/ dirs under SHAR_ROOT.")
 
-    resolved = sorted(glob.glob(args.wds_shards))
+    args = parser.parse_args(argv)
+
+    # ---- Aggregate mode: read summaries and exit ----
+    if args.aggregate is not None:
+        _run_aggregate(args.aggregate)
+        return
+
+    if not args.wds_shards:
+        parser.error("--wds-shards is required (unless using --aggregate)")
+    if args.shar_dir is None:
+        parser.error("--shar-dir is required (unless using --aggregate)")
+
+    resolved = sorted(set(p for pattern in args.wds_shards for p in glob.glob(pattern)))
     if not resolved:
-        raise FileNotFoundError(f"No files match pattern: {args.wds_shards}")
+        raise FileNotFoundError(f"No files match patterns: {args.wds_shards}")
+
+    # Pre-filter shards that have no VAD file (avoids empty workers).
+    if args.vad_segmentation and args.vad_per_shard_dir:
+        before = len(resolved)
+        resolved = [
+            p for p in resolved
+            if vad_per_shard_file(args.vad_per_shard_dir, shard_name_from_tar_path(p)).is_file()
+        ]
+        skipped_shards = before - len(resolved)
+        if skipped_shards:
+            logger.info(f"Skipped {skipped_shards} shards with no VAD file ({len(resolved)} remaining)")
+        if not resolved:
+            logger.info(
+                "All shards were skipped (no matching VAD files) — nothing to do."
+            )
+            return
 
     args.shar_dir.mkdir(parents=True, exist_ok=True)
 
@@ -327,8 +579,42 @@ def main():
     # Distribute tar shards across workers (round-robin)
     worker_shards = _distribute_round_robin(resolved, num_workers)
 
+    if args.vad_segmentation:
+        if args.vad_per_shard_dir is None:
+            raise ValueError("--vad-per-shard-dir is required with --vad-segmentation")
+        if not args.vad_per_shard_dir.is_dir():
+            raise NotADirectoryError(f"VAD per-shard directory not found: {args.vad_per_shard_dir}")
+        if args.vad_max_chunk_sec <= 0:
+            raise ValueError("--vad-max-chunk-sec must be > 0")
+        if args.vad_min_chunk_sec < 0:
+            raise ValueError("--vad-min-chunk-sec must be >= 0")
+        if args.vad_min_chunk_sec > args.vad_max_chunk_sec:
+            raise ValueError("--vad-min-chunk-sec must be <= --vad-max-chunk-sec")
+        if args.vad_sample_rate <= 0:
+            raise ValueError("--vad-sample-rate must be > 0")
+        if args.vad_max_merge_gap_sec < 0:
+            raise ValueError("--vad-max-merge-gap-sec must be >= 0")
+        logger.info(f"VAD segmenting enabled: per_shard_dir={args.vad_per_shard_dir}")
+    else:
+        logger.info("VAD segmenting disabled; writing full recordings")
+
     worker_args = [
-        (wid, shards, str(args.shar_dir), args.target_sr, args.shard_size, args.shar_format, args.min_sr, args.text_ext)
+        (
+            wid,
+            shards,
+            str(args.shar_dir),
+            args.target_sr,
+            args.shard_size,
+            args.shar_format,
+            args.min_sr,
+            args.text_ext,
+            not args.no_mono_downmix,
+            str(args.vad_per_shard_dir) if args.vad_segmentation else None,
+            args.vad_max_chunk_sec,
+            args.vad_min_chunk_sec,
+            args.vad_sample_rate,
+            args.vad_max_merge_gap_sec,
+        )
         for wid, shards in enumerate(worker_shards)
         if shards
     ]
@@ -342,11 +628,40 @@ def main():
     total_written = sum(r["written"] for r in results if r["written"] >= 0)
     total_skipped = sum(r["skipped"] for r in results)
     total_errors = sum(r["errors"] for r in results)
+    total_reused = sum(1 for r in results if r.get("reused"))
+    total_duration_sec = sum(r.get("total_duration_sec", 0.0) for r in results)
+    total_reason_counts = Counter()
+    total_runtime_counts = Counter()
+    for r in results:
+        total_reason_counts.update(r.get("reason_counts", {}))
+        total_runtime_counts.update((r.get("worker_stats") or {}).get("runtime_counts", {}))
 
     logger.info(
         f"All workers done in {elapsed:.1f}s — "
-        f"{total_written} samples, {total_skipped} skipped, {total_errors} errors"
+        f"{total_written} samples, {total_skipped} skipped, {total_errors} errors, "
+        f"{total_duration_sec / 3600.0:.1f} hours written"
     )
+    if total_reason_counts:
+        logger.info(f"VAD reasons (global): {dict(total_reason_counts)}")
+    if total_runtime_counts:
+        logger.info(f"Runtime counters (global): {dict(total_runtime_counts)}")
+
+    summary = {
+        "version": 1,
+        "num_workers": num_workers,
+        "workers_reused": total_reused,
+        "elapsed_sec": elapsed,
+        "total_written": total_written,
+        "total_skipped": total_skipped,
+        "total_errors": total_errors,
+        "total_duration_sec": total_duration_sec,
+        "runtime_counts": dict(total_runtime_counts),
+        "reason_counts": dict(total_reason_counts),
+        "results": results,
+    }
+    summary_path = args.shar_dir / PREPARE_SUMMARY_FILE
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+    logger.info(f"Wrote prepare summary: {summary_path}")
 
     # Build merged index for pipeline compatibility
     build_shar_index(args.shar_dir, num_workers=num_workers)

@@ -53,7 +53,17 @@ PREPARE_STATE_FILE = "_PREPARE_STATE.json"
 # ---------------------------------------------------------------------------
 
 def _to_mono(cut):
-    return cut.to_mono(mono_downmix=True) if cut.num_channels > 1 else cut
+    if cut.num_channels <= 1:
+        return cut
+    try:
+        result = cut.to_mono(mono_downmix=True)
+        result.load_audio()
+        return result
+    except Exception:
+        result = cut.to_mono(mono_downmix=False)
+        if isinstance(result, list):
+            return result[0]
+        return result
 
 
 def convert_worker(rank: int, world_size: int, args):

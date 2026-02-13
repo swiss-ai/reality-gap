@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def main(cfg: DictConfig):
             "max_duration": cfg.dataset.get("max_duration", cfg.get("max_duration")),
             "min_sample_rate": cfg.dataset.get("min_sample_rate", min_sample_rate),
             # Shar data (pre-built by prepare_hf_to_shar / prepare_wds_to_shar)
-            "shar_dir": OmegaConf.to_container(cfg.dataset.shar_dir, resolve=True),
+            "shar_dir": list(cfg.dataset.shar_dir) if isinstance(cfg.dataset.shar_dir, (list, ListConfig)) else cfg.dataset.shar_dir,
             "shar_index_filename": cfg.dataset.get("shar_index_filename", "shar_index.json"),
             # Dynamic bucketing sampler
             "max_batch_duration": cfg.dataset.get("max_batch_duration", 1500.0),
