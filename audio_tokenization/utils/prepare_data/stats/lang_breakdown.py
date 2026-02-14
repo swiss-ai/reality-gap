@@ -42,6 +42,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Whisper language ID -> full name (99 languages)
+WHISPER_LANGUAGES = {
+    "en": "english", "zh": "chinese", "de": "german", "es": "spanish",
+    "ru": "russian", "ko": "korean", "fr": "french", "ja": "japanese",
+    "pt": "portuguese", "tr": "turkish", "pl": "polish", "ca": "catalan",
+    "nl": "dutch", "ar": "arabic", "sv": "swedish", "it": "italian",
+    "id": "indonesian", "hi": "hindi", "fi": "finnish", "vi": "vietnamese",
+    "he": "hebrew", "uk": "ukrainian", "el": "greek", "ms": "malay",
+    "cs": "czech", "ro": "romanian", "da": "danish", "hu": "hungarian",
+    "ta": "tamil", "no": "norwegian", "th": "thai", "ur": "urdu",
+    "hr": "croatian", "bg": "bulgarian", "lt": "lithuanian", "la": "latin",
+    "mi": "maori", "ml": "malayalam", "cy": "welsh", "sk": "slovak",
+    "te": "telugu", "fa": "persian", "lv": "latvian", "bn": "bengali",
+    "sr": "serbian", "az": "azerbaijani", "sl": "slovenian", "kn": "kannada",
+    "et": "estonian", "mk": "macedonian", "br": "breton", "eu": "basque",
+    "is": "icelandic", "hy": "armenian", "ne": "nepali", "mn": "mongolian",
+    "bs": "bosnian", "kk": "kazakh", "sq": "albanian", "sw": "swahili",
+    "gl": "galician", "mr": "marathi", "pa": "punjabi", "si": "sinhala",
+    "km": "khmer", "sn": "shona", "yo": "yoruba", "so": "somali",
+    "af": "afrikaans", "oc": "occitan", "ka": "georgian", "be": "belarusian",
+    "tg": "tajik", "sd": "sindhi", "gu": "gujarati", "am": "amharic",
+    "yi": "yiddish", "lo": "lao", "uz": "uzbek", "fo": "faroese",
+    "ht": "haitian creole", "ps": "pashto", "tk": "turkmen", "nn": "nynorsk",
+    "mt": "maltese", "sa": "sanskrit", "lb": "luxembourgish", "my": "myanmar",
+    "bo": "tibetan", "tl": "tagalog", "mg": "malagasy", "as": "assamese",
+    "tt": "tatar", "haw": "hawaiian", "ln": "lingala", "ha": "hausa",
+    "ba": "bashkir", "jw": "javanese", "su": "sundanese", "yue": "cantonese",
+}
+
 
 def _lang_worker(args_tuple):
     """Compute per-language raw + post-VAD stats for a subset of JSONL files."""
@@ -194,7 +223,7 @@ def main(argv=None):
     print()
 
     header = (
-        f" {'lang':<8s} | {'samples':>10s} | {'kept':>8s} | {'dropped':>8s} | "
+        f" {'lang':<16s} | {'samples':>10s} | {'kept':>8s} | {'dropped':>8s} | "
         f"{'raw_hrs':>10s} | {'kept_hrs':>10s} | {'speech_hrs':>10s} | "
         f"{'%samples':>8s} | {'%speech':>8s}"
     )
@@ -210,14 +239,15 @@ def main(argv=None):
         dropped = agg_too_short[lang]
         pct_samples = count / total_recordings * 100.0 if total_recordings else 0.0
         pct_speech = speech_hrs / total_speech_hrs * 100.0 if total_speech_hrs else 0.0
+        lang_name = WHISPER_LANGUAGES.get(lang, lang)
         print(
-            f" {lang:<8s} | {count:>10,d} | {kept:>8,d} | {dropped:>8,d} | "
+            f" {lang_name:<16s} | {count:>10,d} | {kept:>8,d} | {dropped:>8,d} | "
             f"{raw_hrs:>10.1f} | {kept_hrs:>10.1f} | {speech_hrs:>10.1f} | "
             f"{pct_samples:>7.2f}% | {pct_speech:>7.2f}%"
         )
     print(sep)
     print(
-        f" {'TOTAL':<8s} | {total_recordings:>10,d} | {total_kept:>8,d} | "
+        f" {'TOTAL':<16s} | {total_recordings:>10,d} | {total_kept:>8,d} | "
         f"{sum(agg_too_short.values()):>8,d} | "
         f"{total_raw_hrs:>10.1f} | {total_kept_hrs:>10.1f} | {total_speech_hrs:>10.1f} | "
         f" 100.00% |  100.00%"

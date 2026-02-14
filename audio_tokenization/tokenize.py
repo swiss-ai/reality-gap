@@ -111,6 +111,8 @@ def main(cfg: DictConfig):
             "checkpoint_interval_batches": cfg.dataset.get("checkpoint_interval_batches", 500),
             # Filters
             "silence_unique_threshold": cfg.dataset.get("silence_unique_threshold"),
+            # Output subdirectory name (overrides auto-inferred name)
+            "output_name": cfg.dataset.get("output_name"),
             # W&B
             "wandb": OmegaConf.to_container(cfg.get("wandb", {}), resolve=True),
         }

@@ -11,8 +11,6 @@ Design decisions:
 - **WorkerStats** is an inline dataclass (no Ray dependency from base.py).
 - **SimpleWandbLogger**: Plain Python class (rank 0 only), rate-limited
   by a configurable interval.  No Ray actor overhead.
-- **_aggregate_stats**: Uses ``dist.all_reduce`` so rank 0 can report
-  global totals in the final metadata file.
 """
 
 import logging
@@ -23,7 +21,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import torch
-import torch.distributed as dist
 
 from audio_tokenization.pipelines.shard_io import finalize_shard_writer
 from audio_tokenization.utils.indexed_dataset import DType, IndexedDatasetBuilder
@@ -37,7 +34,6 @@ __all__ = [
     "save_checkpoint",
     "load_checkpoint",
     "SimpleWandbLogger",
-    "aggregate_stats",
     "finalize_shard_writer",
     "is_cuda_oom",
 ]
@@ -148,6 +144,7 @@ def save_checkpoint(
     sampler_state: Dict[str, Any],
     chunk_id: int,
     stats: Dict[str, Any],
+    world_size: int = 1,
 ) -> None:
     """Atomically save checkpoint via ``.tmp`` + ``os.replace()``."""
     ckpt_path = _checkpoint_path(output_dir, rank)
@@ -156,6 +153,7 @@ def save_checkpoint(
         "sampler_state": sampler_state,
         "chunk_id": chunk_id,
         "stats": stats,
+        "world_size": world_size,
     }
     torch.save(payload, tmp_path)
     os.replace(tmp_path, str(ckpt_path))
@@ -251,54 +249,3 @@ class SimpleWandbLogger:
         wandb.finish()
 
 
-# ---------------------------------------------------------------------------
-# Cross-rank stats aggregation
-# ---------------------------------------------------------------------------
-
-
-def aggregate_stats(
-    result: Dict[str, Any],
-    rank: int,
-    world_size: int,
-) -> Dict[str, Any]:
-    """Aggregate per-rank stats into global totals via ``dist.all_reduce``.
-
-    Sums counters (samples, tokens, errors, skipped) and takes the max
-    elapsed time (wall time = slowest rank).  Returns a new dict with
-    global totals suitable for the metadata file.
-    """
-    if world_size <= 1 or not dist.is_initialized():
-        return result
-
-    keys_to_sum = ["samples_processed", "tokens_generated", "errors", "samples_skipped"]
-    local_vals = torch.tensor(
-        [float(result.get(k, 0)) for k in keys_to_sum],
-        dtype=torch.float64,
-        device="cuda",
-    )
-    dist.all_reduce(local_vals, op=dist.ReduceOp.SUM)
-    global_vals = local_vals.cpu().tolist()
-
-    global_result = dict(result)
-    for k, v in zip(keys_to_sum, global_vals):
-        global_result[k] = int(v)
-
-    # Wall time = slowest rank
-    elapsed_t = torch.tensor(
-        [result.get("elapsed_time", 0.0)], dtype=torch.float64, device="cuda"
-    )
-    dist.all_reduce(elapsed_t, op=dist.ReduceOp.MAX)
-    global_result["elapsed_time"] = elapsed_t.item()
-
-    elapsed = global_result["elapsed_time"]
-    global_result["throughput"] = (
-        global_result["tokens_generated"] / elapsed if elapsed > 0 else 0
-    )
-    global_result["world_size"] = world_size
-
-    logger.info(
-        f"[rank {rank}] Global stats: {global_result['samples_processed']} samples, "
-        f"{global_result['tokens_generated']} tokens, {global_result['errors']} errors"
-    )
-
-    return global_result

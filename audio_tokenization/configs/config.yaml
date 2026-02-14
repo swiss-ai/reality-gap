@@ -28,7 +28,7 @@ tokenizer:
 
 # Filtering
 min_duration: 1.0
-max_duration: 200.0
+max_duration: 900.0
 min_sample_rate: 16000
 
 # Resume

@@ -6,40 +6,34 @@ Shar) is handled by standalone scripts — see ``prepare_hf_to_shar`` and
 ``prepare_wds_to_shar`` in ``audio_tokenization.utils.prepare_data``.
 
 Architecture overview (3 files):
-    data.py        — Shar loading + runtime filters
-    checkpoint.py  — WorkerStats, chunk writer, checkpoint save/load, W&B, aggregation
+    data.py        — Shar loading, shard-level DDP split, runtime filters
+    checkpoint.py  — WorkerStats, chunk writer, checkpoint save/load, W&B
     pipeline.py    — tokenize_loop (main per-rank loop) + run_lhotse_pipeline (entry point)
 
 Launch examples::
 
     # Single node, 4 GPUs
-    torchrun --nproc_per_node=4 -m audio_tokenization.tokenize dataset=peoples_speech_lhotse
+    srun --ntasks-per-node=4 --gpus-per-node=4 \\
+        python -m audio_tokenization.tokenize dataset=peoples_speech_lhotse
 
-    # Multi-node SLURM — Option A: srun spawns 1 task/node, torchrun forks GPU workers
-    srun --nodes=2 --ntasks-per-node=1 --gpus-per-node=4 \\
-        torchrun --nproc_per_node=4 -m audio_tokenization.tokenize dataset=peoples_speech_lhotse
-
-    # Multi-node SLURM — Option B: srun spawns all ranks directly (no torchrun)
-    srun --nodes=2 --ntasks-per-node=4 --gpus-per-node=4 \\
+    # Multi-node SLURM — srun spawns all ranks directly (no torchrun, no NCCL)
+    srun --nodes=2 --ntasks-per-node=4 --gpus-per-node=4 --kill-on-bad-exit=0 \\
         python -m audio_tokenization.tokenize dataset=peoples_speech_lhotse
 
     # Resume from checkpoint
-    torchrun --nproc_per_node=4 -m audio_tokenization.tokenize dataset=peoples_speech_lhotse resume=true
+    srun --ntasks-per-node=4 --gpus-per-node=4 \\
+        python -m audio_tokenization.tokenize dataset=peoples_speech_lhotse resume=true
 """
 
-import json
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Any, Dict
 
 import torch
-import torch.distributed as dist
 
 from .checkpoint import (
     WorkerStats,
-    aggregate_stats,
     finalize_shard_writer,
     is_cuda_oom,
     load_checkpoint,
@@ -86,10 +80,9 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
     cuts = build_cutset(cfg, rank, world_size)
 
     # ------------------------------------------------------------------
-    # 2. Dynamic bucketing sampler — global bucketing across full dataset.
-    #    Lhotse reads only metadata (.jsonl.gz manifests), no audio I/O.
-    #    sync_buckets=True keeps DDP ranks in similar duration buckets
-    #    to minimise tail-worker idle time.
+    # 2. Dynamic bucketing sampler — each rank's CutSet is already split
+    #    at the shard level (see data.py), so the sampler uses
+    #    world_size=1 to avoid the O(world_size) strided distribution.
     # ------------------------------------------------------------------
     max_duration = cfg.get("max_batch_duration", 1500.0)
     max_cuts = cfg.get("max_batch_cuts")
@@ -105,9 +98,8 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
         buffer_size=buffer_size,
         shuffle=shuffle,
         seed=seed,
-        world_size=world_size,
-        rank=rank,
-        sync_buckets=True,
+        world_size=1,
+        rank=0,
         drop_last=False,
     )
     if max_cuts is not None:
@@ -128,6 +120,15 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
 
     if resume:
         ckpt = load_checkpoint(output_dir, rank)
+        if ckpt is not None:
+            ckpt_ws = ckpt.get("world_size")
+            if ckpt_ws is not None and ckpt_ws != world_size:
+                logger.warning(
+                    f"[rank {rank}] Checkpoint world_size ({ckpt_ws}) != current "
+                    f"world_size ({world_size}). Shard assignment changed — "
+                    f"ignoring checkpoint, starting from scratch."
+                )
+                ckpt = None
         if ckpt is not None:
             sampler.load_state_dict(ckpt["sampler_state"])
             start_chunk_id = ckpt["chunk_id"] + 1
@@ -327,6 +328,7 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
                     sampler_state=sampler.state_dict(),
                     chunk_id=chunk_id,
                     stats=stats.to_dict(),
+                    world_size=world_size,
                 )
 
                 chunk_id += 1
@@ -363,22 +365,14 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
         sampler_state=sampler.state_dict(),
         chunk_id=chunk_id,
         stats=stats.to_dict(),
+        world_size=world_size,
     )
 
     result = stats.finalize()
     result["rank"] = rank
     result["chunks_written"] = chunk_id - start_chunk_id + (1 if chunk_samples > 0 else 0)
 
-    # ------------------------------------------------------------------
-    # 9. Aggregate stats across ranks, rank 0 saves metadata
-    # ------------------------------------------------------------------
-    global_result = aggregate_stats(result, rank, world_size)
-
-    if rank == 0:
-        _save_metadata(output_dir, cfg, global_result, world_size)
-
     if wandb_logger is not None:
-        wandb_logger.log_final(global_result)
         wandb_logger.finish()
 
     logger.info(
@@ -402,71 +396,21 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
 
 
 # ---------------------------------------------------------------------------
-# Metadata
-# ---------------------------------------------------------------------------
-
-
-def _save_metadata(
-    output_dir: str,
-    cfg: Dict[str, Any],
-    global_result: Dict[str, Any],
-    world_size: int,
-) -> None:
-    """Save dataset metadata JSON on rank 0.
-
-    ``global_result`` contains all-reduced stats (summed across all ranks
-    via ``aggregate_stats``), not just rank-0's local stats.
-    """
-    metadata = {
-        "dataset_type": "lhotse",
-        "dataset_name": cfg.get("dataset_name", ""),
-        "shar_dir": cfg.get("shar_dir", ""),
-        "source_type": cfg.get("source_type", "shar"),
-        "mode": cfg.get("mode", "audio_only"),
-        "tokenizer_path": cfg.get("tokenizer_path", ""),
-        "target_sample_rate": cfg.get("target_sample_rate"),
-        "world_size": world_size,
-        "max_batch_duration": cfg.get("max_batch_duration"),
-        "num_buckets": cfg.get("num_buckets"),
-        "quadratic_duration": cfg.get("quadratic_duration"),
-        "min_duration": cfg.get("min_duration"),
-        "max_duration": cfg.get("max_duration"),
-        # All-reduced global stats (summed across all ranks)
-        "global_stats": global_result,
-    }
-    metadata_path = Path(output_dir) / "dataset_info.json"
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2)
-    logger.info(f"Saved metadata to {metadata_path}")
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 
-def _infer_shar_label(cfg: Dict[str, Any]) -> str:
-    """Derive a human-readable label from ``shar_dir``.
-
-    E.g. ``/data/audioset_unbal_train_shar`` → ``audioset_unbal_train_shar``.
-    For multiple dirs, joins their names with ``+``.
-    Falls back to sanitised ``dataset_name`` if ``shar_dir`` is not set.
-    """
-    shar_dir = cfg.get("shar_dir")
-    if shar_dir:
-        dirs = shar_dir if isinstance(shar_dir, (list, tuple)) else [shar_dir]
-        return "+".join(Path(d).name for d in dirs)
-    return re.sub(r"[^\w.-]+", "-", cfg.get("dataset_name", "unknown")).strip("-")
-
-
 def _build_output_subdir(cfg: Dict[str, Any]) -> str:
-    """Build a dataset-specific subdirectory name to avoid checkpoint collisions.
+    """Build a dataset-specific subdirectory name.
 
-    Format: ``{shar_label}_lhotse_{mode}[_dur{min}-{max}]``
+    Format: ``{output_name}_{mode}[_dur{min}-{max}]``
     """
-    shar_label = _infer_shar_label(cfg)
+    output_name = cfg.get("output_name")
+    if not output_name:
+        raise ValueError("'output_name' is required in the dataset config.")
+
     mode = cfg.get("mode", "audio_only")
-    parts = [shar_label, "lhotse", mode]
+    parts = [output_name, mode]
 
     min_dur = cfg.get("min_duration")
     max_dur = cfg.get("max_duration")
@@ -478,6 +422,7 @@ def _build_output_subdir(cfg: Dict[str, Any]) -> str:
         parts.append(f"dur{_fmt(min_dur) or 'min'}-{_fmt(max_dur) or 'max'}")
 
     return "_".join(p for p in parts if p)
+
 
 
 def run_lhotse_pipeline(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -504,10 +449,10 @@ def run_lhotse_pipeline(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 f"from rank % {gpus_per_node} GPUs"
             )
 
-    # Export for dist.init_process_group("nccl") which uses env:// by default
-    os.environ.setdefault("RANK", str(rank))
-    os.environ.setdefault("WORLD_SIZE", str(world_size))
-    os.environ.setdefault("LOCAL_RANK", str(local_rank))
+    # Only rank 0 logs at INFO; others at WARNING to avoid 160x noise.
+    if rank != 0:
+        logging.getLogger("audio_tokenization").setLevel(logging.WARNING)
+        logging.getLogger("lhotse").setLevel(logging.WARNING)
 
     cfg["rank"] = rank
     cfg["world_size"] = world_size
@@ -517,21 +462,9 @@ def run_lhotse_pipeline(cfg: Dict[str, Any]) -> Dict[str, Any]:
     cfg["output_dir"] = str(Path(cfg["output_dir"]) / _build_output_subdir(cfg))
     torch.cuda.set_device(local_rank)
 
-    if world_size > 1:
-        dist.init_process_group(
-            backend="nccl",
-            rank=rank,
-            world_size=world_size,
-        )
-        logger.info(
-            f"[rank {rank}/{world_size}] process group initialized "
-            f"(backend=nccl, local_rank={local_rank})"
-        )
+    logger.info(
+        f"[rank {rank}/{world_size}] starting (local_rank={local_rank}, "
+        f"no NCCL — each rank is independent)"
+    )
 
-    try:
-        result = tokenize_loop(rank, world_size, cfg)
-    finally:
-        if world_size > 1 and dist.is_initialized():
-            dist.destroy_process_group()
-
-    return result
+    return tokenize_loop(rank, world_size, cfg)

@@ -2,6 +2,7 @@
 # Requires pre-built Shar data (run prepare_hf_to_shar first).
 dataset_type: lhotse
 dataset_name: agkphysics/AudioSet
+output_name: audioset_unbal_train
 
 # Pre-built Shar directory (from prepare_hf_to_shar)
 shar_dir: /iopsstor/scratch/cscs/xyixuan/audio-datasets/audioset_unbal_train_shar

@@ -32,7 +32,18 @@ def finalize_shard_writer(
     bin_path: str,
     idx_path: str,
 ) -> None:
-    """Finalize index and atomically move temporary shard files in place."""
+    """Finalize index and atomically move temporary shard files in place.
+
+    Calls ``fsync`` on both temp files before renaming to ensure data is
+    durable on network filesystems (e.g. Lustre) where client write-back
+    caching can lose data if the process is killed before a flush.
+    """
     builder.finalize(tmp_idx)
+    for p in (tmp_bin, tmp_idx):
+        fd = os.open(p, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
     os.replace(tmp_bin, bin_path)
     os.replace(tmp_idx, idx_path)

@@ -26,7 +26,7 @@ def build_cutset(cfg: Dict[str, Any], rank: int, world_size: int):
     """Load prepared Shar into a CutSet and apply post-load filters."""
     _set_resampling_backend(rank)
 
-    cuts = _load_shar_cutset(cfg, rank)
+    cuts = _load_shar_cutset(cfg, rank, world_size)
 
     # Drop low sample-rate audio before resampling (e.g., 8kHz -> 24kHz = garbage).
     min_sr = cfg.get("min_sample_rate")
@@ -63,12 +63,16 @@ def build_cutset(cfg: Dict[str, Any], rank: int, world_size: int):
 # ---------------------------------------------------------------------------
 
 
-def _load_shar_cutset(cfg, rank):
+def _load_shar_cutset(cfg, rank, world_size=1):
     """Load a CutSet from one or more prepared Shar directories.
 
     ``shar_dir`` may be a single path (str) or a list of paths.  When
     multiple directories are given their shar indexes are merged so that
     ``CutSet.from_shar`` sees one unified pool of shards.
+
+    When ``world_size > 1``, shards are split across DDP ranks via
+    round-robin assignment so each rank loads only its subset.  This
+    avoids the O(world_size) overhead of Lhotse's strided distribution.
     """
     from lhotse import CutSet
 
@@ -110,10 +114,22 @@ def _load_shar_cutset(cfg, rank):
 
     # Sort for determinism.
     merged_fields = {k: sorted(v) for k, v in merged_fields.items()}
+    total_shards = len(merged_fields.get("cuts", []))
     logger.info(
         f"[rank {rank}] Merged {len(shar_dirs)} shar dir(s): "
-        f"{len(merged_fields.get('cuts', []))} cut shards"
+        f"{total_shards} cut shards"
     )
+
+    # Split shards across DDP ranks (round-robin) so each rank's sampler
+    # only iterates its own subset — eliminates O(world_size) overhead.
+    if world_size > 1:
+        for field in merged_fields:
+            merged_fields[field] = merged_fields[field][rank::world_size]
+        logger.info(
+            f"[rank {rank}] Shard split: "
+            f"{len(merged_fields['cuts'])}/{total_shards} shards"
+        )
+
     return CutSet.from_shar(fields=merged_fields, split_for_dataloading=False, shuffle_shards=True)
 
 
