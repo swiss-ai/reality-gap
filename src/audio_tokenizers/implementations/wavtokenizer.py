@@ -1,9 +1,13 @@
 """
 WavTokenizer implementation wrapper for benchmark-audio-tokenizer.
 
-WavTokenizer is a SOTA discrete codec model achieving 40 tokens per second
+WavTokenizer is a SOTA discrete codec model achieving 40/75 tokens per second
 for audio language modeling, with strong reconstruction results.
 Paper: https://arxiv.org/abs/2408.16532
+
+Two variants available:
+- wavtokenizer-40: 40 tokens/second (large-600 model)
+- wavtokenizer-75: 75 tokens/second (large-320 model)
 """
 
 import os
@@ -26,33 +30,34 @@ from ..base import BaseAudioTokenizer
 logger = logging.getLogger(__name__)
 
 
-class WavTokenizerWrapper(BaseAudioTokenizer):
+class WavTokenizerBase(BaseAudioTokenizer):
     """
-    Wrapper for WavTokenizer - SOTA discrete codec with 40 tokens per second.
-
-    Using the large-600 model which supports speech, audio, and music with best quality.
+    Base class for WavTokenizer variants.
 
     Key features:
-    - Single codebook with 4096 codes 
-    - 40 tokens per second
+    - Single codebook with 4096 codes
+    - Supports speech, audio, and music
     """
 
+    # To be overridden by subclasses
     name = "wavtokenizer"
+    tokens_per_second = 40
+    model_variant = "large-600"
+    _downsample_rate = 600
 
-    def __init__(self, device: str = "cuda", checkpoint: Optional[str] = None):
+    def __init__(self, device: str = "cuda", checkpoint: Optional[str] = None, torch_compile: bool = True):
         """
-        Initialize WavTokenizer with the large-600 model (40 tokens/s).
+        Initialize WavTokenizer.
 
         Args:
             device: Device to run the model on
             checkpoint: Optional path to local checkpoint
+            torch_compile: Whether to use torch.compile for speedup (default True).
+                          Set to False for variable-length audio to avoid recompilation overhead.
         """
         self.device = device
         self.checkpoint = checkpoint
-
-        # Using the best model: large-600 with 40 tokens/second
-        self.tokens_per_second = 40
-        self.model_variant = "large-600"
+        self.torch_compile = torch_compile
 
         # Cache for resamplers (to avoid recreating and ensure correct device)
         self._resamplers = {}
@@ -60,48 +65,8 @@ class WavTokenizerWrapper(BaseAudioTokenizer):
         self._load_model()
 
     def _load_model(self):
-        """Load the WavTokenizer model."""
-        try:
-            # Model paths
-            cache_dir = "/capstor/store/cscs/swissai/infra01/MLLM/wavtokenizer"
-            os.makedirs(cache_dir, exist_ok=True)
-
-            # Use large-600 model (best quality, 40 tokens/s)
-            model_name = "wavtokenizer_large_unify_600_24k.ckpt"
-            config_name = "wavtokenizer_smalldata_frame40_3s_nq1_code4096_dim512_kmeans200_attn.yaml"
-
-            model_path = os.path.join(cache_dir, model_name)
-            config_path = os.path.join(wavtokenizer_path, "configs", config_name)
-
-            # Download from HuggingFace if not cached
-            if not os.path.exists(model_path):
-                logger.info(f"Downloading WavTokenizer large-600 (40 tokens/s) from HuggingFace...")
-
-                from huggingface_hub import hf_hub_download
-                downloaded_path = hf_hub_download(
-                    repo_id="novateur/WavTokenizer-large-unify-40token",
-                    filename=model_name,
-                    cache_dir=cache_dir,
-                    local_dir=cache_dir
-                )
-                logger.info(f"Downloaded to {downloaded_path}")
-
-            # Load the model
-            logger.info(f"Loading WavTokenizer from {model_path}")
-            logger.info(f"Using config: {config_path}")
-
-            self.model = OriginalWavTokenizer.from_pretrained0802(config_path, model_path)
-            self.model = self.model.to(self.device)
-            self.model.eval()
-
-            logger.info(f"WavTokenizer large-600 loaded successfully")
-            logger.info(f"  - 40 tokens per second")
-            logger.info(f"  - Supports speech, audio, and music")
-            logger.info(f"  - 80,000 hours training data")
-
-        except Exception as e:
-            logger.error(f"Error loading WavTokenizer: {e}")
-            raise
+        """Load the WavTokenizer model. To be implemented by subclasses."""
+        raise NotImplementedError
 
     @property
     def sample_rate(self) -> int:
@@ -133,7 +98,13 @@ class WavTokenizerWrapper(BaseAudioTokenizer):
     @property
     def downsample_rate(self) -> int:
         """Downsampling rate from audio samples to tokens."""
-        return 600  # 24000 / 40 = 600 (40 tokens per second)
+        return self._downsample_rate
+
+    def tokens_from_waveform_samples(self, num_waveform_samples: int) -> int:
+        """Return token length from waveform sample count (ceil division)."""
+        if num_waveform_samples < 0:
+            raise ValueError("num_waveform_samples must be non-negative")
+        return (num_waveform_samples + self.downsample_rate - 1) // self.downsample_rate
 
     def encode_audio(self, audio: torch.Tensor) -> torch.Tensor:
         """
@@ -218,11 +189,10 @@ class WavTokenizerWrapper(BaseAudioTokenizer):
         if isinstance(audio, np.ndarray):
             audio = torch.from_numpy(audio).float()
 
-        # Ensure audio is on CPU for resampling (torchaudio.Resample creates CPU kernels)
-        audio = audio.cpu()
-
-        # Resample if necessary
+        # Resample if necessary (requires CPU for torchaudio.Resample)
         if sr != self.sample_rate:
+            # Only move to CPU if resampling is needed
+            audio = audio.cpu()
             # Use cached resampler or create new one
             resampler_key = f"{sr}_{self.sample_rate}"
             if resampler_key not in self._resamplers:
@@ -311,3 +281,102 @@ class WavTokenizerWrapper(BaseAudioTokenizer):
         }
 
         return reconstructed, info
+
+
+class WavTokenizer40(WavTokenizerBase):
+    """
+    WavTokenizer with 40 tokens per second (large-600 model).
+
+    - 40 tokens/second
+    - Single codebook with 4096 codes
+    - Trained on 80,000 hours of speech, audio, and music
+    """
+
+    name = "wavtokenizer-40"
+    tokens_per_second = 40
+    model_variant = "large-600"
+    _downsample_rate = 600  # 24000 / 40 = 600
+
+    def _load_model(self):
+        """Load the WavTokenizer large-600 model (40 tokens/s)."""
+        try:
+            # Model paths
+            cache_dir = "/capstor/store/cscs/swissai/infra01/MLLM/wavtokenizer"
+            os.makedirs(cache_dir, exist_ok=True)
+
+            # Use large-600 model (best quality, 40 tokens/s)
+            model_name = "wavtokenizer_large_unify_600_24k.ckpt"
+            config_name = "wavtokenizer_smalldata_frame40_3s_nq1_code4096_dim512_kmeans200_attn.yaml"
+
+            model_path = os.path.join(cache_dir, model_name)
+            config_path = os.path.join(wavtokenizer_path, "configs", config_name)
+
+            # Download from HuggingFace if not cached
+            if not os.path.exists(model_path):
+                logger.info(f"Downloading WavTokenizer large-600 (40 tokens/s) from HuggingFace...")
+
+                from huggingface_hub import hf_hub_download
+                downloaded_path = hf_hub_download(
+                    repo_id="novateur/WavTokenizer-large-unify-40token",
+                    filename=model_name,
+                    cache_dir=cache_dir,
+                    local_dir=cache_dir
+                )
+                logger.info(f"Downloaded to {downloaded_path}")
+
+            # Load the model
+            logger.info(f"Loading WavTokenizer large-600 (40 tokens/s) from {model_path}")
+
+            self.model = OriginalWavTokenizer.from_pretrained0802(config_path, model_path)
+            self.model = self.model.to(self.device)
+            self.model.eval()
+
+            # Optionally compile encoder for ~1.3x speedup (fuses padding + conv operations)
+            # Disable for variable-length audio to avoid recompilation overhead per unique length
+            if self.torch_compile:
+                try:
+                    import torch._dynamo as dynamo
+                    dynamo.config.recompile_limit = int(
+                        os.environ.get("WAVTOKENIZER_DYNAMO_RECOMPILE_LIMIT", "64")
+                    )
+                except Exception:
+                    pass
+                self.model.feature_extractor.encodec.encoder = torch.compile(
+                    self.model.feature_extractor.encodec.encoder,
+                    dynamic=False,
+                )
+                logger.info(f"WavTokenizer large-600 loaded successfully (40 tokens/s, compiled)")
+            else:
+                logger.info(f"WavTokenizer large-600 loaded successfully (40 tokens/s, eager mode)")
+
+        except Exception as e:
+            logger.error(f"Error loading WavTokenizer: {e}")
+            raise
+
+
+class WavTokenizer75(WavTokenizerBase):
+    """
+    WavTokenizer with 75 tokens per second (large-320 model).
+
+    NOT YET IMPLEMENTED: No unified 75Hz model available yet.
+    Only speech-only model exists (novateur/WavTokenizer-large-speech-75token).
+
+    - 75 tokens/second
+    - Single codebook with 4096 codes
+    """
+
+    name = "wavtokenizer-75"
+    tokens_per_second = 75
+    model_variant = "large-320"
+    _downsample_rate = 320  # 24000 / 75 = 320
+
+    def _load_model(self):
+        """Load the WavTokenizer large-320 model (75 tokens/s)."""
+        raise NotImplementedError(
+            "WavTokenizer 75Hz unified model not yet available. "
+            "Only speech-only model exists: novateur/WavTokenizer-large-speech-75token"
+        )
+
+
+# Alias for backward compatibility
+WavTokenizerWrapper = WavTokenizer40

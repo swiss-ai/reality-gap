@@ -145,6 +145,16 @@ class BaseAudioTokenizer(ABC, metaclass=RegisteredTokenizerMeta):
     def downsample_rate(self) -> int:
         """Temporal downsampling factor."""
         pass
+
+    def tokens_from_waveform_samples(self, num_waveform_samples: int) -> int:
+        """Return token length from waveform sample count.
+
+        Subclasses should override when token length can be derived from
+        waveform length (e.g., fixed downsample_rate).
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement tokens_from_waveform_samples"
+        )
     
     @property  
     @abstractmethod

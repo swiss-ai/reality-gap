@@ -16,9 +16,13 @@ _TOKENIZER_IMPORTS = {
     'xcodec2': ('xcodec2', ['XCodec2Tokenizer']),
     'cosyvoice2': ('cosyvoice2', ['CosyVoice2Tokenizer']),
     'glm4voice': ('glm4voice', ['GLM4VoiceTokenizer']),
-    'wavtokenizer': ('wavtokenizer', ['WavTokenizerWrapper']),
+    'wavtokenizer-40': ('wavtokenizer', ['WavTokenizer40']),
+    # 'wavtokenizer-75': ('wavtokenizer', ['WavTokenizer75']),  # Not yet available - no unified 75Hz model
     'stepaudioeditx': ('stepaudioeditx', ['StepAudioEditXWrapper']),
     'mimoaudio': ('mimoaudio', ['MiMoAudioTokenizer']),
+    'linacodec': ('linacodec', ['LinaCodecTokenizer']),
+    'unicodec': ('unicodec', ['UniCodecTokenizer']),  # Requires Python 3.9 (fairseq)
+    'heartcodec': ('heartcodec', ['HeartCodecTokenizer']),
 }
 
 # Try to import all tokenizers, but don't fail if dependencies are missing

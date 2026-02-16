@@ -3,118 +3,267 @@
 Core utilities for creating audio omni-tokenizers.
 
 Shared functions for adding audio tokens to text tokenizers.
-Imports generic functions from vision_tokenization and adds audio-specific logic.
+Follows the same pattern as vision_tokenization.
 """
 
-import sys
-import os
 import json
+import os
+import shutil
+import sys
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Tuple
 
-# Ensure src/ is in sys.path for audio_tokenizers package imports
-_current_dir = Path(__file__).resolve().parent
-_audio_tokenization_dir = _current_dir.parent.parent
-_repo_root = _audio_tokenization_dir.parent
-_src_dir = _repo_root / "src"
+from transformers import AutoTokenizer
 
-if str(_src_dir) not in sys.path:
-    sys.path.insert(0, str(_src_dir))
 
-# Note: The local tokenizers/ directory has been renamed to legacy_tokenizers/
-# to avoid conflicts with HuggingFace's tokenizers package.
+# All known RESERVED_OMNI renames across modalities
+# This allows any modality tokenizer to detect slots already used by other modalities
+RESERVED_TOKEN_RENAMES = {
+    # Vision structure tokens (001-007)
+    1: "<|img_start|>",
+    2: "<|img_end|>",
+    3: "<|img_token_start|>",
+    4: "<|img_end_of_row|>",
+    5: "<|img_end_of_frame|>",
+    6: "<|img_generation_start|>",
+    7: "<|image|>",
+    # Audio structure tokens (008-009)
+    8: "<|audio_start|>",
+    9: "<|audio_end|>",
+}
 
-# Import transformers lazily (only when needed) to avoid PyTorch/Transformers version conflicts
-# The import happens inside create_audio_base_tokenizer() when AutoTokenizer is actually needed
-# This allows the script to at least parse arguments before hitting version conflicts
+# Audio-specific renames (subset of RESERVED_TOKEN_RENAMES)
+AUDIO_STRUCTURE_TOKEN_RENAMES = [
+    ("<|RESERVED_OMNI_008|>", "<|audio_start|>"),
+    ("<|RESERVED_OMNI_009|>", "<|audio_end|>"),
+]
 
-# Copy generic utility functions directly to avoid PyTorch/Transformers version conflicts
-# These are simple utility functions that don't depend on vision-specific code
+# Default number of reserved tokens for all modalities
+DEFAULT_NUM_RESERVED_TOKENS = 200
 
-def deduplicate_tokens(tokens_to_add, existing_vocab, verbose=True):
+
+def _copy_modality_mapping_files(
+    existing_modalities: Dict[str, Any],
+    input_tokenizer_path: str,
+    output_path: str,
+    *,
+    announce: bool,
+) -> None:
+    modalities = existing_modalities.get("modalities") or {}
+    if not modalities:
+        return
+    if announce:
+        print("\nCopying existing modality mapping files...")
+    for info in modalities.values():
+        src = os.path.join(input_tokenizer_path, info["mapping_file"])
+        dst = os.path.join(output_path, info["mapping_file"])
+        if os.path.abspath(src) != os.path.abspath(dst):
+            shutil.copy(src, dst)
+            print(f"  Copied {info['mapping_file']}")
+
+
+# Modality registry: name -> (mapping_file, offset_key, vocab_size_key, start_token, end_token)
+MODALITY_REGISTRY = {
+    "vision": ("vision_token_mapping.json", "vision_token_offset", "visual_vocab_size", "<|img_start|>", "<|img_end|>"),
+    "audio": ("audio_token_mapping.json", "audio_token_offset", "audio_vocab_size", "<|audio_start|>", "<|audio_end|>"),
+}
+
+
+def _read_modality_info(output_path: str, name: str, tokenizer) -> Dict[str, Any] | None:
+    """Read modality info from its mapping file. Returns None if not found or incomplete."""
+    if name not in MODALITY_REGISTRY:
+        return None
+
+    mapping_file, offset_key, vocab_key, start_token, end_token = MODALITY_REGISTRY[name]
+    mapping_path = os.path.join(output_path, mapping_file)
+
+    if not os.path.exists(mapping_path):
+        return None
+
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if offset_key not in data:
+        return None
+
+    start_token_id = tokenizer.convert_tokens_to_ids(start_token)
+    end_token_id = tokenizer.convert_tokens_to_ids(end_token)
+
+    if start_token_id == tokenizer.unk_token_id:
+        raise ValueError(
+            f"Modality start token {start_token} not found in tokenizer at {output_path}"
+        )
+    if end_token_id == tokenizer.unk_token_id:
+        raise ValueError(
+            f"Modality end token {end_token} not found in tokenizer at {output_path}"
+        )
+
+    return {
+        "name": name,
+        "offset": data[offset_key],
+        "vocab_size": data.get(vocab_key),
+        # Store modality boundary markers as token IDs.
+        "start_token": start_token_id,
+        "end_token": end_token_id,
+    }
+
+
+def _build_omnimodal_config(output_path: str, base_vocab_size: int, tokenizer) -> Dict[str, Any]:
     """
-    Remove duplicate tokens and filter out existing tokens from vocabulary.
-    Copied from vision_tokenization/utils/omni_tokenizer/core.py
+    Build omnimodal_config from all present modality mapping files.
+
+    Stores raw data only - omni_special_vocab_size computed at load time as:
+        first_modality_offset - omni_special_token_offset
     """
-    unique_new_tokens = []
-    seen = set()
+    modalities = [
+        info for name in MODALITY_REGISTRY
+        if (info := _read_modality_info(output_path, name, tokenizer)) is not None
+    ]
 
-    for token in tokens_to_add:
-        if token not in existing_vocab and token not in seen:
-            unique_new_tokens.append(token)
-            seen.add(token)
+    if not modalities:
+        return {}
 
-    if verbose and len(tokens_to_add) != len(unique_new_tokens):
-        filtered_count = len(tokens_to_add) - len(unique_new_tokens)
-        print(f"Filtered out {filtered_count} duplicate/existing tokens")
+    modalities.sort(key=lambda m: m["offset"])
 
-    return unique_new_tokens
+    return {
+        "omni_special_token_offset": base_vocab_size,
+        "modalities": modalities,
+    }
 
 
-def add_tokens_with_feedback(tokenizer, tokens, token_type="special"):
+def _update_tokenizer_config(
+    config_path: str,
+    stats: Dict[str, Any],
+    base_vocab_size: int,
+    audio_vocab_size: int,
+    audio_tokenizer_name: str,
+) -> None:
+    if not os.path.exists(config_path):
+        return
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    config["vocab_size"] = stats["final_vocab_size"]
+    # Only set base_vocab_size if not already present (preserve existing value)
+    if "base_vocab_size" not in config:
+        config["base_vocab_size"] = base_vocab_size
+    config["audio_tokenizer"] = {
+        "type": audio_tokenizer_name,
+        "codebook_size": audio_vocab_size,
+    }
+
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+def _collect_reserved_tokens(existing_vocab: Dict[str, Any], num_reserved_tokens: int) -> list:
+    reserved_tokens = []
+    for i in range(num_reserved_tokens):
+        original = f"<|RESERVED_OMNI_{i:03d}|>"
+        renamed = RESERVED_TOKEN_RENAMES.get(i)
+
+        # Skip if slot is already used (original or renamed exists in vocab)
+        if original in existing_vocab:
+            continue
+        if renamed and renamed in existing_vocab:
+            continue
+
+        reserved_tokens.append(original)
+    return reserved_tokens
+
+
+def _collect_audio_tokens(existing_vocab: Dict[str, Any], audio_vocab_size: int) -> list:
+    audio_tokens = []
+    for i in range(audio_vocab_size):
+        token = f"<|audio token {i}|>"
+        if token not in existing_vocab:
+            audio_tokens.append(token)
+    return audio_tokens
+
+
+def detect_existing_modalities(tokenizer_path: str) -> Dict[str, Any]:
     """
-    Add tokens to tokenizer with user feedback.
-    Copied from vision_tokenization/utils/omni_tokenizer/core.py
+    Detect existing modalities in a tokenizer.
+
+    Checks for vision_token_mapping.json, audio_token_mapping.json, and
+    base_vocab_size in tokenizer_config.json to understand what modalities
+    already exist.
+
+    Args:
+        tokenizer_path: Path to the tokenizer directory
+
+    Returns:
+        Dict with:
+            - base_vocab_size: int or None (true text-only vocab)
+            - modalities: dict of modality name -> info dict
     """
-    if not tokens:
-        print(f"No new {token_type} tokens to add")
-        return 0
+    result: Dict[str, Any] = {"base_vocab_size": None, "modalities": {}}
 
-    print(f"\nAdding {len(tokens)} new {token_type} tokens to tokenizer...")
+    # Check tokenizer_config.json for base_vocab_size
+    config_path = os.path.join(tokenizer_path, "tokenizer_config.json")
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        result["base_vocab_size"] = config.get("base_vocab_size")
 
-    # Show sample of tokens being added
-    if len(tokens) <= 10:
-        for token in tokens:
-            print(f"  - {token}")
-    else:
-        # Show first and last few tokens for large lists
-        for token in tokens[:3]:
-            print(f"  - {token}")
-        print(f"  ... ({len(tokens) - 6} more tokens)")
-        for token in tokens[-3:]:
-            print(f"  - {token}")
+    # Check for vision modality
+    vision_mapping_path = os.path.join(tokenizer_path, "vision_token_mapping.json")
+    if os.path.exists(vision_mapping_path):
+        with open(vision_mapping_path, "r", encoding="utf-8") as f:
+            vision_data = json.load(f)
+        result["modalities"]["vision"] = {
+            "mapping_file": "vision_token_mapping.json",
+            "vocab_size": vision_data.get("visual_vocab_size"),
+            "token_format": vision_data.get("vision_token_format"),
+        }
 
-    # Add tokens to tokenizer
-    num_added = tokenizer.add_special_tokens({
-        "additional_special_tokens": tokens
-    })
+    # Check for audio modality (for idempotency)
+    audio_mapping_path = os.path.join(tokenizer_path, "audio_token_mapping.json")
+    if os.path.exists(audio_mapping_path):
+        with open(audio_mapping_path, "r", encoding="utf-8") as f:
+            audio_data = json.load(f)
+        result["modalities"]["audio"] = {
+            "mapping_file": "audio_token_mapping.json",
+            "vocab_size": audio_data.get("audio_vocab_size"),
+            "tokenizer_type": audio_data.get("audio_tokenizer"),
+            "token_format": audio_data.get("audio_token_format"),
+        }
 
-    print(f"Successfully added {num_added} new tokens")
-    return num_added
+    return result
 
 
 def rename_reserved_token(save_path: str, tokenizer, old_token: str, new_token: str) -> None:
     """
     Rename a reserved token in saved tokenizer files.
-    Copied from vision_tokenization/utils/omni_tokenizer/core.py
+
+    Args:
+        save_path: Path where tokenizer was saved
+        tokenizer: Tokenizer instance to get token ID
+        old_token: Old token name (e.g., "<|RESERVED_OMNI_001|>")
+        new_token: New token name (e.g., "<|audio_start|>")
     """
     token_id = tokenizer.convert_tokens_to_ids(old_token)
     if token_id == tokenizer.unk_token_id:
-        print(f"  ⚠️  {old_token} not found, skipping rename to {new_token}")
+        print(f"  {old_token} not found, skipping rename to {new_token}")
         return
 
     # Modify tokenizer.json
     tokenizer_json_path = os.path.join(save_path, "tokenizer.json")
     if os.path.exists(tokenizer_json_path):
-        with open(tokenizer_json_path, 'r', encoding='utf-8') as f:
+        with open(tokenizer_json_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Replace all occurrences
         content = content.replace(f'"{old_token}"', f'"{new_token}"')
         content = content.replace(old_token, new_token)
 
-        with open(tokenizer_json_path, 'w', encoding='utf-8') as f:
+        with open(tokenizer_json_path, "w", encoding="utf-8") as f:
             f.write(content)
-
-        print(f"  ✅ Renamed {old_token} to {new_token} (ID {token_id}) in tokenizer.json")
 
     # Also modify tokenizer_config.json
     config_path = os.path.join(save_path, "tokenizer_config.json")
     if os.path.exists(config_path):
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
-        # Replace in all config values
         def replace_in_dict(obj):
             if isinstance(obj, dict):
                 return {k: replace_in_dict(v) for k, v in obj.items()}
@@ -126,375 +275,280 @@ def rename_reserved_token(save_path: str, tokenizer, old_token: str, new_token: 
 
         config = replace_in_dict(config)
 
-        with open(config_path, 'w', encoding='utf-8') as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
 
-        print(f"  ✅ Renamed {old_token} to {new_token} in tokenizer_config.json")
-
-# Add paths for importing audio tokenizers
-REPO_ROOT = Path(__file__).resolve().parents[3]
-AUDIO_TOKENIZERS_SRC = REPO_ROOT / "src" / "audio_tokenizers"
-if str(AUDIO_TOKENIZERS_SRC) not in sys.path:
-    sys.path.insert(0, str(AUDIO_TOKENIZERS_SRC))
+    print(f"  Renamed {old_token} -> {new_token} (ID {token_id})")
 
 
-def save_tokenizer_with_correct_vocab_size(
-    tokenizer,
-    save_path: str,
-    original_vocab_size: int,
-    audio_tokenizer_type: str,
-    audio_tokenizer_path: str,
-    codebook_size: int
-) -> None:
+def get_audio_vocab_size_from_tokenizer(audio_tokenizer_name: str = "wavtokenizer") -> int:
     """
-    Save tokenizer with correct vocab_size and audio tokenizer info in config.
+    Get audio vocab size by querying the audio tokenizer class.
 
     Args:
-        tokenizer: The tokenizer instance with potentially updated vocabulary
-        save_path: Path where tokenizer will be saved
-        original_vocab_size: The original vocab size before adding tokens
-        audio_tokenizer_type: Type of audio tokenizer (e.g., 'WavTokenizer') - REQUIRED
-        audio_tokenizer_path: Path to audio tokenizer model - REQUIRED
-        codebook_size: Audio tokenizer codebook size - REQUIRED
-    """
-    # First save the tokenizer
-    tokenizer.save_pretrained(save_path)
-
-    # Get actual vocabulary size after adding tokens
-    actual_vocab_size = len(tokenizer.get_vocab())
-    base_vocab_size = original_vocab_size
-
-    # Update tokenizer_config.json with correct vocab_size
-    config_path = os.path.join(save_path, "tokenizer_config.json")
-    with open(config_path, 'r') as f:
-        config = json.load(f)
-
-    # Set vocab_size to actual size for model.resize_token_embeddings() etc.
-    config['vocab_size'] = actual_vocab_size
-    config['base_vocab_size'] = base_vocab_size
-    config['added_tokens_count'] = actual_vocab_size - base_vocab_size
-
-    # Add audio tokenizer configuration (instead of vision_tokenizer)
-    config['audio_tokenizer'] = {
-        'type': audio_tokenizer_type,
-        'path': audio_tokenizer_path or 'auto-loaded-from-huggingface',
-        'codebook_size': codebook_size
-    }
-
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
-
-    print(f"✓ Updated tokenizer_config.json:")
-    print(f"  Total vocabulary: {actual_vocab_size:,}")
-    print(f"  Base vocabulary: {base_vocab_size:,}")
-    print(f"  Added tokens: {actual_vocab_size - base_vocab_size:,}")
-    print(f"  Audio tokenizer: {audio_tokenizer_type}")
-    print(f"  Audio tokenizer path: {audio_tokenizer_path}")
-    print(f"  Codebook size: {codebook_size:,}")
-
-
-def load_audio_tokenizer(audio_tokenizer: str = "WavTokenizer", audio_tokenizer_path: Optional[str] = None):
-    """
-    Load an audio tokenizer and extract its metadata.
-
-    Args:
-        audio_tokenizer: User-friendly tokenizer name (default: "WavTokenizer")
-        audio_tokenizer_path: Optional path to audio tokenizer model (ignored for WavTokenizer,
-                            which auto-loads from HuggingFace. May be used for other tokenizers.)
+        audio_tokenizer_name: Name of the audio tokenizer
 
     Returns:
-        Tuple of (tokenizer instance, codebook_size, tokenizer_name)
+        int: The codebook size of the audio tokenizer
     """
-    print(f"Loading audio tokenizer metadata ({audio_tokenizer})...")
-    
-    try:
-        if audio_tokenizer == "WavTokenizer":
-            # Import WavTokenizerWrapper
-            # src/ should already be in sys.path (set at module level)
-            from audio_tokenizers.implementations.wavtokenizer import WavTokenizerWrapper
-            
-            # Create instance to get metadata (device doesn't matter for codebook_size)
-            # Note: audio_tokenizer_path is ignored for WavTokenizer - it auto-loads from HuggingFace
-            audio_tok = WavTokenizerWrapper(device="cpu")
-            
-            codebook_size = audio_tok.codebook_size
-            tokenizer_name = audio_tok.name
-            
-            print(f"  ✓ Audio tokenizer: {tokenizer_name}")
-            print(f"  ✓ Codebook size: {codebook_size:,}")
-            if audio_tokenizer_path:
-                print(f"  ℹ️  Note: audio_tokenizer_path ignored for WavTokenizer (auto-loaded from HuggingFace)")
-            
-            return audio_tok, codebook_size, tokenizer_name
-        else:
-            raise ValueError(
-                f"Unknown audio tokenizer: '{audio_tokenizer}'. "
-                f"Available: ['WavTokenizer']"
-            )
+    # Add src directory to path
+    repo_root = Path(__file__).parent.parent.parent.parent
+    src_dir = repo_root / "src"
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
 
-    except Exception as e:
-        raise RuntimeError(f"Failed to load audio tokenizer metadata for '{audio_tokenizer}': {e}")
+    name_lower = audio_tokenizer_name.lower()
+
+    if name_lower in ("wavtokenizer", "wavtokenizer-40"):
+        from audio_tokenizers.implementations.wavtokenizer import WavTokenizer40
+        return WavTokenizer40.codebook_size.fget(None)  # Get property without instantiation
+    elif name_lower == "wavtokenizer-75":
+        from audio_tokenizers.implementations.wavtokenizer import WavTokenizer75
+        return WavTokenizer75.codebook_size.fget(None)
+    else:
+        raise ValueError(f"Unknown audio tokenizer: {audio_tokenizer_name}")
 
 
-def create_audio_base_tokenizer(
-    text_tokenizer_path: str,
+def add_audio_tokens(
+    input_tokenizer_path: str,
     output_path: str,
-    audio_tokenizer: str = "WavTokenizer",
-    audio_tokenizer_path: Optional[str] = None,
-    num_reserved_tokens: int = 200
-) -> Tuple[Any, Dict[str, int]]:
+    audio_tokenizer_name: str = "wavtokenizer",
+    num_reserved_tokens: int = DEFAULT_NUM_RESERVED_TOKENS,
+) -> Tuple[Any, Dict[str, Any]]:
     """
-    Create an omnimodal base tokenizer by adding audio tokens to a text tokenizer.
+    Add audio tokens to a tokenizer.
+
+    Audio vocab size is auto-detected from the audio tokenizer class.
+    This function handles both text-only tokenizers and tokenizers with
+    existing modalities (e.g., vision tokens).
 
     This function:
-    1. Auto-detects codebook size from the audio tokenizer
-    2. Adds structure tokens for audio formatting
-    3. Adds reserved tokens (RESERVED_001 becomes <|audio_start|>)
-    4. Adds audio tokens: <|audio token 000000|> through <|audio token XXXXXX|>
-    5. Saves audio_token_mapping.json with all token mappings
-
-    Uses generic functions from vision_tokenization (deduplicate_tokens, 
-    add_tokens_with_feedback, rename_reserved_token) for maximum code reuse.
+    1. Detects existing modalities (vision, etc.) via mapping files
+    2. Adds RESERVED_OMNI tokens if not present
+    3. Renames some to audio structure tokens (audio_start, audio_end)
+    4. Adds audio content tokens: <|audio token 0|> through <|audio token N|>
+    5. Copies existing modality mapping files (vision_token_mapping.json, etc.)
+    6. Saves audio_token_mapping.json with all token mappings
+    7. Updates tokenizer_config.json preserving base_vocab_size
 
     Args:
-        text_tokenizer_path: Path to the base text tokenizer directory
-        output_path: Path to save omni-tokenizer
-        audio_tokenizer: Audio tokenizer name (default: "WavTokenizer")
-        audio_tokenizer_path: Optional path to audio tokenizer model (ignored for WavTokenizer,
-                            which auto-loads from HuggingFace. Used for config documentation.)
-        num_reserved_tokens: Number of RESERVED_OMNI tokens to add (default: 200)
+        input_tokenizer_path: Path to input tokenizer
+        output_path: Path to save updated tokenizer
+        audio_tokenizer_name: Audio tokenizer for vocab size auto-detection (default: "wavtokenizer")
+        num_reserved_tokens: Number of RESERVED_OMNI tokens (default: 200)
 
     Returns:
         Tuple of (tokenizer object, stats dict)
 
     Files created:
-        - tokenizer_config.json, special_tokens_map.json, etc. (standard tokenizer files)
+        - tokenizer files (tokenizer.json, tokenizer_config.json, etc.)
         - audio_token_mapping.json (mapping from audio indices to token IDs)
+        - copies of existing modality mapping files (e.g., vision_token_mapping.json)
     """
+    # Auto-detect audio vocab size from tokenizer class
+    audio_vocab_size = get_audio_vocab_size_from_tokenizer(audio_tokenizer_name)
+    print(f"Auto-detected audio vocab size: {audio_vocab_size} (from {audio_tokenizer_name})\n")
 
-    print("="*60)
-    print("CREATING AUDIO OMNI-TOKENIZER (BASE)")
-    print("="*60)
+    # Detect existing modalities in the input tokenizer
+    existing_modalities = detect_existing_modalities(input_tokenizer_path)
+    print("=" * 60)
+    print("CREATING AUDIO OMNI-TOKENIZER")
+    print("=" * 60)
 
-    # Load audio tokenizer to auto-detect codebook size
-    _, audio_vocab_size, audio_tokenizer_name = load_audio_tokenizer(
-        audio_tokenizer, audio_tokenizer_path
-    )
+    print(f"\nInput tokenizer: {input_tokenizer_path}")
+    print(f"Output path: {output_path}")
+    print(f"Audio vocab size: {audio_vocab_size:,}")
+    print(f"Reserved tokens: {num_reserved_tokens}")
 
-    print(f"\nText tokenizer: {text_tokenizer_path}")
-    print(f"Audio vocab size: {audio_vocab_size:,} (auto-detected)")
-    print("="*60 + "\n")
+    if existing_modalities["modalities"]:
+        print(f"Detected existing modalities: {list(existing_modalities['modalities'].keys())}")
+    if existing_modalities["base_vocab_size"]:
+        print(f"Detected base_vocab_size: {existing_modalities['base_vocab_size']:,}")
 
-    # Load the text tokenizer
-    # Import AutoTokenizer here (lazy import) to delay PyTorch/Transformers version conflicts
-    try:
-        from transformers import AutoTokenizer
-    except ImportError as e:
-        if "TransformGetItemToIndex" in str(e) or "torch._dynamo" in str(e):
-            # Try to get version info for better error message
-            import torch
-            torch_version = getattr(torch, '__version__', 'unknown')
-            try:
-                import transformers
-                transformers_version = getattr(transformers, '__version__', 'unknown')
-            except:
-                transformers_version = 'unknown'
-            
-            raise RuntimeError(
-                f"PyTorch/Transformers version conflict detected!\n\n"
-                f"Installed versions:\n"
-                f"  - torch: {torch_version}\n"
-                f"  - transformers: {transformers_version}\n\n"
-                f"This is a known compatibility issue. Recommended versions:\n"
-                f"  - torch==2.6.0 (as in requirements.txt)\n"
-                f"  - transformers>=4.44.0,<4.54.0 (compatible with torch 2.6.0)\n\n"
-                f"To fix, try:\n"
-                f"  pip install transformers==4.53.1\n"
-                f"  # or\n"
-                f"  pip install 'transformers>=4.44.0,<4.54.0'\n\n"
-                f"Original error: {e}"
-            ) from e
-        raise
-    
-    print(f"Loading text tokenizer from {text_tokenizer_path}...")
-    tokenizer = AutoTokenizer.from_pretrained(text_tokenizer_path, use_fast=True)
+    # Load existing tokenizer
+    print(f"\nLoading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(input_tokenizer_path, use_fast=True)
+    current_vocab_size = len(tokenizer)
+    print(f"Current vocabulary size: {current_vocab_size:,}")
 
-    # Store original info - capture base vocab BEFORE any modifications
-    original_vocab_size = len(tokenizer.get_vocab())
-    print(f"Original vocabulary size: {original_vocab_size:,}")
+    # Determine base vocab size (true text-only vocab)
+    # Use existing base_vocab_size if available, otherwise use current vocab size
+    base_vocab_size = existing_modalities["base_vocab_size"] or current_vocab_size
+    print(f"Base vocabulary size (text-only): {base_vocab_size:,}")
 
     # Statistics
     stats = {
-        "text_tokenizer": text_tokenizer_path,
+        "input_tokenizer": input_tokenizer_path,
         "audio_tokenizer": audio_tokenizer_name,
-        "tokenizer_type": "base",
-        "original_vocab_size": original_vocab_size,
-        "audio_tokens_added": 0,
-        "structure_tokens_added": 0,
+        "original_vocab_size": current_vocab_size,
+        "base_vocab_size": base_vocab_size,
         "reserved_tokens_added": 0,
-        "final_vocab_size": 0
+        "structure_tokens_added": len(AUDIO_STRUCTURE_TOKEN_RENAMES),
+        "audio_tokens_added": 0,
+        "final_vocab_size": 0,
+        "existing_modalities": list(existing_modalities["modalities"].keys()),
     }
 
-    # Collect all special tokens to add
-    special_tokens_to_add = []
+    # Check if audio tokens already exist (idempotency)
+    if "audio" in existing_modalities["modalities"]:
+        existing_audio = existing_modalities["modalities"]["audio"]
+        existing_vocab_size = existing_audio.get("vocab_size")
+        existing_tokenizer = existing_audio.get("tokenizer_type")
+
+        # Validate that requested parameters match existing
+        if existing_vocab_size and existing_vocab_size != audio_vocab_size:
+            raise ValueError(
+                f"Audio tokens already exist with vocab_size={existing_vocab_size}, "
+                f"but requested audio_vocab_size={audio_vocab_size}. "
+                f"To use a different audio tokenizer, start from a tokenizer without audio tokens."
+            )
+
+        print(f"\nAudio tokens already exist in tokenizer (found audio_token_mapping.json)!")
+        print(f"  Existing: {existing_tokenizer} (vocab_size={existing_vocab_size})")
+        print("Skipping audio token addition...")
+
+        # Just copy everything to output
+        os.makedirs(output_path, exist_ok=True)
+        tokenizer.save_pretrained(output_path)
+
+        # Copy all modality mapping files (skip if in-place update)
+        _copy_modality_mapping_files(
+            existing_modalities,
+            input_tokenizer_path,
+            output_path,
+            announce=False,
+        )
+
+        # Refresh omnimodal_config so modality boundary tokens are stored as token IDs.
+        config_path = os.path.join(output_path, "tokenizer_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            tokenizer_for_config = AutoTokenizer.from_pretrained(output_path, use_fast=True)
+            omnimodal_config = _build_omnimodal_config(output_path, base_vocab_size, tokenizer_for_config)
+            if omnimodal_config:
+                config["omnimodal_config"] = omnimodal_config
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(config, f, indent=2)
+
+        stats["final_vocab_size"] = current_vocab_size
+        return tokenizer, stats
+
+    # Collect all tokens to add
+    tokens_to_add = []
 
     # Get existing vocabulary
     existing_vocab = tokenizer.get_vocab()
 
-    # Add RESERVED_OMNI tokens (200 tokens for all modalities and control)
-    print(f"\nAdding {num_reserved_tokens} RESERVED_OMNI tokens...")
-    reserved_tokens = []
-    for i in range(num_reserved_tokens):
-        reserved_tokens.append(f"<|RESERVED_OMNI_{i:03d}|>")
+    # Add RESERVED_OMNI tokens (skip slots already used by any modality)
+    print(f"\nAdding RESERVED_OMNI tokens (up to {num_reserved_tokens})...")
+    reserved_tokens = _collect_reserved_tokens(existing_vocab, num_reserved_tokens)
 
-    special_tokens_to_add.extend(reserved_tokens)
-    stats["reserved_tokens_added"] = num_reserved_tokens
-    stats["structure_tokens_added"] = 3  # Will be renamed from RESERVED_OMNI_001-003
+    tokens_to_add.extend(reserved_tokens)
+    stats["reserved_tokens_added"] = len(reserved_tokens)
 
-    # Add audio tokens
-    print(f"\nGenerating {audio_vocab_size:,} audio tokens for {audio_tokenizer_name}...")
-    audio_tokens = []
-    # Calculate padding based on vocab size
-    padding = len(str(audio_vocab_size - 1))
-    for i in range(audio_vocab_size):
-        audio_tokens.append(f"<|audio token {i:0{padding}d}|>")
+    # Add audio content tokens (no padding for flexibility)
+    print(f"\nGenerating {audio_vocab_size:,} audio content tokens...")
+    audio_tokens = _collect_audio_tokens(existing_vocab, audio_vocab_size)
 
-    special_tokens_to_add.extend(audio_tokens)
+    tokens_to_add.extend(audio_tokens)
     stats["audio_tokens_added"] = len(audio_tokens)
-    print(f"Token format: <|audio token {{:0{padding}d}}|>")
-    print(f"Range: <|audio token {0:0{padding}d}|> to <|audio token {audio_vocab_size-1:0{padding}d}|>")
+    print(f"Token format: <|audio token N|>")
+    print(f"Range: <|audio token 0|> to <|audio token {audio_vocab_size - 1}|>")
 
-    # Use generic function from vision_tokenization
-    unique_new_tokens = deduplicate_tokens(special_tokens_to_add, existing_vocab)
+    # Add all tokens to vocabulary
+    print(f"\nAdding {len(tokens_to_add):,} tokens to vocabulary...")
+    num_added = tokenizer.add_special_tokens({"additional_special_tokens": tokens_to_add})
+    print(f"Added {num_added:,} new tokens")
 
-    # Use generic function from vision_tokenization
-    add_tokens_with_feedback(tokenizer, unique_new_tokens)
-
-    # Update final vocab size
     stats["final_vocab_size"] = len(tokenizer)
-    print(f"\nNew vocabulary size: {stats['final_vocab_size']:,}")
+    print(f"New vocabulary size: {stats['final_vocab_size']:,}")
 
-    # Save the updated tokenizer and update vocab_size in config
-    print(f"\nSaving omni-tokenizer to {output_path}...")
-    save_tokenizer_with_correct_vocab_size(
-        tokenizer,
+    # Save tokenizer
+    print(f"\nSaving tokenizer to {output_path}...")
+    os.makedirs(output_path, exist_ok=True)
+    tokenizer.save_pretrained(output_path)
+
+    # Copy existing modality mapping files (e.g., vision_token_mapping.json)
+    _copy_modality_mapping_files(
+        existing_modalities,
+        input_tokenizer_path,
         output_path,
-        original_vocab_size,
-        audio_tokenizer_type=audio_tokenizer,
-        audio_tokenizer_path=audio_tokenizer_path,
-        codebook_size=audio_vocab_size
+        announce=True,
     )
 
-    # Rename RESERVED_OMNI tokens to audio structure tokens
-    # Use generic function from vision_tokenization
-    print(f"\nRenaming RESERVED_OMNI tokens to audio structure tokens...")
-    token_renames = [
-        ("<|RESERVED_OMNI_001|>", "<|audio_start|>"),
-        ("<|RESERVED_OMNI_002|>", "<|audio_token_start|>"),
-        ("<|RESERVED_OMNI_003|>", "<|audio_end|>"),
-    ]
+    # Update tokenizer_config.json
+    config_path = os.path.join(output_path, "tokenizer_config.json")
+    _update_tokenizer_config(config_path, stats, base_vocab_size, audio_vocab_size, audio_tokenizer_name)
 
-    for old_token, new_token in token_renames:
+    # Rename RESERVED_OMNI tokens to audio structure tokens
+    print(f"\nRenaming RESERVED_OMNI tokens to audio structure tokens...")
+    for old_token, new_token in AUDIO_STRUCTURE_TOKEN_RENAMES:
         rename_reserved_token(output_path, tokenizer, old_token, new_token)
 
-    # Save audio token mapping
+    # Create audio token mapping
     print("\nCreating audio token mapping...")
     audio_mapping = {}
     for i in range(audio_vocab_size):
-        token = f"<|audio token {i:0{padding}d}|>"
+        token = f"<|audio token {i}|>"
         token_id = tokenizer.convert_tokens_to_ids(token)
         audio_mapping[i] = token_id
 
-    # Save public mapping file
-    mapping_path = os.path.join(output_path, "audio_token_mapping.json")
-    with open(mapping_path, 'w') as f:
-        json.dump({
-            "tokenizer_type": "base",
-            "audio_tokenizer": audio_tokenizer_name,
-            "audio_tokenizer_type": audio_tokenizer,
-            "audio_tokenizer_path": audio_tokenizer_path or "auto-loaded-from-huggingface",
-            "audio_token_ids": audio_mapping,
-            "audio_vocab_size": audio_vocab_size,
-            "audio_token_format": f"<|audio token {{:0{padding}d}}|>",
-            "num_reserved_tokens": num_reserved_tokens,
-            "original_vocab_size": original_vocab_size,
-            "structure_tokens_added": stats["structure_tokens_added"],
-            "reserved_tokens_added": stats["reserved_tokens_added"],
-            "final_vocab_size": stats["final_vocab_size"]
-        }, f, indent=2)
-    print(f"Saved audio token mapping to {mapping_path}")
+    _save_audio_mapping(output_path, audio_mapping, audio_vocab_size, stats["final_vocab_size"], audio_tokenizer_name)
 
-    # Verification - show some token IDs
-    print("\n" + "="*60)
+    # Now update tokenizer_config.json with omnimodal_config (after mapping files exist)
+    config_path = os.path.join(output_path, "tokenizer_config.json")
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    tokenizer_for_config = AutoTokenizer.from_pretrained(output_path, use_fast=True)
+    omnimodal_config = _build_omnimodal_config(output_path, base_vocab_size, tokenizer_for_config)
+    if omnimodal_config:
+        config["omnimodal_config"] = omnimodal_config
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+        print(f"Updated omnimodal_config in tokenizer_config.json")
+
+    # Verification
+    print("\n" + "=" * 60)
     print("VERIFICATION - Sample Token IDs")
-    print("="*60)
+    print("=" * 60)
 
-    # Check boundary marker
     print("\nBoundary marker:")
     boundary_id = tokenizer.convert_tokens_to_ids("<|RESERVED_OMNI_000|>")
     if boundary_id != tokenizer.unk_token_id:
         print(f"  <|RESERVED_OMNI_000|>: ID {boundary_id}")
 
-    # Check audio structure tokens
     print("\nAudio structure tokens:")
-    for token in ["<|audio_start|>", "<|audio_token_start|>", "<|audio_end|>"]:
-        if token in tokenizer.get_vocab():
-            token_id = tokenizer.convert_tokens_to_ids(token)
-            print(f"  {token}: ID {token_id}")
+    for _, new_token in AUDIO_STRUCTURE_TOKEN_RENAMES:
+        token_id = tokenizer.convert_tokens_to_ids(new_token)
+        if token_id != tokenizer.unk_token_id:
+            print(f"  {new_token}: ID {token_id}")
 
-    # Check sample audio tokens
-    print(f"\nAudio tokens (for {audio_tokenizer_name}):")
+    print("\nAudio content tokens (sample):")
     sample_indices = [0, audio_vocab_size // 2, audio_vocab_size - 1]
     for idx in sample_indices:
-        token = f"<|audio token {idx:0{padding}d}|>"
+        token = f"<|audio token {idx}|>"
         token_id = tokenizer.convert_tokens_to_ids(token)
         print(f"  {token}: ID {token_id}")
 
-    print("\n" + "="*60)
+    print(f"\nAudio token offset: {audio_mapping[0]}")
+    print("=" * 60)
 
     return tokenizer, stats
 
 
-def load_audio_token_mapping(tokenizer_path: str) -> Dict:
-    """
-    Load audio token mapping from a tokenizer directory.
+def _save_audio_mapping(output_path: str, audio_mapping: dict, audio_vocab_size: int, vocab_size: int, audio_tokenizer_name: str):
+    """Save audio token mapping to JSON file."""
+    mapping_data = {
+        "audio_tokenizer": audio_tokenizer_name,
+        "audio_vocab_size": audio_vocab_size,
+        "audio_token_format": "<|audio token N|>",
+        "audio_token_offset": audio_mapping[0],
+        "vocab_size": vocab_size,
+        "audio_token_ids": audio_mapping,
+    }
 
-    Args:
-        tokenizer_path: Path to tokenizer directory containing audio_token_mapping.json
-
-    Returns:
-        dict: Mapping information including audio_token_ids
-    """
-    mapping_path = os.path.join(tokenizer_path, "audio_token_mapping.json")
-    if os.path.exists(mapping_path):
-        with open(mapping_path, 'r') as f:
-            return json.load(f)
-    else:
-        raise FileNotFoundError(f"Audio token mapping not found at {mapping_path}")
-
-
-def get_audio_token_id(audio_index: int, tokenizer_path: str = None, mapping: dict = None) -> int:
-    """
-    Convert audio index to token ID using saved mapping.
-
-    Args:
-        audio_index: Index from audio tokenizer (0 to audio_vocab_size-1)
-        tokenizer_path: Path to tokenizer directory (if mapping not provided)
-        mapping: Pre-loaded mapping dict (if tokenizer_path not provided)
-
-    Returns:
-        int: Token ID in the vocabulary
-    """
-    if mapping is None:
-        mapping = load_audio_token_mapping(tokenizer_path)
-
-    audio_token_ids = mapping["audio_token_ids"]
-    # JSON stores keys as strings, so we need to convert to string for lookup
-    audio_index_str = str(audio_index)
-    if audio_index_str in audio_token_ids:
-        return audio_token_ids[audio_index_str]
-    elif audio_index in audio_token_ids:
-        # Fallback: if keys are integers (shouldn't happen with JSON, but just in case)
-        return audio_token_ids[audio_index]
-    else:
-        raise ValueError(f"Audio index {audio_index} not found. Valid range: 0-{mapping['audio_vocab_size']-1}")
+    mapping_path = os.path.join(output_path, "audio_token_mapping.json")
+    with open(mapping_path, "w") as f:
+        json.dump(mapping_data, f, indent=2)
+    print(f"Saved audio token mapping to {mapping_path}")
