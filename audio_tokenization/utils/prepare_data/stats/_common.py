@@ -2,7 +2,10 @@
 
 from typing import List, Optional, Sequence, Tuple
 
-from audio_tokenization.utils.prepare_data.vad_segmenting import _parse_vad_jsonl_line
+from audio_tokenization.utils.prepare_data.chunking import (
+    _parse_vad_jsonl_line,
+    merge_and_pack_vad,
+)
 
 
 def speech_sec_in_chunks(

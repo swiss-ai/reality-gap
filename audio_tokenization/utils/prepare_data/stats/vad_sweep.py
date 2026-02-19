@@ -1,38 +1,52 @@
 #!/usr/bin/env python3
 """Dry-run VAD chunking stats — sweep merge-gap and min-chunk parameters.
 
-Reads per-shard VAD JSONL files (produced by ``filter_langid_vad.py``) and
-computes chunk statistics for a grid of (min_chunk_sec, merge_gap_sec) values
-without touching any audio or writing Shar output.
+Reads a directory of VAD JSONL files and computes chunk statistics for a
+grid of (min_chunk_sec, merge_gap_sec) values without touching any audio
+or writing Shar output.  After the sweep tables, prints a per-language
+breakdown for the current (default) parameter combo.
+
+The ``--vad-dir`` can contain any flat set of ``*.jsonl`` files — splitting
+by language, by shard, or by language+year all work.  More files means more
+parallelism (set ``--num-workers`` accordingly).
+
+Processing logic (applied uniformly to every recording):
+  1. No valid VAD timestamps  -> skip
+  2. Merge adjacent segments when gap < merge_gap
+  3. Drop atomic segments exceeding max_duration_sec
+  4. Pack remaining segments into chunks up to max_chunk_sec
+  5. Drop chunks shorter than min_chunk_sec
 
 Usage:
     python -m audio_tokenization.utils.prepare_data.stats.vad_sweep \
-        --vad-per-shard-dir /path/to/vad_results_per_shard \
+        --vad-dir /path/to/vad_results \
         --num-workers 32
 
     python -m audio_tokenization.utils.prepare_data.stats.vad_sweep \
-        --vad-per-shard-dir /path/to/vad_results_per_shard \
+        --vad-dir /path/to/vad_per_lang_year \
         --min-chunk-sweep 1,5,10,20,30 \
-        --num-workers 64
-
-    python -m audio_tokenization.utils.prepare_data.stats.vad_sweep \
-        --vad-per-shard-dir /iopsstor/scratch/cscs/xyixuan/audio-datasets/unsupervised_peoples_speech_commercial_wds/vad_results_european_per_shard \
-        --num-workers 288
+        --token-rate 40 --num-workers 272
 """
 
 import argparse
+import io
 import logging
 import multiprocessing as mp
+import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 from audio_tokenization.utils.prepare_data.stats._common import (
+    merge_and_pack_vad,
     read_jsonl_recordings,
     speech_sec_in_chunks,
 )
-from audio_tokenization.utils.prepare_data.vad_segmenting import (
-    VADChunkingConfig,
-    build_chunk_ranges_from_vad,
+from audio_tokenization.utils.prepare_data.stats.lang_breakdown import (
+    _TeeWriter,
+    _lang_worker,
+    _print_lang_table,
+    _save_results,
 )
 
 logging.basicConfig(
@@ -45,66 +59,45 @@ logger = logging.getLogger(__name__)
 def _dry_run_worker(args_tuple):
     """Compute VAD chunk stats for a subset of JSONL files across all (min_chunk, merge_gap) pairs.
 
-    Mirrors the 3-tier logic in ``split_cut_by_vad``:
-      tier-1: duration < min_chunk_sec  -> dropped (too short)
-      tier-2: min_chunk_sec <= duration < max_chunk_sec -> kept full (no chunking)
-      tier-3: duration >= max_chunk_sec  -> VAD-chunked (varies by merge_gap)
-
-    Since min_chunk_sec affects both tier boundaries and chunk filtering,
-    the full sweep is 2D: (min_chunk_sec, merge_gap).
+    Every recording is processed identically — no tier-based shortcuts.
+    The sweep is 2D: (min_chunk_sec, merge_gap).
     """
-    jsonl_paths, merge_gaps, max_chunk_sec, min_chunk_secs, sample_rate, min_sr = args_tuple
+    jsonl_paths, merge_gaps, max_chunk_sec, min_chunk_secs, sample_rate, min_sr, max_duration_sec = args_tuple
 
     recordings, skipped_min_sr = read_jsonl_recordings(jsonl_paths, min_sr=min_sr)
 
-    # For each min_chunk_sec, classify tiers and sweep merge_gaps.
     results_by_min_chunk = {}
     for min_chunk_sec in min_chunk_secs:
-        tier1_too_short = 0
-        tier2_kept_full_count = 0
-        tier2_kept_full_sec = 0.0
-        tier2_speech_sec = 0.0
-        tier3_recordings = []
-
-        for timestamps, duration_sec in recordings:
-            if duration_sec < min_chunk_sec:
-                tier1_too_short += 1
-            elif duration_sec < max_chunk_sec:
-                tier2_kept_full_count += 1
-                tier2_kept_full_sec += duration_sec
-                tier2_speech_sec += speech_sec_in_chunks(
-                    timestamps, duration_sec, sample_rate,
-                    [(0.0, duration_sec)],
-                )
-            else:
-                tier3_recordings.append((timestamps, duration_sec))
-
         gap_results = {}
         for gap in merge_gaps:
-            cfg = VADChunkingConfig(
-                max_chunk_sec=max_chunk_sec,
-                min_chunk_sec=min_chunk_sec,
-                sample_rate=sample_rate,
-                max_merge_gap_sec=gap,
-            )
             chunked_sec = 0.0
             speech_sec = 0.0
             num_chunks = 0
-            empty_vad = 0
-            chunks_below_min = 0
+            no_vad = 0
+            no_chunks = 0
             chunks_over_max = 0
+            kept_recordings = 0
+            raw_sec_total = 0.0
 
-            for timestamps, duration_sec in tier3_recordings:
+            for timestamps, duration_sec in recordings:
+                raw_sec_total += duration_sec
+
                 if not timestamps:
-                    empty_vad += 1
+                    no_vad += 1
                     continue
-                chunks = build_chunk_ranges_from_vad(
-                    timestamps=timestamps,
-                    audio_duration_sec=duration_sec,
-                    cfg=cfg,
+
+                chunks = merge_and_pack_vad(
+                    timestamps, duration_sec, sample_rate,
+                    max_merge_gap_sec=gap,
+                    max_chunk_sec=max_chunk_sec,
+                    min_chunk_sec=min_chunk_sec,
+                    max_duration_sec=max_duration_sec,
                 )
                 if not chunks:
-                    chunks_below_min += 1
+                    no_chunks += 1
+                else:
+                    kept_recordings += 1
+
                 speech_sec += speech_sec_in_chunks(
                     timestamps, duration_sec, sample_rate, chunks,
                 )
@@ -118,19 +111,14 @@ def _dry_run_worker(args_tuple):
                 "chunked_sec": chunked_sec,
                 "speech_sec": speech_sec,
                 "num_chunks": num_chunks,
-                "empty_vad": empty_vad,
-                "chunks_below_min": chunks_below_min,
+                "no_vad": no_vad,
+                "no_chunks": no_chunks,
                 "chunks_over_max": chunks_over_max,
+                "kept_recordings": kept_recordings,
+                "raw_sec_total": raw_sec_total,
             }
 
-        results_by_min_chunk[min_chunk_sec] = {
-            "too_short": tier1_too_short,
-            "kept_full_count": tier2_kept_full_count,
-            "kept_full_sec": tier2_kept_full_sec,
-            "kept_full_speech_sec": tier2_speech_sec,
-            "tier3_count": len(tier3_recordings),
-            "gap_results": gap_results,
-        }
+        results_by_min_chunk[min_chunk_sec] = {"gap_results": gap_results}
 
     total_duration_sec = sum(dur for _, dur in recordings)
     return {
@@ -145,8 +133,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Dry-run: sweep VAD chunking parameters and print stats",
     )
-    parser.add_argument("--vad-per-shard-dir", type=Path, required=True,
-                        help="Directory of per-shard VAD JSONL files")
+    parser.add_argument("--vad-dir", "--vad-per-shard-dir", type=Path, required=True,
+                        dest="vad_dir",
+                        help="Directory of VAD JSONL files")
     parser.add_argument("--vad-max-chunk-sec", type=float, default=200.0,
                         help="Target max duration while packing VAD segments")
     parser.add_argument("--vad-min-chunk-sec", type=float, default=10.0,
@@ -154,11 +143,16 @@ def main(argv=None):
     parser.add_argument("--vad-sample-rate", type=int, default=16000,
                         help="Sample rate used to decode VAD timestamp units")
     parser.add_argument("--vad-max-merge-gap-sec", type=float, default=0.5,
-                        help="Merge adjacent VAD spans when silence gap <= this threshold")
+                        help="Merge adjacent VAD spans when silence gap < this threshold")
+    parser.add_argument("--vad-max-duration-sec", type=float, default=None,
+                        help="Drop atomic speech segments longer than this "
+                             "(default: same as --vad-max-chunk-sec)")
     parser.add_argument("--min-sr", type=int, default=16000,
                         help="Drop audio below this sample rate (default: 16000)")
     parser.add_argument("--num-workers", type=int, default=4,
                         help="Number of parallel workers (default: 4)")
+    parser.add_argument("--token-rate", type=float, default=None,
+                        help="Tokens per second for estimation column (optional)")
     parser.add_argument("--min-chunk-sweep", type=str, default="1,5,10,20,30",
                         help="Comma-separated min_chunk_sec values to sweep "
                              "(default: '1,5,10,20,30')")
@@ -168,8 +162,8 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
 
-    if not args.vad_per_shard_dir.is_dir():
-        raise NotADirectoryError(f"VAD per-shard directory not found: {args.vad_per_shard_dir}")
+    if not args.vad_dir.is_dir():
+        raise NotADirectoryError(f"VAD directory not found: {args.vad_dir}")
 
     sweep_gaps = sorted(set(float(v.strip()) for v in args.max_merge_gap_sweep.split(",")))
     sweep_min_chunks = sorted(set(float(v.strip()) for v in args.min_chunk_sweep.split(",")))
@@ -177,17 +171,19 @@ def main(argv=None):
     logger.info(f"Dry-run: sweeping min_chunk_sec = {sweep_min_chunks}")
 
     # Glob JSONL files and distribute round-robin across workers.
-    jsonl_files = sorted(args.vad_per_shard_dir.glob("*.jsonl"))
+    jsonl_files = sorted(args.vad_dir.glob("*.jsonl"))
     if not jsonl_files:
-        raise FileNotFoundError(f"No JSONL files in {args.vad_per_shard_dir}")
+        raise FileNotFoundError(f"No JSONL files in {args.vad_dir}")
 
     num_workers = min(args.num_workers, len(jsonl_files))
     worker_jsonls = [[] for _ in range(num_workers)]
     for i, jf in enumerate(jsonl_files):
         worker_jsonls[i % num_workers].append(jf)
 
+    max_duration_sec = args.vad_max_duration_sec  # None means same as max_chunk_sec
     dry_run_args = [
-        (jfiles, sweep_gaps, args.vad_max_chunk_sec, sweep_min_chunks, args.vad_sample_rate, args.min_sr)
+        (jfiles, sweep_gaps, args.vad_max_chunk_sec, sweep_min_chunks,
+         args.vad_sample_rate, args.min_sr, max_duration_sec)
         for jfiles in worker_jsonls
         if jfiles
     ]
@@ -206,53 +202,44 @@ def main(argv=None):
     total_recordings = sum(p["num_recordings"] for p in partial_results)
     total_duration_hrs = sum(p["total_duration_sec"] for p in partial_results) / 3600.0
 
-    max_s = args.vad_max_chunk_sec
+    # Tee output to both stdout and a buffer for saving.
+    buf = io.StringIO()
+    _orig_stdout = sys.stdout
+    sys.stdout = _TeeWriter(_orig_stdout, buf)
+
     print()
-    print(f"Recordings in JSONL:    {total_in_jsonl:>10d}")
-    print(f"  skipped_min_sr (<{args.min_sr}Hz): {total_skipped_min_sr:>10d}   (dropped)")
-    print(f"After SR filter:        {total_recordings:>10d}   ({total_duration_hrs:.1f} hours total)")
+    print(f"Recordings in JSONL:    {total_in_jsonl:>14,d}")
+    print(f"  skipped_min_sr (<{args.min_sr}Hz): {total_skipped_min_sr:>10,d}   (dropped)")
+    print(f"After SR filter:        {total_recordings:>14,d}   ({total_duration_hrs:,.1f} hours total)")
 
-    # Print one table per min_chunk_sec.
+    # Print one sweep table per min_chunk_sec.
     for min_s in sweep_min_chunks:
-        total_too_short = sum(p["results_by_min_chunk"][min_s]["too_short"] for p in partial_results)
-        total_kept_full_count = sum(p["results_by_min_chunk"][min_s]["kept_full_count"] for p in partial_results)
-        total_kept_full_sec = sum(p["results_by_min_chunk"][min_s]["kept_full_sec"] for p in partial_results)
-        total_kept_full_speech_sec = sum(p["results_by_min_chunk"][min_s]["kept_full_speech_sec"] for p in partial_results)
-        total_tier3 = sum(p["results_by_min_chunk"][min_s]["tier3_count"] for p in partial_results)
-        no_vad_hrs = total_kept_full_sec / 3600.0
-        no_vad_speech_hrs = total_kept_full_speech_sec / 3600.0
-
         gap_stats = {}
         for gap in sweep_gaps:
-            chunked_sec = sum(p["results_by_min_chunk"][min_s]["gap_results"][gap]["chunked_sec"] for p in partial_results)
-            speech_sec = sum(p["results_by_min_chunk"][min_s]["gap_results"][gap]["speech_sec"] for p in partial_results)
-            num_chunks = sum(p["results_by_min_chunk"][min_s]["gap_results"][gap]["num_chunks"] for p in partial_results)
-            empty_vad = sum(p["results_by_min_chunk"][min_s]["gap_results"][gap]["empty_vad"] for p in partial_results)
-            chunks_below_min = sum(p["results_by_min_chunk"][min_s]["gap_results"][gap]["chunks_below_min"] for p in partial_results)
-            chunks_over_max = sum(p["results_by_min_chunk"][min_s]["gap_results"][gap]["chunks_over_max"] for p in partial_results)
             gap_stats[gap] = {
-                "chunked_sec": chunked_sec,
-                "speech_sec": speech_sec,
-                "num_chunks": num_chunks,
-                "empty_vad": empty_vad,
-                "chunks_below_min": chunks_below_min,
-                "chunks_over_max": chunks_over_max,
+                k: sum(
+                    p["results_by_min_chunk"][min_s]["gap_results"][gap][k]
+                    for p in partial_results
+                )
+                for k in (
+                    "chunked_sec", "speech_sec", "num_chunks",
+                    "no_vad", "no_chunks", "chunks_over_max",
+                    "kept_recordings", "raw_sec_total",
+                )
             }
 
-        is_current = (min_s == args.vad_min_chunk_sec)
         label = f"min_chunk_sec = {min_s}"
-        if is_current:
-            label += " (current)"
         print()
         print(f"--- {label} ---")
-        print(f"  too_short (<{min_s}s):  {total_too_short:>10d}   (dropped)")
-        print(f"  kept_full ({min_s}-{max_s}s): {total_kept_full_count:>10d}   -> {no_vad_hrs:.1f} hours")
-        print(f"  long (>={max_s}s):     {total_tier3:>10d}   (VAD-chunked, varies by merge_gap)")
 
         header = (
-            f" {'merge_gap':>9s} | {'total_hrs':>10s} | {'speech_hrs':>10s} | {'%kept':>6s} | {'no_vad_hrs':>10s} | {'chunk_hrs':>10s} | "
-            f"{'chunks':>8s} | {'avg_sec':>8s} | {'empty':>6s} | {'<min':>6s} | {'>max':>6s}"
+            f" {'merge_gap':>9s} | {'kept_hrs':>12s} | {'speech_hrs':>12s} | "
+            f"{'%kept':>6s} | {'raw_hrs':>12s} | {'chunk_hrs':>12s} | "
+            f"{'chunks':>14s} | {'avg_sec':>8s} | {'no_vad':>8s} | "
+            f"{'no_chk':>8s} | {'>max':>10s}"
         )
+        if args.token_rate is not None:
+            header += f" | {'est_tokens':>16s}"
         sep = "-" * len(header)
         print(sep)
         print(header)
@@ -260,18 +247,66 @@ def main(argv=None):
         for gap in sweep_gaps:
             gs = gap_stats[gap]
             chunk_hrs = gs["chunked_sec"] / 3600.0
-            speech_hrs = gs["speech_sec"] / 3600.0 + no_vad_speech_hrs
-            total_hrs = no_vad_hrs + chunk_hrs
+            speech_hrs = gs["speech_sec"] / 3600.0
+            raw_hrs = gs["raw_sec_total"] / 3600.0
             pct_kept = (speech_hrs / total_duration_hrs * 100.0) if total_duration_hrs > 0 else 0.0
             n_chunks = gs["num_chunks"]
             avg = (gs["chunked_sec"] / n_chunks) if n_chunks else 0.0
-            marker = " <-- current" if (gap == args.vad_max_merge_gap_sec and is_current) else ""
-            print(
-                f" {gap:>9.2f} | {total_hrs:>10.1f} | {speech_hrs:>10.1f} | {pct_kept:>5.1f}% | {no_vad_hrs:>10.1f} | {chunk_hrs:>10.1f} | "
-                f"{n_chunks:>8d} | {avg:>8.1f} | {gs['empty_vad']:>6d} | "
-                f"{gs['chunks_below_min']:>6d} | {gs['chunks_over_max']:>6d}{marker}"
+            row = (
+                f" {gap:>9.2f} | {chunk_hrs:>12,.1f} | {speech_hrs:>12,.1f} | "
+                f"{pct_kept:>5.1f}% | {raw_hrs:>12,.1f} | {chunk_hrs:>12,.1f} | "
+                f"{n_chunks:>14,d} | {avg:>8.1f} | {gs['no_vad']:>8,d} | "
+                f"{gs['no_chunks']:>8,d} | {gs['chunks_over_max']:>10,d}"
             )
+            if args.token_rate is not None:
+                est_tokens = int(speech_hrs * 3600.0 * args.token_rate)
+                row += f" | {est_tokens:>16,d}"
+            print(row)
         print(sep)
+
+    # Per-language breakdown for the current (default) parameters.
+    logger.info("Computing per-language breakdown for current parameters...")
+    lang_worker_args = [
+        (jfiles, args.min_sr, args.vad_min_chunk_sec, args.vad_max_chunk_sec,
+         args.vad_max_merge_gap_sec, args.vad_sample_rate, max_duration_sec)
+        for jfiles in worker_jsonls
+        if jfiles
+    ]
+
+    t0 = time.time()
+    with ctx.Pool(processes=len(lang_worker_args)) as pool:
+        lang_results = pool.map(_lang_worker, lang_worker_args)
+    elapsed = time.time() - t0
+    logger.info(f"Per-language breakdown done in {elapsed:.1f}s")
+
+    # Aggregate per-language results.
+    total_lang_recordings = sum(p["num_recordings"] for p in lang_results)
+    agg_counts = Counter()
+    agg_raw_sec = Counter()
+    agg_kept_count = Counter()
+    agg_kept_sec = Counter()
+    agg_speech_sec = Counter()
+    agg_no_vad = Counter()
+    for p in lang_results:
+        agg_counts.update(p["lang_counts"])
+        agg_raw_sec.update(p["lang_raw_sec"])
+        agg_kept_count.update(p["lang_kept_count"])
+        agg_kept_sec.update(p["lang_kept_sec"])
+        agg_speech_sec.update(p["lang_speech_sec"])
+        agg_no_vad.update(p["lang_no_vad"])
+
+    print()
+    print(f"--- Per-language breakdown (min_chunk={args.vad_min_chunk_sec}s, "
+          f"merge_gap={args.vad_max_merge_gap_sec}s) ---")
+    print()
+
+    _print_lang_table(
+        agg_counts, agg_raw_sec, agg_kept_count, agg_kept_sec,
+        agg_speech_sec, agg_no_vad, total_lang_recordings, args.token_rate,
+    )
+
+    sys.stdout = _orig_stdout
+    _save_results(buf.getvalue(), args, "vad_sweep")
 
     logger.info("Dry-run complete.")
 

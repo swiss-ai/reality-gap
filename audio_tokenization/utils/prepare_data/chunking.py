@@ -28,12 +28,15 @@ class VADChunkingConfig:
     min_chunk_sec: Drop chunks shorter than this (too fragmented).
     sample_rate: Sample rate VAD was run at (for timestamp conversion).
     max_merge_gap_sec: Merge segments if gap is <= this threshold.
+    max_duration_sec: Drop raw segments longer than this. None means
+        same as max_chunk_sec.
     """
 
     max_chunk_sec: float = 200.0
     min_chunk_sec: float = 10.0
     sample_rate: int = 16000
     max_merge_gap_sec: float = 0.5
+    max_duration_sec: float | None = None
 
 
 def canonical_sample_key(key: str) -> str:
@@ -229,64 +232,78 @@ def _merge_spans(
     return [(s, e) for s, e in merged]
 
 
-def build_chunk_ranges_from_vad(
+def merge_and_pack_vad(
     timestamps: Sequence[Tuple[int, int]],
-    *,
     audio_duration_sec: float,
-    cfg: VADChunkingConfig,
+    sample_rate: int,
+    *,
+    max_merge_gap_sec: float,
+    max_chunk_sec: float,
+    min_chunk_sec: float,
+    max_duration_sec: Optional[float] = None,
 ) -> List[Tuple[float, float]]:
-    """Build speech-aware chunk ranges as (offset_sec, duration_sec).
+    """Convert raw VAD timestamps into kept chunks as ``(offset_sec, duration_sec)``.
 
-    Packs complete VAD segments into chunks up to max_chunk_sec, merging
-    nearby segments (gap <= max_merge_gap_sec). Avoids cutting mid-segment
-    by stopping before max_chunk_sec if adding the next segment would exceed it.
-
-    Note: Single continuous speech segments CAN exceed max_chunk_sec and will
-    be kept intact. max_chunk_sec only applies when packing multiple segments.
+    Steps:
+      1. Convert sample-based timestamps to seconds and clamp to [0, duration].
+      2. Drop individual raw segments > *max_duration_sec* (single continuous
+         speech blob too long).
+      3. Merge adjacent remaining segments when gap <= *max_merge_gap_sec*.
+      4. Pack into chunks up to *max_chunk_sec*.  Merged segments that exceed
+         *max_chunk_sec* are emitted as standalone chunks (valid because no
+         individual piece exceeds *max_duration_sec*).
+      5. Drop chunks < *min_chunk_sec*.
     """
-    spans = _timestamps_to_seconds(
-        timestamps,
-        sample_rate=cfg.sample_rate,
-        audio_duration_sec=audio_duration_sec,
-    )
+    if not timestamps:
+        return []
+
+    if max_duration_sec is None:
+        max_duration_sec = max_chunk_sec
+
+    sr = float(sample_rate)
+
+    # Step 1 — convert to seconds and clamp.
+    spans = [
+        (max(0.0, s / sr), min(audio_duration_sec, e / sr))
+        for s, e in timestamps
+        if e > s
+    ]
     if not spans:
         return []
 
+    # Step 2 — drop individual raw segments > max_duration_sec.
+    spans = [(s, e) for s, e in spans if e - s <= max_duration_sec]
+    if not spans:
+        return []
+
+    # Step 3 — merge adjacent segments when gap <= max_merge_gap_sec,
+    #   but only if the result doesn't exceed max_chunk_sec.
+    merged: List[Tuple[float, float]] = [spans[0]]
+    for seg_start, seg_end in spans[1:]:
+        prev_start, prev_end = merged[-1]
+        if (seg_start - prev_end <= max_merge_gap_sec
+                and seg_end - prev_start <= max_chunk_sec):
+            merged[-1] = (prev_start, seg_end)
+        else:
+            merged.append((seg_start, seg_end))
+
+    # Step 4 — pack into chunks up to max_chunk_sec.
+    #   Merged segments exceeding max_chunk_sec are emitted as standalone
+    #   chunks (valid — no individual piece exceeds max_duration_sec).
     chunks: List[Tuple[float, float]] = []
+    chunk_start, chunk_end = merged[0]
+    for seg_start, seg_end in merged[1:]:
+        gap = seg_start - chunk_end
+        new_duration = seg_end - chunk_start
+        if gap <= max_merge_gap_sec and new_duration <= max_chunk_sec:
+            chunk_end = seg_end
+        else:
+            chunks.append((chunk_start, chunk_end - chunk_start))
+            chunk_start, chunk_end = seg_start, seg_end
+    chunks.append((chunk_start, chunk_end - chunk_start))
 
-    # Pack segments into chunks, merging nearby segments and respecting max_chunk_sec
-    i = 0
-    while i < len(spans):
-        chunk_start = spans[i][0]
-        chunk_end = spans[i][1]
-        i += 1
-
-        # Try to add more segments to this chunk
-        while i < len(spans):
-            seg_start, seg_end = spans[i]
-            gap = seg_start - chunk_end
-
-            # Check if we can merge this segment
-            if gap <= cfg.max_merge_gap_sec:
-                # Merging would extend to seg_end, check if it fits
-                new_duration = seg_end - chunk_start
-                if new_duration <= cfg.max_chunk_sec:
-                    # Fits! Extend chunk to include gap + segment
-                    chunk_end = seg_end
-                    i += 1
-                else:
-                    # Would exceed max_chunk_sec, stop here
-                    break
-            else:
-                # Gap too large, start new chunk
-                break
-
-        # Emit chunk if it meets minimum duration
-        chunk_duration = chunk_end - chunk_start
-        if chunk_duration >= cfg.min_chunk_sec:
-            chunks.append((chunk_start, chunk_duration))
-
-    return chunks
+    # Step 5 — drop chunks < min_chunk_sec.
+    return [(offset, dur) for offset, dur in chunks if dur >= min_chunk_sec]
 
 
 def split_cut_by_vad(
@@ -296,34 +313,38 @@ def split_cut_by_vad(
     vad_lookup: Dict[str, List[Tuple[int, int]]],
     cfg: VADChunkingConfig,
 ) -> Tuple[List[Any], str]:
-    """Split one recording cut with VAD-aware policy.
+    """Split one recording cut with VAD-aware chunking.
+
+    All recordings are VAD-processed uniformly (no special treatment by
+    duration).  Adjacent speech segments are merged when the gap is <=
+    ``max_merge_gap_sec``, then packed into chunks up to ``max_chunk_sec``.
 
     Policy:
     - duration < min_chunk_sec: drop
-    - min_chunk_sec <= duration < max_chunk_sec: keep full cut (no VAD needed)
-    - duration >= max_chunk_sec:
-      - missing VAD entry: drop
-      - empty VAD timestamps: drop (non-speech)
-      - otherwise: produce speech chunks <= max_chunk_sec and >= min_chunk_sec
+    - missing VAD entry: drop
+    - empty VAD timestamps: drop (non-speech)
+    - otherwise: produce speech chunks <= max_chunk_sec and >= min_chunk_sec
     """
     duration = float(getattr(cut, "duration", 0.0) or 0.0)
     if duration < cfg.min_chunk_sec:
         return [], "too_short"
 
-    if duration < cfg.max_chunk_sec:
-        return [cut], "kept_full_short_audio"
-
     key = canonical_sample_key(sample_key)
     timestamps = vad_lookup.get(key)
+
     if timestamps is None:
         return [], "missing_vad"
     if not timestamps:
         return [], "empty_vad"
 
-    ranges = build_chunk_ranges_from_vad(
+    ranges = merge_and_pack_vad(
         timestamps=timestamps,
         audio_duration_sec=duration,
-        cfg=cfg,
+        sample_rate=cfg.sample_rate,
+        max_merge_gap_sec=cfg.max_merge_gap_sec,
+        max_chunk_sec=cfg.max_chunk_sec,
+        min_chunk_sec=cfg.min_chunk_sec,
+        max_duration_sec=cfg.max_duration_sec,
     )
     if not ranges:
         return [], "chunks_below_min_duration"

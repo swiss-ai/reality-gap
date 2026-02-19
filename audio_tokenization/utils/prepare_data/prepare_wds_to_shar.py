@@ -34,12 +34,22 @@ from pathlib import Path
 from typing import Optional
 
 from audio_tokenization.utils.prepare_data.common import (
+    PREPARE_SUMMARY_FILE,
     SUCCESS_MARKER_FILE,
-    build_shar_index_from_parts,
+    WORKER_ASSIGNMENT_FILE,
+    WORKER_STATS_FILE,
+    build_shar_index,
+    distribute_round_robin,
+    load_text_tokenizer,
+    load_worker_assignment,
+    make_text_tokenize_fn,
     mark_partition_success,
+    run_aggregate,
     setup_partition_dir,
+    to_mono,
+    write_worker_assignment,
 )
-from audio_tokenization.utils.prepare_data.vad_segmenting import (
+from audio_tokenization.utils.prepare_data.chunking import (
     VADChunkingConfig,
     canonical_sample_key,
     load_vad_from_per_shard_dir,
@@ -55,10 +65,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-WORKER_ASSIGNMENT_FILE = "_worker_assignment.json"
 WORKER_SUCCESS_FILE = SUCCESS_MARKER_FILE
-WORKER_STATS_FILE = "worker_stats.json"
-PREPARE_SUMMARY_FILE = "prepare_summary.json"
 
 
 # ---------------------------------------------------------------------------
@@ -67,26 +74,6 @@ PREPARE_SUMMARY_FILE = "prepare_summary.json"
 
 AUDIO_SUFFIXES = (".wav", ".flac", ".mp3")
 TEXT_SUFFIX = ".txt"
-
-
-def _to_mono(cut, mono_downmix=False, stats=None):
-    if cut.num_channels <= 1:
-        return cut
-    if mono_downmix:
-        try:
-            result = cut.to_mono(mono_downmix=True)
-            # Force-load to catch AudioLoadingError from broken headers now,
-            # rather than letting it bubble up later in SharWriter.
-            result.load_audio()
-            return result
-        except Exception:
-            if stats is not None:
-                stats["downmix_fallback_ch0"] += 1
-            # Broken header — fall back to channel 0.
-    result = cut.to_mono(mono_downmix=False)
-    if isinstance(result, list):
-        return result[0]  # Take first channel (channel 0)
-    return result
 
 
 def iter_tar_cuts(tar_paths, text_ext=TEXT_SUFFIX, stats: Optional[Counter] = None):
@@ -181,6 +168,8 @@ def _convert_worker(args_tuple):
         vad_min_chunk_sec,
         vad_sample_rate,
         vad_max_merge_gap_sec,
+        vad_max_duration_sec,
+        text_tokenizer,
     ) = args_tuple
 
     worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
@@ -229,6 +218,7 @@ def _convert_worker(args_tuple):
             min_chunk_sec=float(vad_min_chunk_sec),
             sample_rate=int(vad_sample_rate),
             max_merge_gap_sec=float(vad_max_merge_gap_sec),
+            max_duration_sec=float(vad_max_duration_sec) if vad_max_duration_sec is not None else None,
         )
         vad_lookup, lang_lookup = load_vad_from_per_shard_dir(
             Path(vad_per_shard_dir), tar_paths, with_lang=True, logger=logger,
@@ -242,6 +232,7 @@ def _convert_worker(args_tuple):
     written = skipped = errors = 0
     total_duration_sec = 0.0
     runtime_counts = Counter()
+    _tokenize_text = make_text_tokenize_fn(text_tokenizer) if text_tokenizer is not None else None
 
     with SharWriter(
         output_dir=str(worker_dir),
@@ -281,7 +272,9 @@ def _convert_worker(args_tuple):
                 ) if lang_lookup else None
 
                 for out_cut in out_cuts:
-                    out_cut = _to_mono(out_cut, mono_downmix=mono_downmix, stats=runtime_counts)
+                    out_cut = to_mono(out_cut, mono_downmix=mono_downmix, stats=runtime_counts)
+                    if _tokenize_text is not None:
+                        out_cut = _tokenize_text(out_cut)
                     if sample_lang is not None:
                         out_cut.custom = out_cut.custom or {}
                         out_cut.custom["lang"] = sample_lang
@@ -340,134 +333,10 @@ def _convert_worker(args_tuple):
 
 
 # ---------------------------------------------------------------------------
-# Index builder
-# ---------------------------------------------------------------------------
-
-def build_shar_index(shar_root: Path, num_workers: int, index_filename: str = "shar_index.json"):
-    """Build a merged ``shar_index.json`` from all ``worker_*`` directories.
-
-    The index maps field names (``cuts``, ``recording``, ...) to sorted lists
-    of absolute file paths, so that ``CutSet.from_shar(fields=...)`` can load
-    all worker outputs as a single logical CutSet.
-    """
-    worker_dirs = [shar_root / f"worker_{wid:02d}" for wid in range(num_workers)]
-    index_path, cuts_count = build_shar_index_from_parts(
-        shar_root=shar_root,
-        part_dirs=worker_dirs,
-        index_filename=index_filename,
-        success_marker_name=WORKER_SUCCESS_FILE,
-    )
-    logger.info(f"Wrote merged index: {index_path} ({cuts_count} cut shards)")
-
-
-# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
-def _distribute_round_robin(resolved_shards, num_workers):
-    worker_shards = [[] for _ in range(num_workers)]
-    for i, tar_path in enumerate(resolved_shards):
-        worker_shards[i % num_workers].append(tar_path)
-    return worker_shards
-
-
-def _assignment_path(shar_dir: Path) -> Path:
-    return shar_dir / WORKER_ASSIGNMENT_FILE
-
-
-def _load_worker_assignment(shar_dir: Path):
-    path = _assignment_path(shar_dir)
-    if not path.is_file():
-        return None
-
-    payload = json.loads(path.read_text())
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"Invalid assignment file format: {path}")
-
-    try:
-        num_workers = int(payload["num_workers"])
-        resolved = payload["resolved_shards"]
-    except KeyError as e:
-        raise RuntimeError(f"Invalid assignment file (missing key {e.args[0]}): {path}") from e
-
-    if num_workers < 1:
-        raise RuntimeError(f"Invalid num_workers in assignment file: {path}")
-    if not isinstance(resolved, list):
-        raise RuntimeError(f"Invalid resolved_shards in assignment file: {path}")
-
-    return {
-        "path": path,
-        "num_workers": num_workers,
-        "resolved_shards": [str(p) for p in resolved],
-    }
-
-
-def _write_worker_assignment(shar_dir: Path, num_workers: int, resolved_shards):
-    path = _assignment_path(shar_dir)
-    payload = {
-        "version": 1,
-        "num_workers": int(num_workers),
-        "resolved_shards": list(resolved_shards),
-    }
-    path.write_text(json.dumps(payload, indent=2))
-    return path
-
-
-def _run_aggregate(shar_root: Path):
-    """Read prepare_summary.json from all node_*/ dirs, sum totals, and print."""
-    node_dirs = sorted(shar_root.glob("node_*"))
-    if not node_dirs:
-        # Fallback: check if shar_root itself has a summary (single-node run).
-        single = shar_root / PREPARE_SUMMARY_FILE
-        if single.is_file():
-            node_dirs = [shar_root]
-        else:
-            raise FileNotFoundError(
-                f"No node_*/ dirs (or {PREPARE_SUMMARY_FILE}) found under {shar_root}"
-            )
-
-    summaries = []
-    for nd in node_dirs:
-        sp = nd / PREPARE_SUMMARY_FILE
-        if not sp.is_file():
-            logger.warning(f"Missing {sp}, skipping")
-            continue
-        summaries.append(json.loads(sp.read_text()))
-
-    if not summaries:
-        raise FileNotFoundError(f"No {PREPARE_SUMMARY_FILE} found in any node dir")
-
-    total_written = 0
-    total_skipped = 0
-    total_errors = 0
-    total_duration_sec = 0.0
-    total_elapsed_sec = 0.0
-    agg_reason = Counter()
-    agg_runtime = Counter()
-
-    for s in summaries:
-        total_written += s.get("total_written", 0)
-        total_skipped += s.get("total_skipped", 0)
-        total_errors += s.get("total_errors", 0)
-        total_duration_sec += s.get("total_duration_sec", 0.0)
-        total_elapsed_sec = max(total_elapsed_sec, s.get("elapsed_sec", 0.0))
-        agg_reason.update(s.get("reason_counts", {}))
-        agg_runtime.update(s.get("runtime_counts", {}))
-
-    total_hours = total_duration_sec / 3600.0
-
-    print()
-    print(f"=== Aggregate stats from {len(summaries)} node(s) under {shar_root} ===")
-    print(f"  Samples written:  {total_written:>12d}")
-    print(f"  Samples skipped:  {total_skipped:>12d}")
-    print(f"  Errors:           {total_errors:>12d}")
-    print(f"  Total hours:      {total_hours:>12.1f}")
-    print(f"  Max wall-time:    {total_elapsed_sec:>12.1f}s")
-    if agg_reason:
-        print(f"  VAD reasons:      {dict(agg_reason)}")
-    if agg_runtime:
-        print(f"  Runtime counters: {dict(agg_runtime)}")
-    print()
+_ITEMS_KEY = "resolved_shards"
 
 
 def main(argv=None):
@@ -499,6 +368,8 @@ def main(argv=None):
     # Text
     parser.add_argument("--text-ext", type=str, default=".txt",
                         help="Extension for text files in WDS tars (set to '' to skip)")
+    parser.add_argument("--text-tokenizer", type=str, default=None,
+                        help="Path to tokenizer.json for pre-tokenizing supervision text")
 
     # Parallelism
     parser.add_argument("--num-workers", type=int, default=None,
@@ -515,6 +386,9 @@ def main(argv=None):
                         help="Sample rate used to decode VAD timestamp units")
     parser.add_argument("--vad-max-merge-gap-sec", type=float, default=0.5,
                         help="Merge adjacent VAD spans when silence gap <= this threshold")
+    parser.add_argument("--vad-max-duration-sec", type=float, default=None,
+                        help="Drop atomic speech segments longer than this "
+                             "(default: same as --vad-max-chunk-sec)")
 
     parser.add_argument("--aggregate", type=Path, default=None, metavar="SHAR_ROOT",
                         help="Aggregate stats from completed multi-node runs and exit. "
@@ -524,7 +398,7 @@ def main(argv=None):
 
     # ---- Aggregate mode: read summaries and exit ----
     if args.aggregate is not None:
-        _run_aggregate(args.aggregate)
+        run_aggregate(args.aggregate)
         return
 
     if not args.wds_shards:
@@ -554,12 +428,12 @@ def main(argv=None):
 
     args.shar_dir.mkdir(parents=True, exist_ok=True)
 
-    assignment = _load_worker_assignment(args.shar_dir)
+    assignment = load_worker_assignment(args.shar_dir, items_key=_ITEMS_KEY)
     if assignment is not None:
-        if assignment["resolved_shards"] != resolved:
+        if assignment[_ITEMS_KEY] != resolved:
             raise RuntimeError(
                 "Existing worker assignment shard list does not match current resolved shards. "
-                f"Delete {_assignment_path(args.shar_dir)} and worker_* directories to start fresh."
+                f"Delete {args.shar_dir / WORKER_ASSIGNMENT_FILE} and worker_* directories to start fresh."
             )
         if args.num_workers is not None and int(args.num_workers) != assignment["num_workers"]:
             raise RuntimeError(
@@ -570,14 +444,16 @@ def main(argv=None):
         logger.info(f"Reusing worker assignment from {assignment['path']} (num_workers={num_workers})")
     else:
         num_workers = min(args.num_workers or len(resolved), len(resolved))
-        assignment_path = _write_worker_assignment(args.shar_dir, num_workers, resolved)
+        assignment_path = write_worker_assignment(
+            args.shar_dir, num_workers, resolved, items_key=_ITEMS_KEY,
+        )
         logger.info(f"Wrote worker assignment to {assignment_path}")
 
     logger.info(f"Found {len(resolved)} WDS shards, using {num_workers} workers")
     logger.info(f"Output: {args.shar_dir}")
 
     # Distribute tar shards across workers (round-robin)
-    worker_shards = _distribute_round_robin(resolved, num_workers)
+    worker_shards = distribute_round_robin(resolved, num_workers)
 
     if args.vad_segmentation:
         if args.vad_per_shard_dir is None:
@@ -598,6 +474,9 @@ def main(argv=None):
     else:
         logger.info("VAD segmenting disabled; writing full recordings")
 
+    # Load text tokenizer before forking (shared via COW across workers)
+    text_tokenizer = load_text_tokenizer(args.text_tokenizer)
+
     worker_args = [
         (
             wid,
@@ -614,13 +493,15 @@ def main(argv=None):
             args.vad_min_chunk_sec,
             args.vad_sample_rate,
             args.vad_max_merge_gap_sec,
+            args.vad_max_duration_sec,
+            text_tokenizer,
         )
         for wid, shards in enumerate(worker_shards)
         if shards
     ]
 
     t0 = time.time()
-    ctx = mp.get_context("spawn")
+    ctx = mp.get_context("fork")
     with ctx.Pool(processes=len(worker_args)) as pool:
         results = pool.map(_convert_worker, worker_args)
 

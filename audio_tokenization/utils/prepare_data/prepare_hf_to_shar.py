@@ -33,8 +33,11 @@ from pathlib import Path
 from audio_tokenization.utils.prepare_data.common import (
     SUCCESS_MARKER_FILE,
     build_shar_index_from_parts,
+    load_text_tokenizer,
+    make_text_tokenize_fn,
     mark_partition_success,
     setup_partition_dir,
+    to_mono,
     validate_or_write_prepare_state,
 )
 
@@ -52,21 +55,7 @@ PREPARE_STATE_FILE = "_PREPARE_STATE.json"
 # Worker
 # ---------------------------------------------------------------------------
 
-def _to_mono(cut):
-    if cut.num_channels <= 1:
-        return cut
-    try:
-        result = cut.to_mono(mono_downmix=True)
-        result.load_audio()
-        return result
-    except Exception:
-        result = cut.to_mono(mono_downmix=False)
-        if isinstance(result, list):
-            return result[0]
-        return result
-
-
-def convert_worker(rank: int, world_size: int, args):
+def convert_worker(rank: int, world_size: int, args, text_tokenizer=None):
     """Convert one shard of the HF dataset to Shar format.
 
     Each worker writes to its own ``part-{rank:05d}/`` directory.
@@ -109,7 +98,10 @@ def convert_worker(rank: int, world_size: int, args):
     if args.text_field:
         hf_kwargs["text_key"] = args.text_field
     cuts = CutSet.from_huggingface_dataset(ds, **hf_kwargs)
-    cuts = cuts.map(_to_mono)
+    cuts = cuts.map(to_mono)
+
+    if text_tokenizer is not None:
+        cuts = cuts.map(make_text_tokenize_fn(text_tokenizer))
 
     if args.target_sample_rate:
         cuts = cuts.resample(args.target_sample_rate)
@@ -162,15 +154,16 @@ def _validate_or_write_prepare_state(args) -> None:
         "dataset_name": args.dataset_name,
         "config_name": args.config_name,
         "dataset_split": args.dataset_split,
+        "text_tokenizer": args.text_tokenizer,
         "num_workers": int(args.num_workers),
     }
     wrote = validate_or_write_prepare_state(
         state_path,
         expected=expected,
-        invariant_keys=("dataset_name", "config_name", "dataset_split", "num_workers"),
+        invariant_keys=("dataset_name", "config_name", "dataset_split", "text_tokenizer", "num_workers"),
         guidance=(
-            "Use the same dataset + --num_workers to resume this output directory, "
-            f"or remove {args.shar_dir} and restart from scratch."
+            "Use the same dataset, --text_tokenizer, and --num_workers to resume this "
+            f"output directory, or remove {args.shar_dir} and restart from scratch."
         ),
     )
     if wrote:
@@ -202,6 +195,10 @@ def main():
     # Audio processing
     parser.add_argument("--target_sample_rate", type=int, default=None)
 
+    # Text tokenization
+    parser.add_argument("--text_tokenizer", type=str, default=None,
+                        help="Path to tokenizer.json for pre-tokenizing supervision text")
+
     # Parallelism
     parser.add_argument("--num_workers", type=int, default=20)
 
@@ -216,9 +213,12 @@ def main():
     logger.info(f"Converting {args.dataset_name} ({args.dataset_split}) → {args.shar_dir}")
     logger.info(f"Using {args.num_workers} parallel workers")
 
+    # Load text tokenizer before forking (shared via COW across workers)
+    text_tokenizer = load_text_tokenizer(args.text_tokenizer)
+
     # Spawn workers
     procs = [
-        Process(target=convert_worker, args=(i, args.num_workers, args))
+        Process(target=convert_worker, args=(i, args.num_workers, args, text_tokenizer))
         for i in range(args.num_workers)
     ]
     for p in procs:
