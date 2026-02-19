@@ -13,6 +13,7 @@ from typing import Iterable, Mapping, Sequence
 
 
 SUCCESS_MARKER_FILE = "_SUCCESS"
+PREPARE_STATE_FILE = "_PREPARE_STATE.json"
 
 
 def load_text_tokenizer(tokenizer_path: str | Path):
@@ -148,6 +149,13 @@ def validate_or_write_prepare_state(
 
     state_path.write_text(json.dumps(dict(expected), indent=2) + "\n")
     return True
+
+
+def normalize_optional_path(path: str | Path | None) -> str | None:
+    """Normalize an optional path for stable resume-state comparisons."""
+    if path is None:
+        return None
+    return str(Path(path).expanduser().resolve())
 
 
 def build_shar_index_from_parts(

@@ -196,7 +196,7 @@ def _print_lang_table(
             f"{pct_samples:>7.2f}% | {pct_speech:>7.2f}%"
         )
         if token_rate is not None:
-            est = int(speech_hrs * 3600.0 * token_rate)
+            est = int(kept_hrs * 3600.0 * token_rate)
             total_est_tokens += est
             row += f" | {est:>12,d}"
         print(row)

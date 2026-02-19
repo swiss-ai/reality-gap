@@ -245,7 +245,8 @@ def merge_and_pack_vad(
     """Convert raw VAD timestamps into kept chunks as ``(offset_sec, duration_sec)``.
 
     Steps:
-      1. Convert sample-based timestamps to seconds and clamp to [0, duration].
+      1. Convert sample-based timestamps to seconds, clamp to [0, duration],
+         and drop spans invalidated by clamping.
       2. Drop individual raw segments > *max_duration_sec* (single continuous
          speech blob too long).
       3. Merge adjacent remaining segments when gap <= *max_merge_gap_sec*.
@@ -262,12 +263,15 @@ def merge_and_pack_vad(
 
     sr = float(sample_rate)
 
-    # Step 1 — convert to seconds and clamp.
-    spans = [
-        (max(0.0, s / sr), min(audio_duration_sec, e / sr))
-        for s, e in timestamps
-        if e > s
-    ]
+    # Step 1 — convert to seconds, clamp, and drop invalid post-clamp spans.
+    spans: List[Tuple[float, float]] = []
+    for s, e in timestamps:
+        if e <= s:
+            continue
+        start = max(0.0, s / sr)
+        end = min(audio_duration_sec, e / sr)
+        if end > start:
+            spans.append((start, end))
     if not spans:
         return []
 
@@ -323,6 +327,7 @@ def split_cut_by_vad(
     - duration < min_chunk_sec: drop
     - missing VAD entry: drop
     - empty VAD timestamps: drop (non-speech)
+    - all timestamps invalid after clamping to cut duration: drop
     - otherwise: produce speech chunks <= max_chunk_sec and >= min_chunk_sec
     """
     duration = float(getattr(cut, "duration", 0.0) or 0.0)
@@ -336,6 +341,14 @@ def split_cut_by_vad(
         return [], "missing_vad"
     if not timestamps:
         return [], "empty_vad"
+    sr = float(cfg.sample_rate)
+    has_valid_span = any(
+        min(duration, e / sr) > max(0.0, s / sr)
+        for s, e in timestamps
+        if e > s
+    )
+    if not has_valid_span:
+        return [], "invalid_vad_after_clamp"
 
     ranges = merge_and_pack_vad(
         timestamps=timestamps,

@@ -234,7 +234,7 @@ def main(argv=None):
 
         header = (
             f" {'merge_gap':>9s} | {'kept_hrs':>12s} | {'speech_hrs':>12s} | "
-            f"{'%kept':>6s} | {'raw_hrs':>12s} | {'chunk_hrs':>12s} | "
+            f"{'%kept':>6s} | {'raw_hrs':>12s} | "
             f"{'chunks':>14s} | {'avg_sec':>8s} | {'no_vad':>8s} | "
             f"{'no_chk':>8s} | {'>max':>10s}"
         )
@@ -246,20 +246,20 @@ def main(argv=None):
         print(sep)
         for gap in sweep_gaps:
             gs = gap_stats[gap]
-            chunk_hrs = gs["chunked_sec"] / 3600.0
+            kept_hrs = gs["chunked_sec"] / 3600.0
             speech_hrs = gs["speech_sec"] / 3600.0
             raw_hrs = gs["raw_sec_total"] / 3600.0
             pct_kept = (speech_hrs / total_duration_hrs * 100.0) if total_duration_hrs > 0 else 0.0
             n_chunks = gs["num_chunks"]
             avg = (gs["chunked_sec"] / n_chunks) if n_chunks else 0.0
             row = (
-                f" {gap:>9.2f} | {chunk_hrs:>12,.1f} | {speech_hrs:>12,.1f} | "
-                f"{pct_kept:>5.1f}% | {raw_hrs:>12,.1f} | {chunk_hrs:>12,.1f} | "
+                f" {gap:>9.2f} | {kept_hrs:>12,.1f} | {speech_hrs:>12,.1f} | "
+                f"{pct_kept:>5.1f}% | {raw_hrs:>12,.1f} | "
                 f"{n_chunks:>14,d} | {avg:>8.1f} | {gs['no_vad']:>8,d} | "
                 f"{gs['no_chunks']:>8,d} | {gs['chunks_over_max']:>10,d}"
             )
             if args.token_rate is not None:
-                est_tokens = int(speech_hrs * 3600.0 * args.token_rate)
+                est_tokens = int(kept_hrs * 3600.0 * args.token_rate)
                 row += f" | {est_tokens:>16,d}"
             print(row)
         print(sep)

@@ -50,11 +50,13 @@ from pathlib import Path
 from typing import Optional
 
 from audio_tokenization.utils.prepare_data.common import (
+    PREPARE_STATE_FILE,
     SUCCESS_MARKER_FILE,
     build_shar_index_from_parts,
     load_text_tokenizer,
     make_text_tokenize_fn,
     mark_partition_success,
+    normalize_optional_path,
     setup_partition_dir,
     to_mono,
     validate_or_write_prepare_state,
@@ -67,7 +69,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 PART_SUCCESS_MARKER = SUCCESS_MARKER_FILE
-PREPARE_STATE_FILE = "_PREPARE_STATE.json"
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +189,7 @@ def _validate_or_write_prepare_state(args) -> None:
         "split": args.split,
         "language": args.language,
         "recipe_kwargs": args.recipe_kwargs,
-        "text_tokenizer": args.text_tokenizer,
+        "text_tokenizer": normalize_optional_path(args.text_tokenizer),
         "num_workers": int(args.num_workers),
     }
     wrote = validate_or_write_prepare_state(

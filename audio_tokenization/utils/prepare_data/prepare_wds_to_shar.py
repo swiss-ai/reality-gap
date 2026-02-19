@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional
 
 from audio_tokenization.utils.prepare_data.common import (
+    PREPARE_STATE_FILE,
     PREPARE_SUMMARY_FILE,
     SUCCESS_MARKER_FILE,
     WORKER_ASSIGNMENT_FILE,
@@ -44,9 +45,11 @@ from audio_tokenization.utils.prepare_data.common import (
     load_worker_assignment,
     make_text_tokenize_fn,
     mark_partition_success,
+    normalize_optional_path,
     run_aggregate,
     setup_partition_dir,
     to_mono,
+    validate_or_write_prepare_state,
     write_worker_assignment,
 )
 from audio_tokenization.utils.prepare_data.chunking import (
@@ -339,6 +342,22 @@ def _convert_worker(args_tuple):
 _ITEMS_KEY = "resolved_shards"
 
 
+def _validate_or_write_prepare_state(args) -> None:
+    state_path = args.shar_dir / PREPARE_STATE_FILE
+    expected = {"text_tokenizer": normalize_optional_path(args.text_tokenizer)}
+    wrote = validate_or_write_prepare_state(
+        state_path,
+        expected=expected,
+        invariant_keys=("text_tokenizer",),
+        guidance=(
+            "Use the same --text-tokenizer to resume this output directory, or "
+            f"remove {args.shar_dir} and restart from scratch."
+        ),
+    )
+    if wrote:
+        logger.info(f"Wrote prepare state: {state_path}")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Convert standard WDS → Lhotse Shar (parallel)",
@@ -427,6 +446,7 @@ def main(argv=None):
             return
 
     args.shar_dir.mkdir(parents=True, exist_ok=True)
+    _validate_or_write_prepare_state(args)
 
     assignment = load_worker_assignment(args.shar_dir, items_key=_ITEMS_KEY)
     if assignment is not None:
