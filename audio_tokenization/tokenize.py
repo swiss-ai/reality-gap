@@ -90,8 +90,8 @@ def main(cfg: DictConfig):
             "dataset_name": cfg.dataset.dataset_name,
             "mode": cfg.get("mode", "audio_only"),
             "resume": cfg.get("resume", False),
-            "min_duration": cfg.dataset.get("min_duration", cfg.get("min_duration")),
-            "max_duration": cfg.dataset.get("max_duration", cfg.get("max_duration")),
+            "min_duration": cfg.dataset.get("min_duration"),
+            "max_duration": cfg.dataset.get("max_duration"),
             "min_sample_rate": cfg.dataset.get("min_sample_rate", min_sample_rate),
             # Shar data (pre-built by prepare_hf_to_shar / prepare_wds_to_shar)
             "shar_dir": list(cfg.dataset.shar_dir) if isinstance(cfg.dataset.shar_dir, (list, ListConfig)) else cfg.dataset.shar_dir,

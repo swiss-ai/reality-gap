@@ -27,8 +27,6 @@ tokenizer:
   trim_last_tokens: 5              # Trim trailing tokens from padded audio (0 to disable)
 
 # Filtering
-min_duration: 1.0
-max_duration: 900.0
 min_sample_rate: 16000
 
 # Resume

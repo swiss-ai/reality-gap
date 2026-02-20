@@ -2,6 +2,7 @@
 # Requires pre-built Shar data (run prepare_audio_dir_to_shar first).
 dataset_type: lhotse
 dataset_name: voxpopuli
+output_name: voxpopuli_vad
 
 # Pre-built Shar directory
 shar_dir: /iopsstor/scratch/cscs/xyixuan/audio-datasets/voxpopuli_shar
@@ -21,6 +22,10 @@ prefetch_factor: 4
 
 # Checkpointing
 checkpoint_interval_batches: 2000
+
+# Duration filters (must match VAD chunking: min_chunk=5s, max_chunk=200s)
+min_duration: 5.0
+max_duration: 200.0
 
 # Hard-drop audio below 16kHz before resampling to target SR.
 min_sample_rate: 16000
