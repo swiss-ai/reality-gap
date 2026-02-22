@@ -1,7 +1,6 @@
 # Lhotse pipeline config for Gemeinderat (Swiss German) tokenization.
 # Requires pre-built Shar data (run prepare_wds_to_shar first).
 dataset_type: lhotse
-dataset_name: gemeinderat_zurich
 output_name: gemeinderat_zurich
 
 # Pre-built Shar directory (from prepare_wds_to_shar)

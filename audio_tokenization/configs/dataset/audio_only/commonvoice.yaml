@@ -1,7 +1,6 @@
 # Lhotse pipeline config for CommonVoice zh-CN (other split) tokenization.
 # Requires pre-built Shar data.
 dataset_type: lhotse
-dataset_name: commonvoice_zh-CN
 output_name: commonvoice_zh-CN_other
 
 # Pre-built Shar directory

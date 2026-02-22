@@ -282,9 +282,8 @@ def filter_and_merge(
     throughput_gbs = (total_bytes_read / 1e9) / max(elapsed, 1e-9)
     filter_pct = (total_filtered / max(total_input_seqs, 1)) * 100
 
-    # Estimate audio hours: 1 audio token ≈ 40ms (25 Hz frame rate typical)
-    # Adjust if your tokenizer has a different frame rate
-    TOKEN_DURATION_S = 0.04
+    # Estimate audio hours: 1 audio token ≈ 25ms (40 Hz frame rate, WavTokenizer)
+    TOKEN_DURATION_S = 0.025
     input_audio_hours = (total_input_tokens * TOKEN_DURATION_S) / 3600
     output_audio_hours = (total_output_tokens * TOKEN_DURATION_S) / 3600
 

@@ -70,6 +70,7 @@ class WorkerStats:
 
     samples_processed: int = 0
     tokens_generated: int = 0
+    text_tokens_generated: int = 0
     errors: int = 0
     samples_skipped: int = 0
     duration_skipped: int = 0
@@ -79,7 +80,7 @@ class WorkerStats:
     throughput: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "samples_processed": self.samples_processed,
             "tokens_generated": self.tokens_generated,
             "errors": self.errors,
@@ -89,6 +90,9 @@ class WorkerStats:
             "elapsed_time": self.elapsed_time,
             "throughput": self.throughput,
         }
+        if self.text_tokens_generated > 0:
+            d["text_tokens_generated"] = self.text_tokens_generated
+        return d
 
     def finalize(self) -> Dict[str, Any]:
         """Compute elapsed time and throughput, return final stats dict."""

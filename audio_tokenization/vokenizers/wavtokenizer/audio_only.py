@@ -42,7 +42,7 @@ class WavTokenizerAudioOnly:
         trim_last_tokens: int = 5,
         **kwargs,
     ):
-        self.device = device
+        self.device = torch.device(device)
         self.omni_tokenizer_path = omni_tokenizer_path
         self.torch_compile = torch_compile
         self.trim_last_tokens = max(0, int(trim_last_tokens))

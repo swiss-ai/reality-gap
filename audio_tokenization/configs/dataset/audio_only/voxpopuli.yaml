@@ -1,7 +1,6 @@
 # Lhotse pipeline config for VoxPopuli tokenization.
 # Requires pre-built Shar data (run prepare_audio_dir_to_shar first).
 dataset_type: lhotse
-dataset_name: voxpopuli
 output_name: voxpopuli_vad
 
 # Pre-built Shar directory

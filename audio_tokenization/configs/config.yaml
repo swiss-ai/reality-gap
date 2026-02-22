@@ -1,23 +1,11 @@
 defaults:
-  - dataset: audioset_lhotse
+  - dataset: audio_only/audioset
   - _self_
 
 # Pipeline settings
 output_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/tokenized
 
-num_gpus: ???
-device: cuda
-mode: audio_only                      # audio_only, audio2text, text2audio, sft
-shard_assignment: shared              # shared (queue-based) or static (pre-assigned shards)
-decode_workers_per_gpu: 16            # multiprocessing decode/resample per GPU worker
-dataloader_prefetch_factor: 8         # prefetch batches per worker (higher hides decode/resample latency)
-batch_size: 12                        # Batch size for tokenization (use with bucket filtering for same-length batches)
-
-# Ray config (for multi-node)
-ray:
-  address: null         # e.g. "10.0.0.1:6379" or "auto"; null = local
-  redis_password: null  # set if your cluster requires it
-  namespace: null       # optional Ray namespace
+mode: audio_only                      # audio_only, audio_text
 
 # Tokenizer settings
 tokenizer:
@@ -32,14 +20,9 @@ min_sample_rate: 16000
 # Resume
 resume: false
 
-# Merge rank/chunk .bin/.idx into one indexed dataset after tokenization
-# Not implemented yet
-merge: false
-
 # Weights & Biases logging
 wandb:
   enabled: true
-  live: true               # If true, log live progress from a dedicated Ray actor
   log_interval_seconds: 1  # Live logging interval (seconds)
   project: audio-tokenization
   entity: null             # W&B team/username, null = default

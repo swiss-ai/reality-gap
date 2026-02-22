@@ -1,7 +1,6 @@
 # Lhotse pipeline config for People's Speech tokenization.
 # Requires pre-built Shar data (run prepare_wds_to_shar first).
 dataset_type: lhotse
-dataset_name: unsupervised_peoples_speech
 output_name: ups_all_lang_vad_v2
 
 # Pre-built Shar directories (from prepare_wds_to_shar with VAD segmentation)

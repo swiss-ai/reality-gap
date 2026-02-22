@@ -75,7 +75,7 @@ WORKER_SUCCESS_FILE = SUCCESS_MARKER_FILE
 # WDS → Lhotse cuts iterator
 # ---------------------------------------------------------------------------
 
-AUDIO_SUFFIXES = (".wav", ".flac", ".mp3")
+AUDIO_SUFFIXES = (".wav", ".flac", ".mp3", ".opus", ".ogg")
 TEXT_SUFFIX = ".txt"
 
 
@@ -521,7 +521,7 @@ def main(argv=None):
     ]
 
     t0 = time.time()
-    ctx = mp.get_context("fork")
+    ctx = mp.get_context("forkserver")
     with ctx.Pool(processes=len(worker_args)) as pool:
         results = pool.map(_convert_worker, worker_args)
 

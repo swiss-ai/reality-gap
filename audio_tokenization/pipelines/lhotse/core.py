@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""Lhotse tokenization pipeline with DDP.
+"""Shared tokenization loop infrastructure.
 
-Loads pre-built Shar data and tokenizes on GPU. Data preparation (HF/WDS ->
-Shar) is handled by standalone scripts — see ``prepare_hf_to_shar`` and
-``prepare_wds_to_shar`` in ``audio_tokenization.utils.prepare_data``.
-
-Architecture overview (3 files):
-    data.py        — Shar loading, shard-level DDP split, runtime filters
-    checkpoint.py  — WorkerStats, chunk writer, checkpoint save/load, W&B
-    pipeline.py    — tokenize_loop (main per-rank loop) + run_lhotse_pipeline (entry point)
+Architecture (3 files per mode):
+    core.py       -- shared: setup, loop skeleton, run_lhotse_pipeline entry point
+    audio_only.py -- AudioOnlyHandler (Megatron indexed dataset output)
+    audio_text.py -- AudioTextHandler (Parquet cache output)
 
 Launch examples::
 
@@ -16,7 +12,7 @@ Launch examples::
     srun --ntasks-per-node=4 --gpus-per-node=4 \\
         python -m audio_tokenization.tokenize dataset=peoples_speech_lhotse
 
-    # Multi-node SLURM — srun spawns all ranks directly (no torchrun, no NCCL)
+    # Multi-node SLURM -- srun spawns all ranks directly (no torchrun, no NCCL)
     srun --nodes=2 --ntasks-per-node=4 --gpus-per-node=4 --kill-on-bad-exit=0 \\
         python -m audio_tokenization.tokenize dataset=peoples_speech_lhotse
 
@@ -34,10 +30,8 @@ import torch
 
 from .checkpoint import (
     WorkerStats,
-    finalize_shard_writer,
     is_cuda_oom,
     load_checkpoint,
-    open_chunk_writer,
     save_checkpoint,
     SimpleWandbLogger,
 )
@@ -51,19 +45,17 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, Any]:
+def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any], handler) -> Dict[str, Any]:
     """Main per-rank tokenization loop.
 
     Steps:
-        1. Load prepared Shar CutSet — see ``data.py``
+        1. Load prepared Shar CutSet -- see ``data.py``
         2. Create ``DynamicBucketingSampler`` with global bucketing
         3. Optionally resume from checkpoint
-        4. Wrap in ``UnsupervisedWaveformDataset`` + ``DataLoader`` (map-style,
-           sampler in main process) for CPU/GPU overlap
-        5. Loop over prefetched batches, tokenize on GPU, write micro-shards
+        4. Wrap in dataset + ``DataLoader`` for CPU/GPU overlap
+        5. Loop over prefetched batches, tokenize on GPU, write output
         6. Periodically checkpoint (sampler state + chunk boundary)
     """
-    from lhotse.dataset import UnsupervisedWaveformDataset
     from lhotse.dataset.sampling.dynamic_bucketing import DynamicBucketingSampler
 
     output_dir = cfg["output_dir"]
@@ -80,7 +72,7 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
     cuts = build_cutset(cfg, rank, world_size)
 
     # ------------------------------------------------------------------
-    # 2. Dynamic bucketing sampler — each rank's CutSet is already split
+    # 2. Dynamic bucketing sampler -- each rank's CutSet is already split
     #    at the shard level (see data.py), so the sampler uses
     #    world_size=1 to avoid the O(world_size) strided distribution.
     # ------------------------------------------------------------------
@@ -110,9 +102,9 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
     sampler = DynamicBucketingSampler(cuts, **sampler_kwargs)
 
     # ------------------------------------------------------------------
-    # 3. Resume from checkpoint — sampler.load_state_dict() restores sampler
-    #    state via metadata bookkeeping (no audio decoding), so recovery is
-    #    typically fast.
+    # 3. Resume from checkpoint -- sampler.load_state_dict() restores
+    #    sampler state via metadata bookkeeping (no audio decoding), so
+    #    recovery is typically fast.
     # ------------------------------------------------------------------
     resume = cfg.get("resume", False)
     start_chunk_id = 0
@@ -135,6 +127,7 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
             prev = ckpt.get("stats", {})
             cumulative_stats.samples_processed = prev.get("samples_processed", 0)
             cumulative_stats.tokens_generated = prev.get("tokens_generated", 0)
+            cumulative_stats.text_tokens_generated = prev.get("text_tokens_generated", 0)
             cumulative_stats.errors = prev.get("errors", 0)
             cumulative_stats.samples_skipped = prev.get("samples_skipped", 0)
             logger.info(
@@ -143,14 +136,15 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
             )
 
     # ------------------------------------------------------------------
-    # 4. DataLoader with prefetching — worker subprocesses decode audio
+    # 4. DataLoader with prefetching -- worker subprocesses decode audio
     #    in parallel while the main thread runs GPU tokenization.
     # ------------------------------------------------------------------
-    num_workers = cfg.get("num_workers", 4)
+    max_workers = os.cpu_count() // max(torch.cuda.device_count(), 1)
+    num_workers = min(cfg.get("num_workers", 4), max_workers)
     prefetch_factor = cfg.get("prefetch_factor", 4)
     dataloader_timeout = cfg.get("dataloader_timeout", 300)  # 5 min default
 
-    dataset = UnsupervisedWaveformDataset(collate=True)
+    dataset = handler.create_dataset()
     dataloader = torch.utils.data.DataLoader(
         dataset,
         sampler=sampler,
@@ -158,6 +152,7 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
         num_workers=num_workers,
         prefetch_factor=prefetch_factor if num_workers > 0 else None,
         persistent_workers=num_workers > 0,
+        pin_memory=True,
         timeout=dataloader_timeout if num_workers > 0 else 0,
     )
 
@@ -180,15 +175,6 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
         torch_compile=torch_compile,
         trim_last_tokens=trim_last_tokens,
     )
-
-    # Vocab size determines the integer dtype for micro-shard .bin files.
-    from transformers import AutoTokenizer
-
-    omni_tok = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True, use_fast=True)
-    vocab_size = len(omni_tok)
-    del omni_tok
-
-    silence_threshold = cfg.get("silence_unique_threshold")
 
     # ------------------------------------------------------------------
     # 6. W&B logger (rank 0 only)
@@ -214,16 +200,14 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
         )
 
     # ------------------------------------------------------------------
-    # 7. Main loop — tokenize batches, write micro-shards, checkpoint
+    # 7. Main loop -- tokenize batches, write output, checkpoint
     # ------------------------------------------------------------------
     checkpoint_interval = cfg.get("checkpoint_interval_batches", 500)
     chunk_id = start_chunk_id
     batch_count = 0
 
-    builder, tmp_bin, tmp_idx, bin_path, idx_path = open_chunk_writer(
-        output_dir, rank, chunk_id, vocab_size,
-    )
-    chunk_samples = 0
+    handler.setup_writer(output_dir, rank, chunk_id, tokenizer)
+
     stats = cumulative_stats
     total_audio_seconds = 0.0
 
@@ -239,44 +223,10 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
     try:
         for batch in dataloader:
             try:
-                # UnsupervisedWaveformDataset(collate=True) returns:
-                #   {"audio": tensor (B, T), "audio_lens": tensor (B,)}
-                audios = batch["audio"]           # (B, T) float
-                audio_lens = batch["audio_lens"]  # (B,) int — original lengths
-
-                batch_audio_secs = audio_lens.sum().item() / target_sr
+                batch_audio_secs = handler.process_batch(
+                    batch, tokenizer, stats, target_sr, device,
+                )
                 total_audio_seconds += batch_audio_secs
-
-                audios_gpu = audios.to(device, non_blocking=True)
-
-                with torch.inference_mode():
-                    token_list = tokenizer.tokenize_batch(
-                        audios_gpu,
-                        target_sr,
-                        orig_audio_samples=audio_lens.tolist(),
-                        pad_audio_samples=audios.shape[1],
-                    )
-
-                # Write each sample's tokens to the current micro-shard
-                for tokens in token_list:
-                    if tokens is None:
-                        stats.errors += 1
-                        continue
-
-                    # Optional silence filter (skip near-constant token sequences)
-                    if silence_threshold and tokens.numel() >= 4:
-                        audio_tok = tokens[2:-2] - getattr(tokenizer, "audio_token_offset", 0)
-                        if audio_tok.numel() > 0 and torch.unique(audio_tok.cpu()).numel() <= silence_threshold:
-                            stats.samples_skipped += 1
-                            continue
-
-                    t = torch.as_tensor(tokens, dtype=torch.int64).detach().cpu()
-                    builder.add_item(t)
-                    builder.end_document()
-                    stats.samples_processed += 1
-                    stats.tokens_generated += len(t)
-                    chunk_samples += 1
-
                 consecutive_errors = 0  # reset on batch success
 
             except Exception as batch_err:
@@ -315,27 +265,23 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
                 )
 
             # Periodic checkpoint: finalize current chunk, save state, open next
-            if batch_count % checkpoint_interval == 0 and chunk_samples > 0:
-                finalize_shard_writer(builder, tmp_bin, tmp_idx, bin_path, idx_path)
+            if batch_count % checkpoint_interval == 0 and handler.chunk_samples > 0:
+                done_chunk = handler.checkpoint_writer()
                 logger.info(
-                    f"[rank {rank}] Finalized chunk {chunk_id} "
-                    f"({chunk_samples} samples, {stats.tokens_generated} total tokens)"
+                    f"[rank {rank}] Finalized chunk {done_chunk} "
+                    f"({stats.tokens_generated} total tokens)"
                 )
 
                 save_checkpoint(
                     output_dir,
                     rank,
                     sampler_state=sampler.state_dict(),
-                    chunk_id=chunk_id,
+                    chunk_id=done_chunk,
                     stats=stats.to_dict(),
                     world_size=world_size,
                 )
 
-                chunk_id += 1
-                builder, tmp_bin, tmp_idx, bin_path, idx_path = open_chunk_writer(
-                    output_dir, rank, chunk_id, vocab_size,
-                )
-                chunk_samples = 0
+                chunk_id = done_chunk + 1
 
     except Exception as e:
         logger.error(f"[rank {rank}] Fatal error in tokenization loop: {e}", exc_info=True)
@@ -345,19 +291,7 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
     # ------------------------------------------------------------------
     # 8. Finalize last chunk (always save progress, even on failure)
     # ------------------------------------------------------------------
-    if chunk_samples > 0:
-        finalize_shard_writer(builder, tmp_bin, tmp_idx, bin_path, idx_path)
-        logger.info(
-            f"[rank {rank}] Finalized final chunk {chunk_id} ({chunk_samples} samples)"
-        )
-    else:
-        # Empty chunk — clean up temp files
-        for p in (tmp_bin, tmp_idx):
-            try:
-                if os.path.exists(p):
-                    os.remove(p)
-            except Exception:
-                pass
+    handler.finalize_writer()
 
     save_checkpoint(
         output_dir,
@@ -370,15 +304,18 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any]) -> Dict[str, 
 
     result = stats.finalize()
     result["rank"] = rank
-    result["chunks_written"] = chunk_id - start_chunk_id + (1 if chunk_samples > 0 else 0)
+    result["chunks_written"] = chunk_id - start_chunk_id + (1 if handler.chunk_samples > 0 else 0)
 
     if wandb_logger is not None:
         wandb_logger.finish()
 
+    text_tok_msg = ""
+    if result.get("text_tokens_generated", 0) > 0:
+        text_tok_msg = f", {result['text_tokens_generated']} text tokens"
     logger.info(
         f"[rank {rank}] Done: {result['samples_processed']} samples, "
-        f"{result['tokens_generated']} tokens, {result['errors']} errors, "
-        f"{result['elapsed_time']:.1f}s"
+        f"{result['tokens_generated']} audio tokens{text_tok_msg}, "
+        f"{result['errors']} errors, {result['elapsed_time']:.1f}s"
     )
 
     result["output_dir"] = output_dir
@@ -467,4 +404,14 @@ def run_lhotse_pipeline(cfg: Dict[str, Any]) -> Dict[str, Any]:
         f"no NCCL — each rank is independent)"
     )
 
-    return tokenize_loop(rank, world_size, cfg)
+    mode = cfg.get("mode", "audio_only")
+    if mode == "audio_only":
+        from .audio_only import AudioOnlyHandler
+        handler = AudioOnlyHandler(cfg)
+    elif mode == "audio_text":
+        from .audio_text import AudioTextHandler
+        handler = AudioTextHandler(cfg)
+    else:
+        raise ValueError(f"Unsupported mode: {mode!r}")
+
+    return tokenize_loop(rank, world_size, cfg, handler)

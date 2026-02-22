@@ -247,7 +247,7 @@ def main():
         for lang, lang_paths in sorted(groups.items())
     ]
 
-    ctx = mp.get_context("fork")
+    ctx = mp.get_context("forkserver")
     with ctx.Pool(processes=len(worker_args)) as pool:
         finished = pool.map(_dedup_group_worker, worker_args)
 
