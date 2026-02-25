@@ -338,17 +338,20 @@ def tokenize_loop(rank: int, world_size: int, cfg: Dict[str, Any], handler) -> D
 
 
 def _build_output_subdir(cfg: Dict[str, Any]) -> str:
-    """Build a dataset-specific subdirectory name.
+    """Build a dataset-specific subdirectory path.
 
-    Format: ``{output_name}_{mode}[_dur{min}-{max}]``
+    Layout::
+
+        audio_only:        audio_only/{output_name}[_dur{min}-{max}]
+        audio_text:  audio_text_{format}/{output_name}[_dur{min}-{max}]
     """
     output_name = cfg.get("output_name")
     if not output_name:
         raise ValueError("'output_name' is required in the dataset config.")
 
     mode = cfg.get("mode", "audio_only")
-    parts = [output_name, mode]
 
+    dur_suffix = ""
     min_dur = cfg.get("min_duration")
     max_dur = cfg.get("max_duration")
     if min_dur is not None or max_dur is not None:
@@ -356,9 +359,15 @@ def _build_output_subdir(cfg: Dict[str, Any]) -> str:
             if v is None:
                 return ""
             return str(int(v)) if float(v).is_integer() else str(v).replace(".", "p")
-        parts.append(f"dur{_fmt(min_dur) or 'min'}-{_fmt(max_dur) or 'max'}")
+        dur_suffix = f"_dur{_fmt(min_dur) or 'min'}-{_fmt(max_dur) or 'max'}"
 
-    return "_".join(p for p in parts if p)
+    dataset_name = f"{output_name}{dur_suffix}"
+
+    if mode == "audio_text":
+        fmt = cfg.get("audio_text_format", "unknown")
+        return str(Path(f"audio_text_{fmt}") / dataset_name)
+
+    return str(Path(mode) / dataset_name)
 
 
 
@@ -371,9 +380,26 @@ def run_lhotse_pipeline(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """
     # torchrun sets RANK/WORLD_SIZE/LOCAL_RANK.
     # srun (without torchrun) sets SLURM_PROCID/SLURM_NTASKS/SLURM_LOCALID.
+    num_gpus = cfg.get("num_gpus")
     rank = int(os.environ.get("RANK", os.environ.get("SLURM_PROCID", 0)))
     world_size = int(os.environ.get("WORLD_SIZE", os.environ.get("SLURM_NTASKS", 1)))
     local_rank = int(os.environ.get("LOCAL_RANK", os.environ.get("SLURM_LOCALID", 0)))
+
+    # Cross-check: if num_gpus is set, verify it matches the env-derived world_size.
+    if num_gpus is not None:
+        num_gpus = int(num_gpus)
+        if world_size == 1 and num_gpus > 1:
+            # No env vars set (local run) — use num_gpus as world_size.
+            world_size = num_gpus
+            logger.warning(
+                f"No SLURM/torchrun env vars detected, using num_gpus={num_gpus} as world_size"
+            )
+        elif world_size != num_gpus:
+            raise RuntimeError(
+                f"num_gpus={num_gpus} from config does not match "
+                f"world_size={world_size} from environment. "
+                f"Check SLURM --ntasks-per-node * --nodes matches num_gpus."
+            )
 
     # Safety: infer LOCAL_RANK from global rank + GPUs per node if env vars
     # are missing (e.g. bare srun without torchrun on multi-GPU nodes).

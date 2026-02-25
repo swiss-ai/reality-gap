@@ -314,6 +314,221 @@ def write_worker_assignment(
     return path
 
 
+def check_worker_reuse(worker_id: int, shar_dir: str | Path) -> dict | None:
+    """Check if a worker partition is already complete; return reuse dict or None.
+
+    If the worker directory has a ``_SUCCESS`` marker, loads any persisted
+    ``worker_stats.json`` and returns a result dict with ``"reused": True``
+    (``written=-1`` signals "reused" to the aggregation logic).
+    Otherwise returns ``None`` so the caller can proceed with processing.
+    """
+    worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
+    worker_stats_path = worker_dir / WORKER_STATS_FILE
+    if setup_partition_dir(
+        worker_dir,
+        success_marker_name=SUCCESS_MARKER_FILE,
+        reuse_log=f"Worker {worker_id}: reusing completed Shar in {worker_dir}",
+        reset_log=f"Worker {worker_id}: removing partial output in {worker_dir}",
+        logger=logger,
+    ):
+        reused_worker_stats: dict = {}
+        if worker_stats_path.is_file():
+            try:
+                reused_worker_stats = json.loads(worker_stats_path.read_text())
+            except Exception:
+                reused_worker_stats = {}
+        return {
+            "worker_id": worker_id,
+            "written": -1,
+            "skipped": 0,
+            "errors": 0,
+            "elapsed": 0,
+            "total_duration_sec": reused_worker_stats.get("total_duration_sec", 0.0),
+            "reused": True,
+            "worker_stats": reused_worker_stats,
+        }
+    return None
+
+
+def init_worker_process(resampling_backend: str | None = None) -> None:
+    """Per-process initialisation for pool workers.
+
+    Notes:
+      - ``sox`` resampling has shown allocator crashes (``free(): invalid pointer``)
+        under high ``forkserver`` multiprocessing fan-out.
+      - Keep the safer ``default`` backend unless explicitly overridden.
+    """
+    try:
+        import os
+        from lhotse.audio.resampling_backend import (
+            available_resampling_backends,
+            set_current_resampling_backend,
+        )
+
+        backend = resampling_backend or os.environ.get(
+            "LHOTSE_RESAMPLING_BACKEND", "default"
+        )
+        if backend not in available_resampling_backends():
+            logger.warning(
+                "Unknown resampling backend %r; falling back to 'default'", backend
+            )
+            backend = "default"
+        set_current_resampling_backend(backend)
+    except Exception:
+        pass
+
+
+def write_worker_result(
+    *,
+    worker_id: int,
+    worker_dir: Path,
+    written: int,
+    skipped: int,
+    errors: int,
+    total_duration_sec: float,
+    runtime_counts: Counter,
+    t0: float,
+    extra_stats: dict | None = None,
+) -> dict:
+    """Log completion, persist worker stats, mark success, and return result dict."""
+    import time as _time
+
+    elapsed = _time.time() - t0
+    logger.info(
+        f"Worker {worker_id} done in {elapsed:.1f}s: "
+        f"{written} written, {skipped} skipped, {errors} errors"
+    )
+
+    worker_stats: dict = {
+        "worker_id": worker_id,
+        "elapsed_sec": elapsed,
+        "written": written,
+        "skipped": skipped,
+        "errors": errors,
+        "total_duration_sec": total_duration_sec,
+        "reused": False,
+        "runtime_counts": dict(runtime_counts),
+    }
+    if extra_stats:
+        worker_stats.update(extra_stats)
+
+    worker_stats_path = worker_dir / WORKER_STATS_FILE
+    worker_stats_path.write_text(json.dumps(worker_stats, indent=2) + "\n")
+
+    mark_partition_success(worker_dir, success_marker_name=SUCCESS_MARKER_FILE)
+
+    result: dict = {
+        "worker_id": worker_id,
+        "written": written,
+        "skipped": skipped,
+        "errors": errors,
+        "elapsed": elapsed,
+        "total_duration_sec": total_duration_sec,
+        "reused": False,
+        "worker_stats": worker_stats,
+    }
+    if extra_stats:
+        result.update(extra_stats)
+    return result
+
+
+def ensure_worker_assignment(
+    shar_dir: Path,
+    resolved_items: Sequence,
+    num_workers: int | None,
+    items_key: str,
+    item_noun: str,
+) -> int:
+    """Load or create a worker assignment; return the final ``num_workers``."""
+    assignment = load_worker_assignment(shar_dir, items_key=items_key)
+    if assignment is not None:
+        if assignment[items_key] != list(resolved_items):
+            raise RuntimeError(
+                f"Existing worker assignment {item_noun} list does not match current resolved items. "
+                f"Delete {shar_dir / WORKER_ASSIGNMENT_FILE} and worker_* directories to start fresh."
+            )
+        if num_workers is not None and int(num_workers) != assignment["num_workers"]:
+            raise RuntimeError(
+                f"Existing worker assignment requires num_workers={assignment['num_workers']}, "
+                f"but got {num_workers}. Keep num_workers stable when resuming."
+            )
+        final = assignment["num_workers"]
+        logger.info(f"Reusing worker assignment from {assignment['path']} (num_workers={final})")
+        return final
+
+    final = min(num_workers or len(resolved_items), len(resolved_items))
+    assignment_path = write_worker_assignment(
+        shar_dir, final, resolved_items, items_key=items_key,
+    )
+    logger.info(f"Wrote worker assignment to {assignment_path}")
+    return final
+
+
+def run_pool_and_finalize(
+    worker_fn,
+    worker_args: list,
+    shar_dir: Path,
+    num_workers: int,
+) -> list[dict]:
+    """Run *worker_fn* in a forkserver pool, aggregate stats, write summary & index.
+
+    Returns the list of per-worker result dicts.
+    """
+    import multiprocessing as _mp
+    import time as _time
+
+    t0 = _time.time()
+    ctx = _mp.get_context("forkserver")
+    with ctx.Pool(processes=len(worker_args)) as pool:
+        results = pool.map(worker_fn, worker_args)
+
+    elapsed = _time.time() - t0
+    total_written = sum(r["written"] for r in results if r["written"] >= 0)
+    total_skipped = sum(r["skipped"] for r in results)
+    total_errors = sum(r["errors"] for r in results)
+    total_reused = sum(1 for r in results if r.get("reused"))
+    total_duration_sec = sum(r.get("total_duration_sec", 0.0) for r in results)
+    total_reason_counts: Counter = Counter()
+    total_runtime_counts: Counter = Counter()
+    for r in results:
+        total_reason_counts.update(r.get("reason_counts", {}))
+        total_runtime_counts.update(
+            (r.get("worker_stats") or {}).get("runtime_counts", {})
+        )
+
+    logger.info(
+        f"All workers done in {elapsed:.1f}s — "
+        f"{total_written} samples, {total_skipped} skipped, {total_errors} errors, "
+        f"{total_duration_sec / 3600.0:.1f} hours written"
+    )
+    if total_reason_counts:
+        logger.info(f"VAD reasons (global): {dict(total_reason_counts)}")
+    if total_runtime_counts:
+        logger.info(f"Runtime counters (global): {dict(total_runtime_counts)}")
+
+    summary = {
+        "version": 1,
+        "num_workers": num_workers,
+        "workers_reused": total_reused,
+        "elapsed_sec": elapsed,
+        "total_written": total_written,
+        "total_skipped": total_skipped,
+        "total_errors": total_errors,
+        "total_duration_sec": total_duration_sec,
+        "runtime_counts": dict(total_runtime_counts),
+        "reason_counts": dict(total_reason_counts),
+        "results": results,
+    }
+    summary_path = Path(shar_dir) / PREPARE_SUMMARY_FILE
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+    logger.info(f"Wrote prepare summary: {summary_path}")
+
+    build_shar_index(Path(shar_dir), num_workers=num_workers)
+    mark_partition_success(Path(shar_dir), success_marker_name=SUCCESS_MARKER_FILE)
+    logger.info("All done!")
+    return results
+
+
 def run_aggregate(shar_root: Path) -> None:
     """Read prepare_summary.json from all node_*/ dirs, sum totals, and print."""
     node_dirs = sorted(shar_root.glob("node_*"))

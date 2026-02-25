@@ -107,6 +107,8 @@ def main(cfg: DictConfig):
         # audio_text mode
         "clip_id_parser": cfg.dataset.get("clip_id_parser", "generic"),
         "dataset_name": cfg.dataset.get("dataset_name", cfg.dataset.get("output_name", "")),
+        "audio_text_format": cfg.get("audio_text_format", "interleaved"),
+        "audio_text_task": cfg.get("audio_text_task", "transcribe"),
         # W&B
         "wandb": OmegaConf.to_container(cfg.get("wandb", {}), resolve=True),
     }

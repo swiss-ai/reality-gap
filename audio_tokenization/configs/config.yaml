@@ -5,7 +5,10 @@ defaults:
 # Pipeline settings
 output_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/tokenized
 
+num_gpus: ???                         # Required: total GPU count (cross-checked against SLURM_NTASKS)
 mode: audio_only                      # audio_only, audio_text
+audio_text_format: direct             # direct (bin/idx) | interleaved (parquet)
+audio_text_task: transcribe           # transcribe | annotate
 
 # Tokenizer settings
 tokenizer:

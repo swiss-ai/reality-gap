@@ -26,26 +26,20 @@ Usage:
 
 import argparse
 from collections import Counter
-import json
 import logging
-import multiprocessing as mp
 import time
 from pathlib import Path
 
 from audio_tokenization.utils.prepare_data.common import (
-    PREPARE_SUMMARY_FILE,
-    SUCCESS_MARKER_FILE,
-    WORKER_ASSIGNMENT_FILE,
-    WORKER_STATS_FILE,
     build_audio_index,
-    build_shar_index,
+    check_worker_reuse,
     distribute_round_robin,
-    load_worker_assignment,
-    mark_partition_success,
+    ensure_worker_assignment,
+    init_worker_process,
     run_aggregate,
-    setup_partition_dir,
+    run_pool_and_finalize,
     to_mono,
-    write_worker_assignment,
+    write_worker_result,
 )
 from audio_tokenization.utils.prepare_data.chunking import (
     _parse_vad_jsonl_line,
@@ -57,8 +51,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(processName)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-WORKER_SUCCESS_FILE = SUCCESS_MARKER_FILE
 
 _ITEMS_KEY = "resolved_jsonls"
 
@@ -89,41 +81,13 @@ def _convert_worker(args_tuple):
         vad_max_merge_gap_sec,
         vad_max_duration_sec,
         audio_ext,
+        resampling_backend,
     ) = args_tuple
 
-    worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
-    worker_stats_path = worker_dir / WORKER_STATS_FILE
-    if setup_partition_dir(
-        worker_dir,
-        success_marker_name=WORKER_SUCCESS_FILE,
-        reuse_log=f"Worker {worker_id}: reusing completed Shar in {worker_dir}",
-        reset_log=f"Worker {worker_id}: removing partial output in {worker_dir}",
-        logger=logger,
-    ):
-        reused_worker_stats = {}
-        if worker_stats_path.is_file():
-            try:
-                reused_worker_stats = json.loads(worker_stats_path.read_text())
-            except Exception:
-                reused_worker_stats = {}
-        return {
-            "worker_id": worker_id,
-            "written": -1,
-            "skipped": 0,
-            "errors": 0,
-            "elapsed": 0,
-            "total_duration_sec": reused_worker_stats.get("total_duration_sec", 0.0),
-            "reused": True,
-            "reason_counts": {},
-            "worker_stats": reused_worker_stats,
-        }
-
-    # SoX resampling backend (per-process state)
-    try:
-        from lhotse.audio.resampling_backend import set_current_resampling_backend
-        set_current_resampling_backend("sox")
-    except Exception:
-        pass
+    reused = check_worker_reuse(worker_id, shar_dir)
+    if reused is not None:
+        return reused
+    init_worker_process(resampling_backend)
 
     from lhotse import Recording
     from lhotse.shar import SharWriter
@@ -131,6 +95,7 @@ def _convert_worker(args_tuple):
     reason_counts = Counter()
     runtime_counts = Counter()
 
+    worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
     t0 = time.time()
     written = skipped = errors = 0
     total_duration_sec = 0.0
@@ -252,39 +217,16 @@ def _convert_worker(args_tuple):
                             f"({written / elapsed:.1f} samples/s)"
                         )
 
-    elapsed = time.time() - t0
-    logger.info(
-        f"Worker {worker_id} done in {elapsed:.1f}s: "
-        f"{written} written, {skipped} skipped, {errors} errors"
-    )
     if reason_counts:
         logger.info(f"Worker {worker_id} VAD reasons: {dict(reason_counts)}")
 
-    worker_stats = {
-        "worker_id": worker_id,
-        "elapsed_sec": elapsed,
-        "written": written,
-        "skipped": skipped,
-        "errors": errors,
-        "total_duration_sec": total_duration_sec,
-        "reused": False,
-        "runtime_counts": dict(runtime_counts),
-        "reason_counts": dict(reason_counts),
-    }
-    worker_stats_path.write_text(json.dumps(worker_stats, indent=2) + "\n")
-
-    mark_partition_success(worker_dir, success_marker_name=WORKER_SUCCESS_FILE)
-    return {
-        "worker_id": worker_id,
-        "written": written,
-        "skipped": skipped,
-        "errors": errors,
-        "elapsed": elapsed,
-        "total_duration_sec": total_duration_sec,
-        "reused": False,
-        "reason_counts": dict(reason_counts),
-        "worker_stats": worker_stats,
-    }
+    return write_worker_result(
+        worker_id=worker_id, worker_dir=worker_dir,
+        written=written, skipped=skipped, errors=errors,
+        total_duration_sec=total_duration_sec,
+        runtime_counts=runtime_counts, t0=t0,
+        extra_stats={"reason_counts": dict(reason_counts)},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +258,10 @@ def main(argv=None):
     # Audio processing
     parser.add_argument("--target-sr", type=int, default=24000,
                         help="Target sample rate (default: 24000)")
+    parser.add_argument("--resampling-backend", type=str, default=None,
+                        choices=["default", "sox"],
+                        help="Lhotse resampling backend override (default: use "
+                             "$LHOTSE_RESAMPLING_BACKEND or 'default')")
     parser.add_argument("--min-sr", type=int, default=16000,
                         help="Drop audio below this sample rate (default: 16000)")
     parser.add_argument("--no-mono-downmix", action="store_true",
@@ -364,27 +310,9 @@ def main(argv=None):
 
     args.shar_dir.mkdir(parents=True, exist_ok=True)
 
-    # Resume safety: check existing worker assignment
-    assignment = load_worker_assignment(args.shar_dir, items_key=_ITEMS_KEY)
-    if assignment is not None:
-        if assignment[_ITEMS_KEY] != resolved_jsonls:
-            raise RuntimeError(
-                "Existing worker assignment JSONL list does not match current resolved files. "
-                f"Delete {args.shar_dir / WORKER_ASSIGNMENT_FILE} and worker_* directories to start fresh."
-            )
-        if args.num_workers is not None and int(args.num_workers) != assignment["num_workers"]:
-            raise RuntimeError(
-                f"Existing worker assignment requires num_workers={assignment['num_workers']}, "
-                f"but got {args.num_workers}. Keep num_workers stable when resuming."
-            )
-        num_workers = assignment["num_workers"]
-        logger.info(f"Reusing worker assignment from {assignment['path']} (num_workers={num_workers})")
-    else:
-        num_workers = min(args.num_workers or len(resolved_jsonls), len(resolved_jsonls))
-        assignment_path = write_worker_assignment(
-            args.shar_dir, num_workers, resolved_jsonls, items_key=_ITEMS_KEY,
-        )
-        logger.info(f"Wrote worker assignment to {assignment_path}")
+    num_workers = ensure_worker_assignment(
+        args.shar_dir, resolved_jsonls, args.num_workers, _ITEMS_KEY, "JSONL files",
+    )
 
     logger.info(f"Found {len(resolved_jsonls)} JSONL files, using {num_workers} workers")
     logger.info(f"Output: {args.shar_dir}")
@@ -433,61 +361,13 @@ def main(argv=None):
             args.vad_max_merge_gap_sec,
             args.vad_max_duration_sec,
             args.audio_ext,
+            args.resampling_backend,
         )
         for wid, jsonls in enumerate(worker_jsonls)
         if jsonls
     ]
 
-    t0 = time.time()
-    ctx = mp.get_context("forkserver")
-    with ctx.Pool(processes=len(worker_args)) as pool:
-        results = pool.map(_convert_worker, worker_args)
-
-    elapsed = time.time() - t0
-    total_written = sum(r["written"] for r in results if r["written"] >= 0)
-    total_skipped = sum(r["skipped"] for r in results)
-    total_errors = sum(r["errors"] for r in results)
-    total_reused = sum(1 for r in results if r.get("reused"))
-    total_duration_sec = sum(r.get("total_duration_sec", 0.0) for r in results)
-    total_reason_counts = Counter()
-    total_runtime_counts = Counter()
-    for r in results:
-        total_reason_counts.update(r.get("reason_counts", {}))
-        total_runtime_counts.update(
-            (r.get("worker_stats") or {}).get("runtime_counts", {})
-        )
-
-    logger.info(
-        f"All workers done in {elapsed:.1f}s -- "
-        f"{total_written} samples, {total_skipped} skipped, {total_errors} errors, "
-        f"{total_duration_sec / 3600.0:.1f} hours written"
-    )
-    if total_reason_counts:
-        logger.info(f"VAD reasons (global): {dict(total_reason_counts)}")
-    if total_runtime_counts:
-        logger.info(f"Runtime counters (global): {dict(total_runtime_counts)}")
-
-    summary = {
-        "version": 1,
-        "num_workers": num_workers,
-        "workers_reused": total_reused,
-        "elapsed_sec": elapsed,
-        "total_written": total_written,
-        "total_skipped": total_skipped,
-        "total_errors": total_errors,
-        "total_duration_sec": total_duration_sec,
-        "runtime_counts": dict(total_runtime_counts),
-        "reason_counts": dict(total_reason_counts),
-        "results": results,
-    }
-    summary_path = args.shar_dir / PREPARE_SUMMARY_FILE
-    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
-    logger.info(f"Wrote prepare summary: {summary_path}")
-
-    # Build merged index
-    build_shar_index(args.shar_dir, num_workers=num_workers)
-    mark_partition_success(args.shar_dir, success_marker_name=WORKER_SUCCESS_FILE)
-    logger.info("All done!")
+    run_pool_and_finalize(_convert_worker, worker_args, args.shar_dir, num_workers)
 
 
 if __name__ == "__main__":

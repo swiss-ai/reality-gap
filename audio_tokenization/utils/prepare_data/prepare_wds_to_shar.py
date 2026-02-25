@@ -26,31 +26,27 @@ Usage:
 import argparse
 from collections import Counter
 import glob
-import json
 import logging
-import multiprocessing as mp
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
+
+import orjson
 
 from audio_tokenization.utils.prepare_data.common import (
     PREPARE_STATE_FILE,
-    PREPARE_SUMMARY_FILE,
-    SUCCESS_MARKER_FILE,
-    WORKER_ASSIGNMENT_FILE,
-    WORKER_STATS_FILE,
-    build_shar_index,
+    check_worker_reuse,
     distribute_round_robin,
+    ensure_worker_assignment,
+    init_worker_process,
     load_text_tokenizer,
-    load_worker_assignment,
     make_text_tokenize_fn,
-    mark_partition_success,
     normalize_optional_path,
     run_aggregate,
-    setup_partition_dir,
+    run_pool_and_finalize,
     to_mono,
     validate_or_write_prepare_state,
-    write_worker_assignment,
+    write_worker_result,
 )
 from audio_tokenization.utils.prepare_data.chunking import (
     VADChunkingConfig,
@@ -68,69 +64,85 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-WORKER_SUCCESS_FILE = SUCCESS_MARKER_FILE
-
 
 # ---------------------------------------------------------------------------
 # WDS → Lhotse cuts iterator
 # ---------------------------------------------------------------------------
 
 AUDIO_SUFFIXES = (".wav", ".flac", ".mp3", ".opus", ".ogg")
-TEXT_SUFFIX = ".txt"
+SIDECAR_SUFFIXES = (".txt", ".json")
+
+def _parse_sidecar(
+    raw: bytes, ext: str, text_field: str = "text",
+    custom_fields: Optional[Tuple[str, ...]] = None,
+) -> Tuple[Optional[str], dict]:
+    """Parse a sidecar into ``(text, custom_dict)``."""
+    if ext == ".json":
+        obj = orjson.loads(raw)
+        text = obj.get(text_field)
+        custom = {k: obj[k] for k in (custom_fields or ()) if k in obj}
+        return text, custom
+    return raw.decode("utf-8").strip(), {}
 
 
-def iter_tar_cuts(tar_paths, text_ext=TEXT_SUFFIX, stats: Optional[Counter] = None):
-    """Iterate over WDS tar shards and yield Lhotse cuts with supervisions.
-
-    Uses ``tarfile`` directly instead of the ``webdataset`` library to avoid
-    filename parsing issues — WDS splits on ``.`` which breaks dirty filenames
-    with spaces or dots (e.g. ``"Ft. jim jones).mp3"``).
-
-    If ``text_ext`` is set (default ``.txt``), text files sharing the same key
-    as an audio file are attached as a ``SupervisionSegment`` on the cut.
-    """
+def iter_tar_cuts(
+    tar_paths,
+    text_field: str = "text",
+    custom_fields: Optional[Tuple[str, ...]] = None,
+    stats: Optional[Counter] = None,
+):
+    """Iterate over WDS tar shards and yield Lhotse cuts with supervisions."""
     import tarfile
     from lhotse import Recording, SupervisionSegment
 
     for tar_path in tar_paths:
         with tarfile.open(tar_path) as tf:
-            # Phase 1: collect text and audio members in a single scan.
-            texts = {}
+            # Phase 1: collect sidecar metadata and audio member pointers.
+            metas = {}  # stem -> (text, custom)
             audio_members = []
             for member in tf:
                 if not member.isfile():
                     continue
-                if text_ext and member.name.endswith(text_ext):
-                    key = member.name.rsplit(".", 1)[0]
+                dot = member.name.rfind(".")
+                ext = member.name[dot:] if dot >= 0 else ""
+                if ext in SIDECAR_SUFFIXES:
+                    stem = member.name[:dot]
                     try:
-                        texts[key] = tf.extractfile(member).read().decode("utf-8").strip()
+                        text, custom = _parse_sidecar(
+                            tf.extractfile(member).read(), ext,
+                            text_field, custom_fields,
+                        )
+                        prev = metas.get(stem)
+                        if prev:
+                            text = text or prev[0]
+                            custom = {**prev[1], **custom}
+                        metas[stem] = (text, custom)
                     except Exception:
                         if stats is not None:
                             stats["text_decode_failed"] += 1
-                        pass
-                elif member.name.endswith(AUDIO_SUFFIXES):
+                elif ext in AUDIO_SUFFIXES:
                     audio_members.append(member)
 
-            # Phase 2: decode audio and attach text as supervision.
+            # Phase 2: decode audio and attach supervision from sidecar.
             for member in audio_members:
-                key = member.name.rsplit(".", 1)[0]
+                stem = member.name[:member.name.rfind(".")]
                 try:
                     extracted = tf.extractfile(member)
                     if extracted is None:
                         if stats is not None:
                             stats["missing_payload"] += 1
                         raise ValueError("tar member has no readable payload")
-                    audio_bytes = extracted.read()
-                    recording = Recording.from_bytes(data=audio_bytes, recording_id=key)
-                    # Lazy: only reads the audio header, no decoding yet.
+                    recording = Recording.from_bytes(
+                        data=extracted.read(), recording_id=stem,
+                    )
                     cut = recording.to_cut()
                 except Exception as e:
                     if stats is not None:
                         stats["failed_build_cut"] += 1
-                    logger.warning(f"Skipping {key}: failed to build cut ({e})")
+                    logger.warning(f"Skipping {stem}: failed to build cut ({e})")
                     continue
 
-                text = texts.get(key)
+                text, custom = metas.get(stem, (None, {}))
                 if text:
                     cut.supervisions = [SupervisionSegment(
                         id=cut.id,
@@ -139,6 +151,8 @@ def iter_tar_cuts(tar_paths, text_ext=TEXT_SUFFIX, stats: Optional[Counter] = No
                         duration=cut.duration,
                         text=text,
                     )]
+                if custom:
+                    cut.custom = custom
 
                 if stats is not None:
                     stats["cuts_yielded"] += 1
@@ -164,7 +178,8 @@ def _convert_worker(args_tuple):
         shard_size,
         shar_format,
         min_sr,
-        text_ext,
+        text_field,
+        custom_fields,
         mono_downmix,
         vad_per_shard_dir,
         vad_max_chunk_sec,
@@ -173,41 +188,13 @@ def _convert_worker(args_tuple):
         vad_max_merge_gap_sec,
         vad_max_duration_sec,
         text_tokenizer,
+        resampling_backend,
     ) = args_tuple
 
-    worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
-    worker_stats_path = worker_dir / WORKER_STATS_FILE
-    if setup_partition_dir(
-        worker_dir,
-        success_marker_name=WORKER_SUCCESS_FILE,
-        reuse_log=f"Worker {worker_id}: reusing completed Shar in {worker_dir}",
-        reset_log=f"Worker {worker_id}: removing partial output in {worker_dir}",
-        logger=logger,
-    ):
-        reused_worker_stats = {}
-        if worker_stats_path.is_file():
-            try:
-                reused_worker_stats = json.loads(worker_stats_path.read_text())
-            except Exception:
-                reused_worker_stats = {}
-        return {
-            "worker_id": worker_id,
-            "written": -1,
-            "skipped": 0,
-            "errors": 0,
-            "elapsed": 0,
-            "total_duration_sec": reused_worker_stats.get("total_duration_sec", 0.0),
-            "reused": True,
-            "reason_counts": {},
-            "worker_stats": reused_worker_stats,
-        }
-
-    # SoX resampling backend (per-process state)
-    try:
-        from lhotse.audio.resampling_backend import set_current_resampling_backend
-        set_current_resampling_backend("sox")
-    except Exception:
-        pass
+    reused = check_worker_reuse(worker_id, shar_dir)
+    if reused is not None:
+        return reused
+    init_worker_process(resampling_backend)
 
     from lhotse.shar import SharWriter
 
@@ -231,6 +218,7 @@ def _convert_worker(args_tuple):
         vad_lookup = {}
         lang_lookup = {}
 
+    worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
     t0 = time.time()
     written = skipped = errors = 0
     total_duration_sec = 0.0
@@ -242,7 +230,7 @@ def _convert_worker(args_tuple):
         fields={"recording": shar_format},
         shard_size=shard_size,
     ) as writer:
-        for cut in iter_tar_cuts(tar_paths, text_ext=text_ext, stats=runtime_counts):
+        for cut in iter_tar_cuts(tar_paths, text_field=text_field, custom_fields=custom_fields, stats=runtime_counts):
             try:
                 if min_sr and cut.sampling_rate < min_sr:
                     skipped += 1
@@ -299,40 +287,19 @@ def _convert_worker(args_tuple):
                 if errors <= 5:
                     logger.warning(f"Worker {worker_id} error on {cut.id}: {e}")
 
-    elapsed = time.time() - t0
-    logger.info(
-        f"Worker {worker_id} done in {elapsed:.1f}s: "
-        f"{written} written, {skipped} skipped, {errors} errors"
-    )
     if use_vad_segmenting and reason_counts:
         logger.info(f"Worker {worker_id} VAD reasons: {dict(reason_counts)}")
 
-    worker_stats = {
-        "worker_id": worker_id,
-        "elapsed_sec": elapsed,
-        "written": written,
-        "skipped": skipped,
-        "errors": errors,
-        "total_duration_sec": total_duration_sec,
-        "reused": False,
-        "vad_enabled": use_vad_segmenting,
-        "runtime_counts": dict(runtime_counts),
-        "reason_counts": dict(reason_counts),
-    }
-    worker_stats_path.write_text(json.dumps(worker_stats, indent=2) + "\n")
-
-    mark_partition_success(worker_dir, success_marker_name=WORKER_SUCCESS_FILE)
-    return {
-        "worker_id": worker_id,
-        "written": written,
-        "skipped": skipped,
-        "errors": errors,
-        "elapsed": elapsed,
-        "total_duration_sec": total_duration_sec,
-        "reused": False,
-        "reason_counts": dict(reason_counts),
-        "worker_stats": worker_stats,
-    }
+    return write_worker_result(
+        worker_id=worker_id, worker_dir=worker_dir,
+        written=written, skipped=skipped, errors=errors,
+        total_duration_sec=total_duration_sec,
+        runtime_counts=runtime_counts, t0=t0,
+        extra_stats={
+            "vad_enabled": use_vad_segmenting,
+            "reason_counts": dict(reason_counts),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -344,14 +311,18 @@ _ITEMS_KEY = "resolved_shards"
 
 def _validate_or_write_prepare_state(args) -> None:
     state_path = args.shar_dir / PREPARE_STATE_FILE
-    expected = {"text_tokenizer": normalize_optional_path(args.text_tokenizer)}
+    expected = {
+        "text_tokenizer": normalize_optional_path(args.text_tokenizer),
+        "text_field": args.text_field,
+        "custom_fields": sorted(args.custom_fields) if args.custom_fields else None,
+    }
     wrote = validate_or_write_prepare_state(
         state_path,
         expected=expected,
-        invariant_keys=("text_tokenizer",),
+        invariant_keys=("text_tokenizer", "text_field", "custom_fields"),
         guidance=(
-            "Use the same --text-tokenizer to resume this output directory, or "
-            f"remove {args.shar_dir} and restart from scratch."
+            "Use the same --text-tokenizer, --text-field, and --custom-fields "
+            f"to resume this output directory, or remove {args.shar_dir} and restart from scratch."
         ),
     )
     if wrote:
@@ -379,15 +350,21 @@ def main(argv=None):
     # Audio processing
     parser.add_argument("--target-sr", type=int, default=24000,
                         help="Target sample rate (default: 24000)")
+    parser.add_argument("--resampling-backend", type=str, default=None,
+                        choices=["default", "sox"],
+                        help="Lhotse resampling backend override (default: use "
+                             "$LHOTSE_RESAMPLING_BACKEND or 'default')")
     parser.add_argument("--min-sr", type=int, default=16000,
                         help="Drop audio below this sample rate (default: 16000)")
     parser.add_argument("--no-mono-downmix", action="store_true",
                         help="Select channel 0 instead of averaging stereo channels")
 
-    # Text
-    parser.add_argument("--text-ext", type=str, default=".txt",
-                        help="Extension for text files in WDS tars (set to '' to skip)")
-    parser.add_argument("--text-tokenizer", type=str, default=None,
+    # Text / metadata sidecars (.txt and .json auto-detected)
+    parser.add_argument("--text-field", type=str, default="text",
+                        help="JSON key for transcript (default: 'text')")
+    parser.add_argument("--custom-fields", type=str, nargs="*", default=None,
+                        help="JSON keys to store in cut.custom (e.g. --custom-fields language speaker)")
+    parser.add_argument("--text-tokenizer", type=str, required=True,
                         help="Path to tokenizer.json for pre-tokenizing supervision text")
 
     # Parallelism
@@ -448,26 +425,9 @@ def main(argv=None):
     args.shar_dir.mkdir(parents=True, exist_ok=True)
     _validate_or_write_prepare_state(args)
 
-    assignment = load_worker_assignment(args.shar_dir, items_key=_ITEMS_KEY)
-    if assignment is not None:
-        if assignment[_ITEMS_KEY] != resolved:
-            raise RuntimeError(
-                "Existing worker assignment shard list does not match current resolved shards. "
-                f"Delete {args.shar_dir / WORKER_ASSIGNMENT_FILE} and worker_* directories to start fresh."
-            )
-        if args.num_workers is not None and int(args.num_workers) != assignment["num_workers"]:
-            raise RuntimeError(
-                f"Existing worker assignment requires num_workers={assignment['num_workers']}, "
-                f"but got {args.num_workers}. Keep num_workers stable when resuming."
-            )
-        num_workers = assignment["num_workers"]
-        logger.info(f"Reusing worker assignment from {assignment['path']} (num_workers={num_workers})")
-    else:
-        num_workers = min(args.num_workers or len(resolved), len(resolved))
-        assignment_path = write_worker_assignment(
-            args.shar_dir, num_workers, resolved, items_key=_ITEMS_KEY,
-        )
-        logger.info(f"Wrote worker assignment to {assignment_path}")
+    num_workers = ensure_worker_assignment(
+        args.shar_dir, resolved, args.num_workers, _ITEMS_KEY, "WDS shards",
+    )
 
     logger.info(f"Found {len(resolved)} WDS shards, using {num_workers} workers")
     logger.info(f"Output: {args.shar_dir}")
@@ -506,7 +466,8 @@ def main(argv=None):
             args.shard_size,
             args.shar_format,
             args.min_sr,
-            args.text_ext,
+            args.text_field,
+            tuple(args.custom_fields) if args.custom_fields else None,
             not args.no_mono_downmix,
             str(args.vad_per_shard_dir) if args.vad_segmentation else None,
             args.vad_max_chunk_sec,
@@ -515,59 +476,13 @@ def main(argv=None):
             args.vad_max_merge_gap_sec,
             args.vad_max_duration_sec,
             text_tokenizer,
+            args.resampling_backend,
         )
         for wid, shards in enumerate(worker_shards)
         if shards
     ]
 
-    t0 = time.time()
-    ctx = mp.get_context("forkserver")
-    with ctx.Pool(processes=len(worker_args)) as pool:
-        results = pool.map(_convert_worker, worker_args)
-
-    elapsed = time.time() - t0
-    total_written = sum(r["written"] for r in results if r["written"] >= 0)
-    total_skipped = sum(r["skipped"] for r in results)
-    total_errors = sum(r["errors"] for r in results)
-    total_reused = sum(1 for r in results if r.get("reused"))
-    total_duration_sec = sum(r.get("total_duration_sec", 0.0) for r in results)
-    total_reason_counts = Counter()
-    total_runtime_counts = Counter()
-    for r in results:
-        total_reason_counts.update(r.get("reason_counts", {}))
-        total_runtime_counts.update((r.get("worker_stats") or {}).get("runtime_counts", {}))
-
-    logger.info(
-        f"All workers done in {elapsed:.1f}s — "
-        f"{total_written} samples, {total_skipped} skipped, {total_errors} errors, "
-        f"{total_duration_sec / 3600.0:.1f} hours written"
-    )
-    if total_reason_counts:
-        logger.info(f"VAD reasons (global): {dict(total_reason_counts)}")
-    if total_runtime_counts:
-        logger.info(f"Runtime counters (global): {dict(total_runtime_counts)}")
-
-    summary = {
-        "version": 1,
-        "num_workers": num_workers,
-        "workers_reused": total_reused,
-        "elapsed_sec": elapsed,
-        "total_written": total_written,
-        "total_skipped": total_skipped,
-        "total_errors": total_errors,
-        "total_duration_sec": total_duration_sec,
-        "runtime_counts": dict(total_runtime_counts),
-        "reason_counts": dict(total_reason_counts),
-        "results": results,
-    }
-    summary_path = args.shar_dir / PREPARE_SUMMARY_FILE
-    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
-    logger.info(f"Wrote prepare summary: {summary_path}")
-
-    # Build merged index for pipeline compatibility
-    build_shar_index(args.shar_dir, num_workers=num_workers)
-    mark_partition_success(args.shar_dir, success_marker_name=WORKER_SUCCESS_FILE)
-    logger.info("All done!")
+    run_pool_and_finalize(_convert_worker, worker_args, args.shar_dir, num_workers)
 
 
 if __name__ == "__main__":

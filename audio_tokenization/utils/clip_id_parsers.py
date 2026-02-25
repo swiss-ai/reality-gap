@@ -40,6 +40,35 @@ def parse_peoples_speech_clip_id(clip_id: str) -> Tuple[str, int]:
     return source_id, clip_num
 
 
+def parse_wenetspeech_clip_id(clip_id: str) -> Tuple[str, int]:
+    """Parse WenetSpeech clip IDs.
+
+    Format: ``{split}_{recording_id}_S{clip_num:05d}``
+    e.g. ``L_T0000005699_S00003`` -> ``("L_T0000005699", 3)``
+         ``DEV_T0000005699_S00000`` -> ``("DEV_T0000005699", 0)``
+    """
+    match = re.match(r"^(.+)_S(\d+)$", clip_id)
+    if match is None:
+        raise ValueError(f"Cannot parse WenetSpeech clip ID: {clip_id!r}")
+    source_id = match.group(1)
+    clip_num = int(match.group(2))
+    return source_id, clip_num
+
+
+def parse_spc_clip_id(clip_id: str) -> Tuple[str, int]:
+    """Parse SPC (Speech Parliament Corpus) segmented clip IDs.
+
+    Format: ``row{NNNNN}_seg{NNN}``
+    e.g. ``row00000_seg003`` -> ``("row00000", 3)``
+    """
+    match = re.match(r"^(.+)_seg(\d+)$", clip_id)
+    if match is None:
+        raise ValueError(f"Cannot parse SPC clip ID: {clip_id!r}")
+    source_id = match.group(1)
+    clip_num = int(match.group(2))
+    return source_id, clip_num
+
+
 def parse_generic_clip_id(clip_id: str) -> Tuple[str, int]:
     """Fallback parser: treats entire clip ID as source, clip_num=0."""
     return clip_id, 0
@@ -52,6 +81,8 @@ def parse_generic_clip_id(clip_id: str) -> Tuple[str, int]:
 _PARSERS = {
     "emilia": parse_emilia_clip_id,
     "peoples_speech": parse_peoples_speech_clip_id,
+    "wenetspeech": parse_wenetspeech_clip_id,
+    "spc": parse_spc_clip_id,
     "generic": parse_generic_clip_id,
 }
 
@@ -60,7 +91,7 @@ def get_clip_id_parser(name: str):
     """Look up a clip ID parser by name.
 
     Args:
-        name: One of ``"emilia"``, ``"peoples_speech"``, ``"generic"``.
+        name: One of ``"emilia"``, ``"peoples_speech"``, ``"wenetspeech"``, ``"generic"``.
 
     Returns:
         Callable[[str], Tuple[str, int]]
