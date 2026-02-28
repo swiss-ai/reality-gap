@@ -469,16 +469,32 @@ def run_pool_and_finalize(
     worker_args: list,
     shar_dir: Path,
     num_workers: int,
+    mp_start_method: str = "forkserver",
 ) -> list[dict]:
-    """Run *worker_fn* in a forkserver pool, aggregate stats, write summary & index.
+    """Run *worker_fn* in a multiprocessing pool, aggregate stats, write summary & index.
 
     Returns the list of per-worker result dicts.
     """
     import multiprocessing as _mp
     import time as _time
 
+    if not worker_args:
+        raise ValueError("worker_args must be non-empty")
+
+    available_methods = _mp.get_all_start_methods()
+    if mp_start_method not in available_methods:
+        raise ValueError(
+            f"Unsupported multiprocessing start method: {mp_start_method!r}. "
+            f"Available methods: {available_methods}"
+        )
+
+    logger.info(
+        "Starting worker pool with start_method=%s, processes=%d",
+        mp_start_method,
+        len(worker_args),
+    )
     t0 = _time.time()
-    ctx = _mp.get_context("forkserver")
+    ctx = _mp.get_context(mp_start_method)
     with ctx.Pool(processes=len(worker_args)) as pool:
         results = pool.map(worker_fn, worker_args)
 

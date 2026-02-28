@@ -23,6 +23,15 @@ Usage:
         --target_sample_rate 24000 \
         --num_workers 64
 
+    # Common Voice es train with explicit output dir name
+    python -m audio_tokenization.utils.prepare_data.prepare_lhotse_recipe_to_shar \
+        --recipe commonvoice \
+        --corpus_dir /capstor/store/cscs/swissai/infra01/audio-datasets/raw/commonvoice24 \
+        --split train \
+        --language es \
+        --shar_base_dir /capstor/store/cscs/swissai/infra01/audio-datasets/SHAR/stage_2/commonvoice \
+        --shar_output_dir /capstor/store/cscs/swissai/infra01/audio-datasets/SHAR/stage_2/commonvoice/es_train
+
     # LibriSpeech (flat)
     python -m audio_tokenization.utils.prepare_data.prepare_lhotse_recipe_to_shar \
         --recipe librispeech \
@@ -38,6 +47,64 @@ Usage:
         --language en \
         --recipe_kwargs '{"task": "asr"}' \
         --num_workers 32
+
+    # Thorsten-DE (single-split dataset, use --split all)
+    PYTHONPATH=/iopsstor/scratch/cscs/xyixuan/dev/lhotse:$PYTHONPATH \
+    python -m audio_tokenization.utils.prepare_data.prepare_lhotse_recipe_to_shar \
+        --recipe thorsten_de \
+        --corpus_dir /capstor/store/cscs/swissai/infra01/audio-datasets/raw/thorsten-de \
+        --split all \
+        --shar_base_dir /iopsstor/scratch/cscs/xyixuan/audio-datasets \
+        --text_tokenizer /capstor/store/cscs/swissai/infra01/MLLM/tokenizer/apertus_emu3.5_wavtok/tokenizer.json \
+        --num_workers 64
+
+    # AISHELL-1 (run once per split: train, dev, test)
+    PYTHONPATH=/iopsstor/scratch/cscs/xyixuan/dev/lhotse:$PYTHONPATH \
+    python -m audio_tokenization.utils.prepare_data.prepare_lhotse_recipe_to_shar \
+        --recipe aishell \
+        --corpus_dir /capstor/store/cscs/swissai/infra01/audio-datasets/raw/aishell/aishell1 \
+        --split train \
+        --shar_base_dir /capstor/store/cscs/swissai/infra01/audio-datasets/SHAR/stage_2 \
+        --target_sample_rate 24000 \
+        --text_tokenizer /capstor/store/cscs/swissai/infra01/MLLM/tokenizer/apertus_emu3.5_wavtok/tokenizer.json \
+        --shar_shard_size 5000 \
+        --num_workers 64
+
+    # AISHELL-3 (run once per split: train, test)
+    PYTHONPATH=/iopsstor/scratch/cscs/xyixuan/dev/lhotse:$PYTHONPATH \
+    python -m audio_tokenization.utils.prepare_data.prepare_lhotse_recipe_to_shar \
+        --recipe aishell3 \
+        --corpus_dir /capstor/store/cscs/swissai/infra01/audio-datasets/raw/aishell/aishell3 \
+        --split train \
+        --shar_base_dir /capstor/store/cscs/swissai/infra01/audio-datasets/SHAR/stage_2 \
+        --target_sample_rate 24000 \
+        --text_tokenizer /capstor/store/cscs/swissai/infra01/MLLM/tokenizer/apertus_emu3.5_wavtok/tokenizer.json \
+        --shar_shard_size 5000 \
+        --num_workers 64
+
+    # AISHELL-4 (run once per split: train_L, train_M, train_S, test; requires: pip install textgrid)
+    PYTHONPATH=/iopsstor/scratch/cscs/xyixuan/dev/lhotse:$PYTHONPATH \
+    python -m audio_tokenization.utils.prepare_data.prepare_lhotse_recipe_to_shar \
+        --recipe aishell4 \
+        --corpus_dir /capstor/store/cscs/swissai/infra01/audio-datasets/raw/aishell/aishell4 \
+        --split train_L \
+        --shar_base_dir /capstor/store/cscs/swissai/infra01/audio-datasets/SHAR/stage_2 \
+        --target_sample_rate 24000 \
+        --text_tokenizer /capstor/store/cscs/swissai/infra01/MLLM/tokenizer/apertus_emu3.5_wavtok/tokenizer.json \
+        --shar_shard_size 5000 \
+        --num_workers 64
+
+    # HUI-Audio-Corpus-German (clean subset)
+    PYTHONPATH=/iopsstor/scratch/cscs/xyixuan/dev/lhotse:$PYTHONPATH \
+    python -m audio_tokenization.utils.prepare_data.prepare_lhotse_recipe_to_shar \
+        --recipe hui_audio_corpus_german \
+        --corpus_dir /capstor/store/cscs/swissai/infra01/audio-datasets/raw/hui-audio-corpus-german \
+        --split clean \
+        --shar_base_dir /capstor/store/cscs/swissai/infra01/audio-datasets/SHAR/stage_2 \
+        --target_sample_rate 24000 \
+        --text_tokenizer /capstor/store/cscs/swissai/infra01/MLLM/tokenizer/apertus_emu3.5_wavtok/tokenizer.json \
+        --shar_shard_size 5000 \
+        --num_workers 64
 """
 
 import argparse
@@ -226,6 +293,15 @@ def main():
     # Shar output
     parser.add_argument("--shar_base_dir", type=Path,
                         default=Path("/iopsstor/scratch/cscs/xyixuan/audio-datasets"))
+    parser.add_argument(
+        "--shar_output_dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional explicit output directory. If set, this is used directly "
+            "and --shar_base_dir + derived naming is skipped."
+        ),
+    )
     parser.add_argument("--shar_shard_size", type=int, default=1000)
     parser.add_argument("--shar_format", default="flac")
     parser.add_argument("--shar_index_filename", default="shar_index.json")
@@ -245,12 +321,15 @@ def main():
     args = parser.parse_args()
     extra_kwargs = json.loads(args.recipe_kwargs)
 
-    # Derive output directory: commonvoice_zh-CN_other_shar
-    parts = [args.recipe]
-    if args.language:
-        parts.append(args.language)
-    parts.append(args.split)
-    args.shar_dir = args.shar_base_dir / f"{'_'.join(parts)}_shar"
+    if args.shar_output_dir is not None:
+        args.shar_dir = args.shar_output_dir
+    else:
+        # Derive output directory: commonvoice_zh-CN_other
+        parts = [args.recipe]
+        if args.language:
+            parts.append(args.language)
+        parts.append(args.split)
+        args.shar_dir = args.shar_base_dir / f"{'_'.join(parts)}"
     args.shar_dir.mkdir(parents=True, exist_ok=True)
     _validate_or_write_prepare_state(args)
 

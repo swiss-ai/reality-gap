@@ -25,6 +25,7 @@ Usage (SPC-R):
 import argparse
 from collections import Counter
 import logging
+import subprocess
 import time
 from pathlib import Path
 
@@ -56,6 +57,89 @@ logger = logging.getLogger(__name__)
 _ITEMS_KEY = "resolved_parquets"
 
 
+def _is_ogg_bytes(audio_bytes: bytes) -> bool:
+    """Detect Ogg container from leading bytes."""
+    return audio_bytes.startswith(b"OggS")
+
+
+def _decode_audio_bytes_with_ffmpeg_to_wav(
+    audio_bytes: bytes,
+    *,
+    ffmpeg_bin: str,
+    timeout_s: float,
+) -> bytes:
+    """Decode encoded audio bytes to WAV bytes via ffmpeg stdin/stdout piping."""
+    cmd = [
+        ffmpeg_bin,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-i",
+        "pipe:0",
+        "-vn",
+        "-sn",
+        "-dn",
+        "-f",
+        "wav",
+        "-acodec",
+        "pcm_s16le",
+        "pipe:1",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=audio_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout_s,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            f"ffmpeg binary not found: {ffmpeg_bin}. "
+            "Set --ffmpeg-bin or add ffmpeg to PATH."
+        ) from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"ffmpeg decode timed out after {timeout_s:.1f}s") from e
+
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            f"ffmpeg decode failed (rc={proc.returncode}): {stderr[:400]}"
+        )
+    if not proc.stdout:
+        raise RuntimeError("ffmpeg decode produced empty output")
+    return proc.stdout
+
+
+def _assert_ffmpeg_available(ffmpeg_bin: str) -> None:
+    """Fail fast when an ffmpeg binary is required by decode mode."""
+    try:
+        proc = subprocess.run(
+            [ffmpeg_bin, "-version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            f"ffmpeg binary not found: {ffmpeg_bin}. "
+            "Set --ffmpeg-bin or add ffmpeg to PATH."
+        ) from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(
+            f"Timed out while probing ffmpeg binary: {ffmpeg_bin}"
+        ) from e
+
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            f"ffmpeg probe failed for '{ffmpeg_bin}' (rc={proc.returncode}): {stderr[:300]}"
+        )
+
+
 def _convert_worker(args_tuple):
     """Convert rows from assigned parquet files to Shar.
 
@@ -75,6 +159,7 @@ def _convert_worker(args_tuple):
         duration_column,
         text_tokenizer,
         resampling_backend,
+        ffmpeg_bin,
     ) = args_tuple
 
     reused = check_worker_reuse(worker_id, shar_dir)
@@ -104,7 +189,10 @@ def _convert_worker(args_tuple):
             df = pl.read_parquet(pq_path)
 
             for row in df.iter_rows(named=True):
-                row_id = row[id_column]
+                if isinstance(id_column, list):
+                    row_id = "_".join(str(row[c]) for c in id_column)
+                else:
+                    row_id = row[id_column]
                 try:
                     # Filter bad rows
                     duration = row.get(duration_column)
@@ -120,9 +208,27 @@ def _convert_worker(args_tuple):
                         runtime_counts["skipped_empty_audio"] += 1
                         continue
 
-                    recording = Recording.from_bytes(
-                        data=audio_bytes, recording_id=row_id,
-                    )
+                    # LegCo parquet stores many samples as Ogg/Opus bytes. In this
+                    # environment, Recording.from_bytes() fails on those bytes via
+                    # libsndfile, so decode them through ffmpeg pipe first.
+                    if _is_ogg_bytes(audio_bytes):
+                        runtime_counts["sniffed_ogg_bytes"] += 1
+                        wav_bytes = _decode_audio_bytes_with_ffmpeg_to_wav(
+                            audio_bytes,
+                            ffmpeg_bin=ffmpeg_bin,
+                            timeout_s=30.0,
+                        )
+                        recording = Recording.from_bytes(
+                            data=wav_bytes,
+                            recording_id=row_id,
+                        )
+                        runtime_counts["decoded_via_ffmpeg_pipe"] += 1
+                    else:
+                        recording = Recording.from_bytes(
+                            data=audio_bytes,
+                            recording_id=row_id,
+                        )
+
                     cut = recording.to_cut()
 
                     # Attach supervision with text
@@ -224,10 +330,17 @@ def main(argv=None):
                         choices=["default", "sox"],
                         help="Lhotse resampling backend override (default: use "
                              "$LHOTSE_RESAMPLING_BACKEND or 'default')")
+    parser.add_argument(
+        "--ffmpeg-bin",
+        type=str,
+        default="ffmpeg",
+        help="ffmpeg binary used for Ogg/Opus bytes decoding (default: ffmpeg)",
+    )
 
     # Column names
-    parser.add_argument("--id-column", type=str, default="id",
-                        help="Column name for row ID (default: 'id')")
+    parser.add_argument("--id-column", type=str, nargs="+", default=["id"],
+                        help="Column name(s) for row ID. Multiple columns are joined with '_'. "
+                             "(default: 'id')")
     parser.add_argument("--audio-column", type=str, default="audio",
                         help="Column name for audio struct (default: 'audio')")
     parser.add_argument("--text-column", type=str, default="text",
@@ -242,6 +355,16 @@ def main(argv=None):
     # Parallelism
     parser.add_argument("--num-workers", type=int, default=20,
                         help="Number of parallel workers (default: 20)")
+    parser.add_argument(
+        "--mp-start-method",
+        type=str,
+        default="forkserver",
+        choices=["fork", "forkserver", "spawn"],
+        help=(
+            "Multiprocessing start method (default: forkserver). "
+            "Use 'fork' for faster high-worker startup on Linux."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -259,8 +382,11 @@ def main(argv=None):
         args.shar_dir, resolved, args.num_workers, _ITEMS_KEY, "parquet files",
     )
 
+    _assert_ffmpeg_available(args.ffmpeg_bin)
+
     logger.info(f"Found {len(resolved)} parquet files, using {num_workers} workers")
     logger.info(f"Output: {args.shar_dir}")
+    logger.info("Audio bytes decode: Ogg -> ffmpeg pipe; ffmpeg_bin=%s", args.ffmpeg_bin)
 
     # Distribute parquet files across workers (round-robin)
     worker_parquets = distribute_round_robin(resolved, num_workers)
@@ -282,12 +408,19 @@ def main(argv=None):
             args.duration_column,
             text_tokenizer,
             args.resampling_backend,
+            args.ffmpeg_bin,
         )
         for wid, parquets in enumerate(worker_parquets)
         if parquets
     ]
 
-    run_pool_and_finalize(_convert_worker, worker_args, args.shar_dir, num_workers)
+    run_pool_and_finalize(
+        _convert_worker,
+        worker_args,
+        args.shar_dir,
+        num_workers,
+        mp_start_method=args.mp_start_method,
+    )
 
 
 if __name__ == "__main__":

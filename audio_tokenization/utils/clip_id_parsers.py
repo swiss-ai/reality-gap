@@ -69,6 +69,20 @@ def parse_spc_clip_id(clip_id: str) -> Tuple[str, int]:
     return source_id, clip_num
 
 
+def parse_aishell_clip_id(clip_id: str) -> Tuple[str, int]:
+    """Parse AISHELL-1 clip IDs.
+
+    Format: ``{prefix}{speaker_id}W{utterance_num}``
+    e.g. ``BAC009S0002W0122`` -> ``("BAC009S0002", 122)``
+    """
+    match = re.match(r"^(.+)W(\d+)$", clip_id)
+    if match is None:
+        raise ValueError(f"Cannot parse AISHELL clip ID: {clip_id!r}")
+    source_id = match.group(1)
+    clip_num = int(match.group(2))
+    return source_id, clip_num
+
+
 def parse_generic_clip_id(clip_id: str) -> Tuple[str, int]:
     """Fallback parser: treats entire clip ID as source, clip_num=0."""
     return clip_id, 0
@@ -83,6 +97,7 @@ _PARSERS = {
     "peoples_speech": parse_peoples_speech_clip_id,
     "wenetspeech": parse_wenetspeech_clip_id,
     "spc": parse_spc_clip_id,
+    "aishell": parse_aishell_clip_id,
     "generic": parse_generic_clip_id,
 }
 
@@ -91,7 +106,7 @@ def get_clip_id_parser(name: str):
     """Look up a clip ID parser by name.
 
     Args:
-        name: One of ``"emilia"``, ``"peoples_speech"``, ``"wenetspeech"``, ``"generic"``.
+        name: One of ``"emilia"``, ``"peoples_speech"``, ``"wenetspeech"``, ``"spc"``, ``"aishell"``, ``"generic"``.
 
     Returns:
         Callable[[str], Tuple[str, int]]
