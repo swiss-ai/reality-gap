@@ -1,239 +1,268 @@
 #!/usr/bin/env python3
-"""Convert a HuggingFace audio dataset to Lhotse Shar format.
+"""Convert HF-style arrow files (with audio bytes) to Lhotse Shar format.
 
-Spawns N parallel workers via multiprocessing. Each worker:
-  1. Loads the full HF dataset (arrow-backed, no audio decoding yet)
-  2. Shards it by worker index (contiguous=False for even distribution)
-  3. Wraps it as a Lhotse CutSet (byte-backed, audio decoded on demand)
-  4. Writes its partition to ``part-{rank:05d}/`` via ``CutSet.to_shar()``
+Designed for datasets stored as HuggingFace arrow shards (e.g. People's Speech
+with 786 arrow files). Each row has an audio struct with raw bytes and optional
+text transcription.
 
-After all workers finish, builds a merged ``shar_index.json`` so that
-downstream Lhotse code can load all partitions as a single CutSet.
+Workers are assigned *whole arrow files* (not rows) via round-robin. With 786
+files / 128 workers, each worker handles ~6 files, giving good balance.
 
-Note: ``to_shar(num_jobs=1)`` is required because HF byte-backed cuts
-contain raw ``bytes`` that are not JSON-serializable, and Lhotse's
-``split_lazy()`` (used when num_jobs > 1) triggers JSON serialization.
-
-Usage:
+Usage (People's Speech):
     python -m audio_tokenization.utils.prepare_data.prepare_hf_to_shar \
-        --num_workers 20
-
-    python -m audio_tokenization.utils.prepare_data.prepare_hf_to_shar \
-        --dataset_name agkphysics/AudioSet \
-        --dataset_split bal_train \
-        --cache_dir /capstor/store/cscs/swissai/infra01/audio-datasets/audioset_cache \
-        --num_workers 240
+        --arrow-dir /path/to/peoples_speech/arrow_files \
+        --shar-dir /path/to/output_shar \
+        --audio-column audio \
+        --text-column text \
+        --id-column id \
+        --target-sr 24000 \
+        --shard-size 2000 \
+        --shar-format flac \
+        --text-tokenizer /path/to/tokenizer.json \
+        --num-workers 128
 """
 
 import argparse
+from collections import Counter
 import logging
-from multiprocessing import Process
+import time
 from pathlib import Path
 
 from audio_tokenization.utils.prepare_data.common import (
-    SUCCESS_MARKER_FILE,
-    build_shar_index_from_parts,
-    mark_partition_success,
-    setup_partition_dir,
-    validate_or_write_prepare_state,
+    check_worker_reuse,
+    distribute_round_robin,
+    ensure_worker_assignment,
+    init_worker_process,
+    load_text_tokenizer,
+    make_text_tokenize_fn,
+    run_pool_and_finalize,
+    to_mono,
+    write_worker_result,
 )
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s %(levelname)s [%(processName)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-PART_SUCCESS_MARKER = SUCCESS_MARKER_FILE
-PREPARE_STATE_FILE = "_PREPARE_STATE.json"
-
 
 # ---------------------------------------------------------------------------
 # Worker
 # ---------------------------------------------------------------------------
 
-def _to_mono(cut):
-    if cut.num_channels <= 1:
-        return cut
-    try:
-        result = cut.to_mono(mono_downmix=True)
-        result.load_audio()
-        return result
-    except Exception:
-        result = cut.to_mono(mono_downmix=False)
-        if isinstance(result, list):
-            return result[0]
-        return result
+_ITEMS_KEY = "resolved_arrows"
 
 
-def convert_worker(rank: int, world_size: int, args):
-    """Convert one shard of the HF dataset to Shar format.
+def _convert_worker(args_tuple):
+    """Convert rows from assigned arrow files to Shar.
 
-    Each worker writes to its own ``part-{rank:05d}/`` directory.
-    Reuses output only when ``part-*/_SUCCESS`` exists.
+    Each worker writes to its own ``worker_XX/`` directory. Resume is complete
+    only when ``worker_XX/_SUCCESS`` exists.
     """
-    import datasets
-    from lhotse import CutSet
+    (
+        worker_id,
+        arrow_paths,
+        shar_dir,
+        target_sr,
+        shard_size,
+        shar_format,
+        id_column,
+        audio_column,
+        text_column,
+        text_tokenizer,
+        resampling_backend,
+    ) = args_tuple
 
-    output_dir = args.shar_dir / f"part-{rank:05d}"
-    if setup_partition_dir(
-        output_dir,
-        success_marker_name=PART_SUCCESS_MARKER,
-        reuse_log=f"[worker {rank}] Reusing completed Shar in {output_dir}",
-        reset_log=f"[worker {rank}] Removing partial Shar output in {output_dir}",
-        logger=logger,
-    ):
-        return
+    reused = check_worker_reuse(worker_id, shar_dir)
+    if reused is not None:
+        return reused
+    init_worker_process(resampling_backend)
 
-    # Load HF dataset (arrow-backed, no audio decoding happens here)
-    load_kwargs = {"split": args.dataset_split}
-    if args.config_name:
-        load_kwargs["name"] = args.config_name
-    if args.cache_dir:
-        load_kwargs["cache_dir"] = str(args.cache_dir)
+    import pyarrow.ipc as ipc
+    from lhotse import Recording, SupervisionSegment
+    from lhotse.shar import SharWriter
 
-    logger.info(f"[worker {rank}] Loading HF dataset...")
-    ds = datasets.load_dataset(args.dataset_name, **load_kwargs)
+    worker_dir = Path(shar_dir) / f"worker_{worker_id:02d}"
+    t0 = time.time()
+    written = skipped = errors = 0
+    total_duration_sec = 0.0
+    runtime_counts = Counter()
+    _tokenize_text = make_text_tokenize_fn(text_tokenizer) if text_tokenizer is not None else None
 
-    # Shard across workers (interleaved for balanced durations)
-    ds = ds.shard(num_shards=world_size, index=rank, contiguous=False)
-    logger.info(f"[worker {rank}] Shard has {len(ds)} examples")
+    with SharWriter(
+        output_dir=str(worker_dir),
+        fields={"recording": shar_format},
+        shard_size=shard_size,
+    ) as writer:
+        for arrow_path in arrow_paths:
+            arrow_name = Path(arrow_path).name
+            logger.info(f"Worker {worker_id}: reading {arrow_name}")
+            reader = ipc.open_stream(arrow_path)
+            table = reader.read_all()
 
-    if len(ds) == 0:
-        logger.warning(f"[worker {rank}] Empty shard, skipping")
-        mark_partition_success(output_dir, success_marker_name=PART_SUCCESS_MARKER)
-        return
+            id_col = table.column(id_column)
+            audio_col = table.column(audio_column)
+            text_col = table.column(text_column) if text_column else None
 
-    # Wrap as Lhotse CutSet (byte-backed: audio decoded lazily during to_shar)
-    hf_kwargs = {"audio_key": args.audio_field}
-    if args.text_field:
-        hf_kwargs["text_key"] = args.text_field
-    cuts = CutSet.from_huggingface_dataset(ds, **hf_kwargs)
-    cuts = cuts.map(_to_mono)
+            for i in range(table.num_rows):
+                row_id = id_col[i].as_py()
+                try:
+                    audio_struct = audio_col[i].as_py()
+                    audio_bytes = audio_struct.get("bytes") if isinstance(audio_struct, dict) else None
+                    if not audio_bytes:
+                        skipped += 1
+                        runtime_counts["skipped_empty_audio"] += 1
+                        continue
 
-    if args.target_sample_rate:
-        cuts = cuts.resample(args.target_sample_rate)
+                    recording = Recording.from_bytes(
+                        data=audio_bytes, recording_id=str(row_id),
+                    )
+                    cut = recording.to_cut()
 
-    cuts.to_shar(
-        output_dir=str(output_dir),
-        fields={"recording": args.shar_format},
-        shard_size=args.shar_shard_size,
-        num_jobs=1,
-        verbose=(rank == 0),
+                    # Attach supervision with text
+                    text = text_col[i].as_py() if text_col else None
+                    if text:
+                        cut.supervisions = [SupervisionSegment(
+                            id=cut.id,
+                            recording_id=cut.recording_id,
+                            start=0.0,
+                            duration=cut.duration,
+                            text=text,
+                        )]
+
+                    # Resample if needed
+                    if target_sr and cut.sampling_rate != target_sr:
+                        cut = cut.resample(target_sr)
+                        runtime_counts["resampled"] += 1
+
+                    # Mono
+                    cut = to_mono(cut, mono_downmix=True, stats=runtime_counts)
+
+                    # Pre-tokenize text
+                    if _tokenize_text is not None:
+                        cut = _tokenize_text(cut)
+
+                    writer.write(cut)
+                    written += 1
+                    total_duration_sec += cut.duration
+
+                    if written % 1000 == 0:
+                        elapsed = time.time() - t0
+                        logger.info(
+                            f"Worker {worker_id}: {written} written, {skipped} skipped, "
+                            f"{errors} errors ({written / elapsed:.1f} samples/s)"
+                        )
+
+                except Exception as e:
+                    errors += 1
+                    runtime_counts["processing_errors"] += 1
+                    if errors <= 5:
+                        logger.warning(f"Worker {worker_id} error on {row_id}: {e}")
+
+    return write_worker_result(
+        worker_id=worker_id, worker_dir=worker_dir,
+        written=written, skipped=skipped, errors=errors,
+        total_duration_sec=total_duration_sec,
+        runtime_counts=runtime_counts, t0=t0,
     )
-    mark_partition_success(output_dir, success_marker_name=PART_SUCCESS_MARKER)
-    logger.info(f"[worker {rank}] Done → {output_dir}")
-
-
-# ---------------------------------------------------------------------------
-# Index builder
-# ---------------------------------------------------------------------------
-
-def build_shar_index(shar_root: Path, index_filename: str, world_size: int):
-    """Build a merged ``shar_index.json`` from all ``part-*`` directories.
-
-    The index maps field names (``cuts``, ``recording``, ...) to sorted lists
-    of absolute file paths, so that ``CutSet.from_shar(fields=...)`` can load
-    all partitions as a single logical CutSet.
-    """
-    part_dirs = [shar_root / f"part-{rank:05d}" for rank in range(world_size)]
-    index_path, cuts_count = build_shar_index_from_parts(
-        shar_root=shar_root,
-        part_dirs=part_dirs,
-        index_filename=index_filename,
-        success_marker_name=PART_SUCCESS_MARKER,
-    )
-    logger.info(f"Wrote merged index: {index_path} ({cuts_count} cut shards)")
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
-def _validate_or_write_prepare_state(args) -> None:
-    """Persist/validate resume-critical run config.
 
-    HF sharding uses ``ds.shard(num_shards=num_workers, ...)``. Resuming with a
-    different ``--num_workers`` changes worker-to-sample assignment and can
-    produce overlaps/gaps if old partitions are reused.
-    """
-    state_path = args.shar_dir / PREPARE_STATE_FILE
-    expected = {
-        "dataset_name": args.dataset_name,
-        "config_name": args.config_name,
-        "dataset_split": args.dataset_split,
-        "num_workers": int(args.num_workers),
-    }
-    wrote = validate_or_write_prepare_state(
-        state_path,
-        expected=expected,
-        invariant_keys=("dataset_name", "config_name", "dataset_split", "num_workers"),
-        guidance=(
-            "Use the same dataset + --num_workers to resume this output directory, "
-            f"or remove {args.shar_dir} and restart from scratch."
-        ),
-    )
-    if wrote:
-        logger.info(f"Wrote prepare state: {state_path}")
-
-
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="CPU-only parallel HF → Shar conversion",
+        description="Convert HF arrow shards → Lhotse Shar (parallel)",
     )
 
-    # Dataset source
-    parser.add_argument("--dataset_name", default="agkphysics/AudioSet")
-    parser.add_argument("--config_name", default="full")
-    parser.add_argument("--dataset_split", default="bal_train")
-    parser.add_argument("--audio_field", default="audio")
-    parser.add_argument("--text_field", default=None,
-                        help="HF column for transcription text (e.g. 'sentence', 'text')")
-    parser.add_argument("--cache_dir", type=Path,
-                        default=Path("/capstor/store/cscs/swissai/infra01/audio-datasets/audioset_cache"))
+    # Input (use --arrow-files for explicit list, or --arrow-dir + --arrow-glob)
+    parser.add_argument("--arrow-dir", type=Path, default=None,
+                        help="Directory containing arrow files")
+    parser.add_argument("--arrow-glob", type=str, default="*.arrow",
+                        help="Glob pattern for arrow files (default: '*.arrow')")
+    parser.add_argument("--arrow-files", nargs="+", default=None,
+                        help="Explicit list of arrow file paths (overrides --arrow-dir)")
 
     # Shar output
-    parser.add_argument("--shar_base_dir", type=Path,
-                        default=Path("/iopsstor/scratch/cscs/xyixuan/audio-datasets"))
-    parser.add_argument("--shar_shard_size", type=int, default=1000)
-    parser.add_argument("--shar_format", default="flac")
-    parser.add_argument("--shar_index_filename", default="shar_index.json")
+    parser.add_argument("--shar-dir", type=Path, required=True,
+                        help="Output directory for Shar format")
+    parser.add_argument("--shard-size", type=int, default=2000,
+                        help="Samples per Shar shard (default: 2000)")
+    parser.add_argument("--shar-format", type=str, default="flac",
+                        choices=["flac", "wav", "mp3", "opus"],
+                        help="Audio format in Shar (default: flac)")
 
     # Audio processing
-    parser.add_argument("--target_sample_rate", type=int, default=None)
+    parser.add_argument("--target-sr", type=int, default=None,
+                        help="Target sample rate (default: None, keep original)")
+    parser.add_argument("--resampling-backend", type=str, default=None,
+                        choices=["default", "sox"],
+                        help="Lhotse resampling backend override (default: use "
+                             "$LHOTSE_RESAMPLING_BACKEND or 'default')")
+
+    # Column names
+    parser.add_argument("--id-column", type=str, default="id",
+                        help="Column name for row ID (default: 'id')")
+    parser.add_argument("--audio-column", type=str, default="audio",
+                        help="Column name for audio struct (default: 'audio')")
+    parser.add_argument("--text-column", type=str, default=None,
+                        help="Column name for transcription text (default: None)")
+
+    # Text tokenizer
+    parser.add_argument("--text-tokenizer", type=str, default=None,
+                        help="Path to tokenizer.json for pre-tokenizing supervision text")
 
     # Parallelism
-    parser.add_argument("--num_workers", type=int, default=20)
+    parser.add_argument("--num-workers", type=int, default=20,
+                        help="Number of parallel workers (default: 20)")
+    args = parser.parse_args(argv)
 
-    args = parser.parse_args()
+    # Resolve arrow files
+    if args.arrow_files:
+        resolved = sorted(args.arrow_files)
+    elif args.arrow_dir:
+        resolved = sorted(str(p) for p in args.arrow_dir.glob(args.arrow_glob))
+    else:
+        parser.error("Either --arrow-files or --arrow-dir is required")
+    if not resolved:
+        raise FileNotFoundError("No arrow files resolved")
 
-    # Derive output directory: agkphysics/AudioSet + unbal_train → audioset_unbal_train_shar
-    name = args.dataset_name.rsplit("/", 1)[-1].lower()
-    args.shar_dir = args.shar_base_dir / f"{name}_{args.dataset_split}_shar"
     args.shar_dir.mkdir(parents=True, exist_ok=True)
-    _validate_or_write_prepare_state(args)
 
-    logger.info(f"Converting {args.dataset_name} ({args.dataset_split}) → {args.shar_dir}")
-    logger.info(f"Using {args.num_workers} parallel workers")
+    num_workers = ensure_worker_assignment(
+        args.shar_dir, resolved, args.num_workers, _ITEMS_KEY, "arrow files",
+    )
 
-    # Spawn workers
-    procs = [
-        Process(target=convert_worker, args=(i, args.num_workers, args))
-        for i in range(args.num_workers)
+    logger.info(f"Found {len(resolved)} arrow files, using {num_workers} workers")
+    logger.info(f"Output: {args.shar_dir}")
+
+    # Distribute arrow files across workers (round-robin)
+    worker_arrows = distribute_round_robin(resolved, num_workers)
+
+    # Load text tokenizer before forking (shared via COW across workers)
+    text_tokenizer = load_text_tokenizer(args.text_tokenizer)
+
+    worker_args = [
+        (
+            wid,
+            arrows,
+            str(args.shar_dir),
+            args.target_sr,
+            args.shard_size,
+            args.shar_format,
+            args.id_column,
+            args.audio_column,
+            args.text_column,
+            text_tokenizer,
+            args.resampling_backend,
+        )
+        for wid, arrows in enumerate(worker_arrows)
+        if arrows
     ]
-    for p in procs:
-        p.start()
-    for p in procs:
-        p.join()
 
-    failed = [i for i, p in enumerate(procs) if p.exitcode != 0]
-    if failed:
-        raise RuntimeError(f"Workers {failed} failed")
-
-    # Merge all part-* into a single index
-    build_shar_index(args.shar_dir, args.shar_index_filename, args.num_workers)
-    mark_partition_success(args.shar_dir, success_marker_name=PART_SUCCESS_MARKER)
-    logger.info("All done!")
+    run_pool_and_finalize(_convert_worker, worker_args, args.shar_dir, num_workers)
 
 
 if __name__ == "__main__":

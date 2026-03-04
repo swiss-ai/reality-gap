@@ -27,15 +27,21 @@ RESERVED_TOKEN_RENAMES = {
     5: "<|img_end_of_frame|>",
     6: "<|img_generation_start|>",
     7: "<|image|>",
-    # Audio structure tokens (008-009)
+    # Audio structure tokens (008-012)
     8: "<|audio_start|>",
     9: "<|audio_end|>",
+    10: "<|speech_transcribe|>",
+    11: "<|speech_switch|>",
+    12: "<|audio_annotate|>",
 }
 
 # Audio-specific renames (subset of RESERVED_TOKEN_RENAMES)
 AUDIO_STRUCTURE_TOKEN_RENAMES = [
     ("<|RESERVED_OMNI_008|>", "<|audio_start|>"),
     ("<|RESERVED_OMNI_009|>", "<|audio_end|>"),
+    ("<|RESERVED_OMNI_010|>", "<|speech_transcribe|>"),
+    ("<|RESERVED_OMNI_011|>", "<|speech_switch|>"),
+    ("<|RESERVED_OMNI_012|>", "<|audio_annotate|>"),
 ]
 
 # Default number of reserved tokens for all modalities
