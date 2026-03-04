@@ -55,18 +55,18 @@ graph TD
     BIN_AO & BIN_ATD & BIN_P --> TRAIN["Megatron-LM Training"]
 
 
-    click MERGE href "./audio_tokenization/utils/prepare_data/chunking.py"
-    click LANGFILT href "./audio_tokenization/utils/prepare_data/filter_langid_vad.py"
-    click TAR href "./audio_tokenization/utils/prepare_data/prepare_wds_to_shar.py"
-    click ARROW href "./audio_tokenization/utils/prepare_data/prepare_hf_to_shar.py"
-    click RECIPE href "./audio_tokenization/utils/prepare_data/prepare_lhotse_recipe_to_shar.py"
-    click AUDIODIR href "./audio_tokenization/utils/prepare_data/prepare_audio_dir_to_shar.py"
-    click PARQUET_IN href "./audio_tokenization/utils/prepare_data/prepare_parquet_to_shar.py"
-    click ENTRY href "./audio_tokenization/tokenize.py"
-    click AO href "./audio_tokenization/pipelines/lhotse/audio_only.py"
-    click ATD href "./audio_tokenization/pipelines/lhotse/audio_text.py"
-    click ATI href "./audio_tokenization/pipelines/lhotse/audio_text.py"
-    click BUILD href "./audio_tokenization/utils/build_interleaved_indexed.py"
+    click MERGE href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/chunking.py"
+    click LANGFILT href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/filter_langid_vad.py"
+    click TAR href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_wds_to_shar.py"
+    click ARROW href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_hf_to_shar.py"
+    click RECIPE href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_lhotse_recipe_to_shar.py"
+    click AUDIODIR href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_audio_dir_to_shar.py"
+    click PARQUET_IN href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_parquet_to_shar.py"
+    click ENTRY href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/tokenize.py"
+    click AO href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/pipelines/lhotse/audio_only.py"
+    click ATD href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/pipelines/lhotse/audio_text.py"
+    click ATI href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/pipelines/lhotse/audio_text.py"
+    click BUILD href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/build_interleaved_indexed.py"
 
     style Download fill:#e3f2fd,stroke:#1565C0
     style Preprocess fill:#fce4ec,stroke:#C62828
@@ -131,11 +131,11 @@ flowchart LR
         I["text_tokens — pre-tokenized text"]
     end
 
-    click A href "./audio_tokenization/utils/prepare_data/prepare_wds_to_shar.py"
-    click B href "./audio_tokenization/utils/prepare_data/prepare_hf_to_shar.py"
-    click C href "./audio_tokenization/utils/prepare_data/prepare_lhotse_recipe_to_shar.py"
-    click D href "./audio_tokenization/utils/prepare_data/prepare_audio_dir_to_shar.py"
-    click E href "./audio_tokenization/utils/prepare_data/prepare_parquet_to_shar.py"
+    click A href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_wds_to_shar.py"
+    click B href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_hf_to_shar.py"
+    click C href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_lhotse_recipe_to_shar.py"
+    click D href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_audio_dir_to_shar.py"
+    click E href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/prepare_data/prepare_parquet_to_shar.py"
 
     style src fill:#e3f2fd,stroke:#1565C0
     style shar fill:#fff9c4,stroke:#F9A825
@@ -163,8 +163,8 @@ flowchart LR
     WAV --> WRAP["Wrap Tokens"]
     WRAP --> BIN[".bin/.idx"]
 
-    click LOAD href "./audio_tokenization/pipelines/lhotse/data.py"
-    click WAV href "./audio_tokenization/vokenizers/wavtokenizer/audio_only.py"
+    click LOAD href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/pipelines/lhotse/data.py"
+    click WAV href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/vokenizers/wavtokenizer/audio_only.py"
 
     style SHAR fill:#fff9c4,stroke:#F9A825
     style WAV fill:#f3e5f5,stroke:#7B1FA2
@@ -188,8 +188,8 @@ flowchart LR
     WAV --> CAT["Concat<br>audio + task + text"]
     CAT --> BIN[".bin/.idx"]
 
-    click LOAD href "./audio_tokenization/pipelines/lhotse/data.py"
-    click WAV href "./audio_tokenization/vokenizers/wavtokenizer/audio_text.py"
+    click LOAD href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/pipelines/lhotse/data.py"
+    click WAV href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/vokenizers/wavtokenizer/audio_text.py"
 
     style SHAR fill:#fff9c4,stroke:#F9A825
     style WAV fill:#f3e5f5,stroke:#7B1FA2
@@ -273,8 +273,8 @@ flowchart LR
     DL --> WAV["WavTokenizer<br>(GPU)"]
     WAV --> PQ[("Parquet Cache")]
 
-    click LOAD href "./audio_tokenization/pipelines/lhotse/data.py"
-    click WAV href "./audio_tokenization/vokenizers/wavtokenizer/audio_text.py"
+    click LOAD href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/pipelines/lhotse/data.py"
+    click WAV href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/vokenizers/wavtokenizer/audio_text.py"
 
     style SHAR fill:#fff9c4,stroke:#F9A825
     style WAV fill:#f3e5f5,stroke:#7B1FA2
@@ -318,8 +318,8 @@ flowchart TD
 
     WRITE & WRITE_C & WRITE_T --> TRAIN["Megatron-LM Training"]
 
-    click PQ href "./audio_tokenization/utils/build_interleaved_indexed.py"
-    click DETECT href "./audio_tokenization/utils/build_interleaved_indexed.py"
+    click PQ href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/build_interleaved_indexed.py"
+    click DETECT href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/utils/build_interleaved_indexed.py"
 
     style PQ fill:#fff9c4,stroke:#F9A825
     style WRITE fill:#e8f5e9,stroke:#2E7D32
@@ -505,7 +505,7 @@ graph TD
         WN["CPU Workers"] --> TN["WavTokenizer<br>GPU N"] --> ON["rank_NNNN_chunk_*"]
     end
 
-    click SPLIT href "./audio_tokenization/pipelines/lhotse/data.py"
+    click SPLIT href "https://github.com/swiss-ai/benchmark-audio-tokenizer/blob/batch_tok/audio_tokenization/pipelines/lhotse/data.py"
 
     style SHAR fill:#fff9c4,stroke:#F9A825
     style R0 fill:#fce4ec,stroke:#C62828
