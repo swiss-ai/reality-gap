@@ -15,14 +15,15 @@ graph TD
     end
 
     subgraph Preprocess["2 — VAD + Segmentation<br>(audio-only datasets)"]
-        direction LR
-        VAD["Silero VAD"] --> MERGE["Merge + Pack"]
+        PAD_P[ ] ~~~ VAD["Silero VAD"] --> MERGE["Merge + Pack"]
         MERGE --> LANGFILT["Language Filter"]
+        style PAD_P fill:none,stroke:none
     end
 
     subgraph Convert["3 — Convert to Shar<br>(+ text pre-tokenization)"]
         direction TB
-        TAR["WebDataset .tar"]
+        PAD_C[ ] ~~~ TAR["WebDataset .tar"]
+        style PAD_C fill:none,stroke:none
         ARROW["HuggingFace Arrow"]
         RECIPE["Lhotse Recipe"]
         AUDIODIR["Audio Directory"]
@@ -119,16 +120,16 @@ flowchart LR
         E["Parquet"]
     end
 
+    A & B & C & D & E --> SHAR
+
     subgraph shar["Lhotse Shar Output"]
         direction TB
+        SHAR[("Shar")]
         F["cuts — durations, IDs, metadata"]
         G["audio — waveforms"]
         H["supervisions — transcriptions"]
         I["text_tokens — pre-tokenized text"]
-        J["shar_index.json"]
     end
-
-    A & B & C & D & E --> F & G & H & I
 
     click A href "./utils/prepare_data/prepare_wds_to_shar.py"
     click B href "./utils/prepare_data/prepare_hf_to_shar.py"
@@ -138,6 +139,7 @@ flowchart LR
 
     style src fill:#e3f2fd,stroke:#1565C0
     style shar fill:#fff9c4,stroke:#F9A825
+    style SHAR fill:#fff9c4,stroke:#F9A825
 ```
 
 ---
