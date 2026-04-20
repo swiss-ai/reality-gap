@@ -11,6 +11,7 @@ core_*
 samples
 .cursor/
 plans/
+/.idea
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -222,6 +223,7 @@ __marimo__/
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Keep important source directories
 !src/audio_tokenizers/base/
