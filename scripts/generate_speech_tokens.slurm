@@ -4,39 +4,50 @@
 #SBATCH --job-name=speech_tokens_poc
 #SBATCH --output=logs/%j_speech_tokens_poc.out
 #SBATCH --error=logs/%j_speech_tokens_poc.err
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=gpu
 #SBATCH --partition=normal
 
+set -e  # exit on first error
 ulimit -c 0
 export OPENBLAS_NUM_THREADS=4
 export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 
+cd ~/benchmark-audio-tokenizer
 echo "Job $SLURM_JOB_ID started at $(date)"
 
-# Activate cosyvoice2 venv
-source .venv-cosyvoice2/bin/activate
+# ── Step 1: Create cosyvoice2 venv if missing ────────────────────────
+if [ ! -d ".venv-cosyvoice2" ]; then
+    echo "=== Creating cosyvoice2 venv ==="
+    make cosyvoice2
+fi
 
-# Install num2words if not present
+# ── Step 2: Activate venv and install extras ──────────────────────────
+source .venv-cosyvoice2/bin/activate
 pip install --quiet num2words
 
-# Extract a reference audio clip from FLEURS Polish split
+# ── Step 3: Extract Polish reference audio from FLEURS ────────────────
 REF_DIR="outputs/reference_audio"
 mkdir -p "$REF_DIR"
-python -c "
+
+if [ ! -f "${REF_DIR}/pl_speaker_0.wav" ]; then
+    echo "=== Extracting Polish reference audio ==="
+    python -c "
 from datasets import load_from_disk
 import soundfile as sf
 ds = load_from_disk('/capstor/store/cscs/swissai/infra01/audio-datasets/fleurs_cache/pl_pl')
 for i in range(3):
-    sf.write('${REF_DIR}/pl_speaker_${i}.wav', ds[i]['audio']['array'], ds[i]['audio']['sampling_rate'])
-print(f'Saved 3 reference clips to ${REF_DIR}/')
+    sf.write('${REF_DIR}/pl_speaker_' + str(i) + '.wav', ds[i]['audio']['array'], ds[i]['audio']['sampling_rate'])
+print('Saved 3 reference clips')
 "
+fi
 
-# Run speech token generation
+# ── Step 4: Run speech token generation ───────────────────────────────
+echo "=== Generating speech tokens ==="
 python scripts/generate_speech_tokens.py \
     --reference-audio ${REF_DIR}/pl_speaker_0.wav ${REF_DIR}/pl_speaker_1.wav ${REF_DIR}/pl_speaker_2.wav \
     --output-dir outputs/speech_tokens \
