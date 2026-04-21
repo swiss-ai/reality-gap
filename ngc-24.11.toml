@@ -12,8 +12,8 @@ mounts = [
 workdir = "${HOME}/benchmark-audio-tokenizer"
 
 [annotations]
-com.hooks.aws_ofi_nccl.enabled = "true" 
-com.hooks.aws_ofi_nccl.variant = "cuda12"
+com.hooks.aws_ofi_nccl.enabled = "false"
+com.hooks.cxi.enabled = "false"
 
 [env]
 NCCL_DEBUG = "INFO" 
