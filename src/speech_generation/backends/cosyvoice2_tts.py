@@ -346,7 +346,7 @@ class CosyVoice2TTSBackend(TTSBackend):
             resampler = torchaudio.transforms.Resample(reference_audio_sr, self.INPUT_SR)
             audio = resampler(audio.unsqueeze(0)).squeeze(0)
 
-        return audio
+        return audio.unsqueeze(0)
 
     @property
     def codebook_size(self) -> int:
