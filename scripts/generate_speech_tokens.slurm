@@ -28,7 +28,7 @@ fi
 
 # ── Step 2: Activate venv and install extras ──────────────────────────
 source .venv-cosyvoice2/bin/activate
-pip install --quiet num2words
+pip install --quiet num2words "ruamel.yaml==0.18.6" "ruamel.yaml.clib==0.2.8"
 
 # ── Step 3: Extract Polish reference audio from FLEURS ────────────────
 REF_DIR="outputs/reference_audio"
