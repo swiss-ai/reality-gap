@@ -95,7 +95,7 @@ DEFAULT_SENTENCES = [
 
 # Default reference audio on cluster (FLEURS Polish split, first sample)
 DEFAULT_REFERENCE = (
-    "/capstor/store/cscs/swissai/infra01/audio-datasets/fleurs_cache/pl_pl"
+    "/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/pl_pl"
 )
 
 

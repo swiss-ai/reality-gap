@@ -39,7 +39,7 @@ if [ ! -f "${REF_DIR}/pl_speaker_0.wav" ]; then
     python -c "
 from datasets import load_from_disk
 import soundfile as sf
-ds = load_from_disk('/capstor/store/cscs/swissai/infra01/audio-datasets/fleurs_cache/pl_pl')
+ds = load_from_disk('/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/pl_pl')
 for i in range(3):
     sf.write('${REF_DIR}/pl_speaker_' + str(i) + '.wav', ds[i]['audio']['array'], ds[i]['audio']['sampling_rate'])
 print('Saved 3 reference clips')
