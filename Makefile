@@ -5,8 +5,10 @@ SHELL := /bin/bash
 venvs: neucodec cosyvoice2 xcodec2 wavtokenizer glm4voice
 
 
-# XTTS v2 (Coqui) — voice-cloning multilingual TTS, non-commercial license
-# Uses --system-site-packages + --no-deps to inherit NGC's aarch64 torch.
+# XTTS v2 — voice-cloning multilingual TTS, non-commercial license.
+# Uses the Idiap-maintained `coqui-tts` fork (Coqui's `TTS==0.22.0` is pinned
+# to Python <3.12 and won't build on NGC 24.11). Same import path: `from TTS.api import TTS`.
+# Inherits NGC's aarch64 torch via --system-site-packages + --no-deps.
 xtts:
 	mv .venv-xtts .venv-xtts-old || true
 	rm -rf .venv-xtts-old &
@@ -14,10 +16,11 @@ xtts:
 	uv venv .venv-xtts --system-site-packages
 
 	source .venv-xtts/bin/activate && \
-	uv pip install --no-deps --no-build-isolation TTS==0.22.0 && \
-	uv pip install --no-deps coqpit trainer encodec gruut[de,es,fr] anyascii \
-	    inflect pysbd num2words bangla bnnumerizer bnunicodenormalizer \
-	    nltk pypinyin jieba spacy g2pkk hangul_romanize jamo && \
+	uv pip install --no-deps --no-build-isolation coqui-tts && \
+	uv pip install --no-deps coqpit-config coqui-tts-trainer encodec \
+	    gruut[de,es,fr] anyascii inflect pysbd num2words bangla \
+	    bnnumerizer bnunicodenormalizer nltk pypinyin jieba spacy \
+	    g2pkk hangul_romanize jamo && \
 	python -c "from TTS.api import TTS; print('XTTS import OK')"
 
 
