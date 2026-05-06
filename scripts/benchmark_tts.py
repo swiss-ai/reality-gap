@@ -77,16 +77,37 @@ def _build_mms_tts(args):
     return MMSTTSBackend(language=iso3, device=args.device)
 
 
+def _build_omnivoice(args):
+    from speech_generation.backends.omnivoice_tts import OmniVoiceTTSBackend
+
+    return OmniVoiceTTSBackend(
+        checkpoint=args.checkpoint or "k2-fsa/OmniVoice",
+        device=args.device,
+    )
+
+
 BACKENDS = {
     "xtts": _build_xtts,
     "cosyvoice2": _build_cosyvoice2,
     "mms_tts": _build_mms_tts,
+    "omnivoice": _build_omnivoice,
     # TODO: f5_tts, maskgct, kokoro
 }
 
 
 # ── Reference audio loading ───────────────────────────────────────────
-def load_reference_audios(paths: list[str]) -> list[tuple[torch.Tensor, int]]:
+def load_reference_audios(
+    paths: list[str],
+) -> list[tuple[torch.Tensor, int, Optional[str]]]:
+    """Load reference clips. If a sibling .txt file exists, its contents are
+    returned as the reference transcript (needed by OmniVoice; ignored by others)."""
+
+    def _maybe_transcript(audio_path: Path) -> Optional[str]:
+        txt = audio_path.with_suffix(".txt")
+        if txt.exists():
+            return txt.read_text(encoding="utf-8").strip()
+        return None
+
     refs = []
     for p in paths:
         p = Path(p)
@@ -101,8 +122,13 @@ def load_reference_audios(paths: list[str]) -> list[tuple[torch.Tensor, int]]:
                         if i >= 3:
                             break
                         a = sample["audio"]
+                        text = sample.get("transcription") or sample.get("text")
                         refs.append(
-                            (torch.tensor(a["array"], dtype=torch.float32), a["sampling_rate"])
+                            (
+                                torch.tensor(a["array"], dtype=torch.float32),
+                                a["sampling_rate"],
+                                text,
+                            )
                         )
                     continue
                 except Exception as e:
@@ -110,10 +136,10 @@ def load_reference_audios(paths: list[str]) -> list[tuple[torch.Tensor, int]]:
                     continue
             for af in audio_files[:3]:
                 audio, sr = torchaudio.load(str(af))
-                refs.append((audio.mean(dim=0), sr))
+                refs.append((audio.mean(dim=0), sr, _maybe_transcript(af)))
         elif p.is_file():
             audio, sr = torchaudio.load(str(p))
-            refs.append((audio.mean(dim=0), sr))
+            refs.append((audio.mean(dim=0), sr, _maybe_transcript(p)))
     return refs
 
 
@@ -149,7 +175,7 @@ def cmd_generate(args):
     manifest = []
     t_start = time.time()
     for i, s in enumerate(sentences):
-        ref_audio, ref_sr = refs[i % len(refs)]
+        ref_audio, ref_sr, ref_text = refs[i % len(refs)]
         sid = s["id"]
         wav_path = out_dir / f"{sid}.wav"
 
@@ -160,6 +186,7 @@ def cmd_generate(args):
                 reference_audio=ref_audio,
                 reference_audio_sr=ref_sr,
                 render_audio=True,
+                ref_text=ref_text,
             )
             elapsed = time.time() - t0
 
