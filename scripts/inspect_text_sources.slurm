@@ -4,7 +4,7 @@
 #SBATCH --job-name=inspect_text
 #SBATCH --output=logs/%j_inspect_text.out
 #SBATCH --error=logs/%j_inspect_text.err
-#SBATCH --time=00:30:00
+#SBATCH --time=00:10:00
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
 #SBATCH --partition=normal
@@ -20,6 +20,6 @@ python scripts/inspect_text_sources.py \
     --sample-size 500 --language pl \
     --sources \
         oasst:OpenAssistant/oasst1::train \
-        fleurs_pl:/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/pl_pl::train
+        fleurs_pl:/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/pl_pl/test::
 
 echo "Done at $(date). Report: results/text_sources_inspection/comparison.md"
