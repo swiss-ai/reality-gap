@@ -29,12 +29,15 @@ OUT_DIR="${OUT_DIR:-results/tts_bench}"
 VENV="${VENV:-$BACKEND}"
 
 # ── venv ──────────────────────────────────────────────────────────────
-if [ ! -d ".venv-${VENV}" ]; then
-    echo "=== Creating ${VENV} venv ==="
+# Check for bin/activate, not just the directory — partial builds leave a
+# stub dir behind and the original `[ ! -d ... ]` check would skip rebuild.
+if [ ! -f ".venv-${VENV}/bin/activate" ]; then
+    echo "=== Creating ${VENV} venv (existing was missing or incomplete) ==="
+    rm -rf ".venv-${VENV}"
     make "${VENV}"
 fi
 source ".venv-${VENV}/bin/activate"
-pip install --quiet num2words "ruamel.yaml==0.18.6" "ruamel.yaml.clib==0.2.8"
+pip install --quiet num2words "ruamel.yaml==0.18.6" "ruamel.yaml.clib==0.2.8" 2>/dev/null || true
 
 # ── reference audio (Polish FLEURS) ───────────────────────────────────
 REF_DIR="outputs/reference_audio"
