@@ -287,8 +287,19 @@ def _load_whisper(model_name: str, device: str):
 
 
 def _compute_wer(model, wav_path: Path, reference_text: str, language: str) -> Optional[float]:
+    """Transcribe the WAV with Whisper and compute WER vs reference text.
+
+    Loads audio via torchaudio (not ffmpeg) so we don't depend on ffmpeg being
+    installed in the container.
+    """
     try:
-        result = model.transcribe(str(wav_path), language=language, fp16=False)
+        audio, sr = torchaudio.load(str(wav_path))
+        if audio.ndim > 1:
+            audio = audio.mean(dim=0)
+        if sr != 16000:
+            audio = torchaudio.transforms.Resample(sr, 16000)(audio)
+        audio_np = audio.numpy().astype("float32")
+        result = model.transcribe(audio_np, language=language, fp16=False)
         hyp = result["text"].strip().lower()
         ref = reference_text.strip().lower()
         return _wer(ref.split(), hyp.split())
