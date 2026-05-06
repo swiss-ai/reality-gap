@@ -72,6 +72,15 @@ def load_source(spec: str, sample_size: int, language: str) -> list[str]:
 
     text_col = _detect_text_column(ds)
     lang_col = _detect_lang_column(ds)
+
+    # Drop non-text columns so we don't trigger eager audio/image decoding
+    # on iteration (e.g. FLEURS has an audio column that needs torchcodec).
+    keep = {c for c in [text_col, lang_col] if c}
+    if hasattr(ds, "column_names") and ds.column_names:
+        drop = [c for c in ds.column_names if c not in keep]
+        if drop:
+            ds = ds.remove_columns(drop)
+
     return list(_iter_filtered(ds, text_col, lang_col, language, sample_size))
 
 
