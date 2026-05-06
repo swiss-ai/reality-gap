@@ -5,6 +5,32 @@ SHELL := /bin/bash
 venvs: neucodec cosyvoice2 xcodec2 wavtokenizer glm4voice
 
 
+# XTTS v2 (Coqui) — voice-cloning multilingual TTS, non-commercial license
+xtts:
+	mv .venv-xtts .venv-xtts-old || true
+	rm -rf .venv-xtts-old &
+
+	uv venv .venv-xtts --system-site-packages
+
+	source .venv-xtts/bin/activate && \
+	uv pip install --no-build-isolation TTS==0.22.0 && \
+	python -c "from TTS.api import TTS; print('XTTS import OK')"
+
+
+# OmniVoice (k2-fsa) — Apache 2.0, 600+ langs, voice cloning, requires ref_text
+omnivoice:
+	mv .venv-omnivoice .venv-omnivoice-old || true
+	rm -rf .venv-omnivoice-old &
+
+	uv venv .venv-omnivoice
+
+	source .venv-omnivoice/bin/activate && \
+	uv pip install torch==2.8.0+cu128 torchaudio==2.8.0+cu128 \
+	    --extra-index-url https://download.pytorch.org/whl/cu128 && \
+	uv pip install omnivoice && \
+	python -c "from omnivoice import OmniVoice; print('OmniVoice import OK')"
+
+
 
 # xcodec2 with cuda
 xcodec2:

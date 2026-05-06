@@ -5,7 +5,7 @@
 #SBATCH --output=logs/%j_tts_bench_pl.out
 #SBATCH --error=logs/%j_tts_bench_pl.err
 #SBATCH --time=02:00:00
-#SBATCH --mem=128G
+#SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=gpu
@@ -39,15 +39,18 @@ pip install --quiet num2words "ruamel.yaml==0.18.6" "ruamel.yaml.clib==0.2.8"
 # ── reference audio (Polish FLEURS) ───────────────────────────────────
 REF_DIR="outputs/reference_audio"
 mkdir -p "$REF_DIR"
-if [ ! -f "${REF_DIR}/pl_speaker_0.wav" ]; then
-    echo "=== Extracting Polish reference audio ==="
+if [ ! -f "${REF_DIR}/pl_speaker_0.wav" ] || [ ! -f "${REF_DIR}/pl_speaker_0.txt" ]; then
+    echo "=== Extracting Polish reference audio + transcripts ==="
     python -c "
 from datasets import load_from_disk
 import soundfile as sf
 ds = load_from_disk('/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/pl_pl')
 for i in range(3):
-    sf.write('${REF_DIR}/pl_speaker_' + str(i) + '.wav', ds[i]['audio']['array'], ds[i]['audio']['sampling_rate'])
-print('Saved 3 reference clips')
+    base = '${REF_DIR}/pl_speaker_' + str(i)
+    sf.write(base + '.wav', ds[i]['audio']['array'], ds[i]['audio']['sampling_rate'])
+    text = ds[i].get('transcription') or ds[i].get('text') or ''
+    open(base + '.txt', 'w', encoding='utf-8').write(text)
+print('Saved 3 reference clips + transcripts')
 "
 fi
 
