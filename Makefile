@@ -23,7 +23,9 @@ xtts:
 	uv pip install --no-deps coqpit-config coqui-tts-trainer encodec \
 	    gruut[de,es,fr] anyascii inflect pysbd num2words bangla \
 	    bnnumerizer bnunicodenormalizer nltk pypinyin jieba spacy \
-	    g2pkk hangul_romanize jamo && \
+	    g2pkk hangul_romanize jamo \
+	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    regex tqdm safetensors packaging filelock pyyaml && \
 	python -c "from TTS.api import TTS; print('XTTS import OK')"
 
 
@@ -40,9 +42,9 @@ omnivoice:
 	uv pip install --no-deps --no-build-isolation \
 	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps omnivoice && \
-	uv pip install --no-deps soundfile safetensors accelerate transformers \
-	    huggingface_hub einops 'regex>=2025.10.22' tokenizers tqdm \
-	    packaging filelock pyyaml && \
+	uv pip install --no-deps soundfile safetensors accelerate \
+	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    einops regex tqdm packaging filelock pyyaml && \
 	python -c "from omnivoice import OmniVoice; print('OmniVoice import OK')"
 
 
