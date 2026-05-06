@@ -335,6 +335,22 @@ def _load_speaker_encoder(device: str):
 def cmd_aggregate(args):
     root = Path(args.output_dir)
     rows = []
+    breakdowns = []  # per (lang, backend, category) WER
+
+    # Try to load category labels from sentence files for per-category breakdown
+    sentence_categories: dict[str, dict[str, str]] = {}
+    sentences_dir = Path("data/tts_bench")
+    if sentences_dir.exists():
+        for f in sentences_dir.glob("*.json"):
+            try:
+                items = json.loads(f.read_text(encoding="utf-8"))
+                lang = f.stem.split("_")[0]
+                sentence_categories.setdefault(lang, {}).update(
+                    {s["id"]: s.get("category", "uncategorized") for s in items}
+                )
+            except Exception:
+                pass
+
     for lang_dir in sorted(p for p in root.iterdir() if p.is_dir()):
         for backend_dir in sorted(p for p in lang_dir.iterdir() if p.is_dir()):
             mf = backend_dir / "manifest.json"
@@ -356,9 +372,29 @@ def cmd_aggregate(args):
                 }
             )
 
+            cats = sentence_categories.get(lang_dir.name, {})
+            if cats:
+                from collections import defaultdict
+
+                buckets: dict[str, list[float]] = defaultdict(list)
+                for s in ok:
+                    if s.get("wer") is None:
+                        continue
+                    buckets[cats.get(s["id"], "uncategorized")].append(s["wer"])
+                for c, vs in sorted(buckets.items()):
+                    breakdowns.append(
+                        {
+                            "language": lang_dir.name,
+                            "backend": backend_dir.name,
+                            "category": c,
+                            "n": len(vs),
+                            "wer_mean": round(sum(vs) / len(vs), 4),
+                        }
+                    )
+
     out_path = root / "comparison.json"
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(rows, f, indent=2, ensure_ascii=False)
+        json.dump({"summary": rows, "breakdown": breakdowns}, f, indent=2, ensure_ascii=False)
 
     print(f"\n{'language':<8} {'backend':<14} {'n_ok':>6} {'wer':>8} {'rtf':>8}")
     print("-" * 50)
@@ -368,6 +404,17 @@ def cmd_aggregate(args):
             f"{(r['wer_mean'] if r['wer_mean'] is not None else '—'):>8} "
             f"{(r['rtf_mean'] if r['rtf_mean'] is not None else '—'):>8}"
         )
+
+    if breakdowns:
+        print(f"\nPer-category WER:")
+        print(f"{'language':<6} {'backend':<14} {'category':<16} {'n':>4} {'wer':>8}")
+        print("-" * 56)
+        for b in breakdowns:
+            print(
+                f"{b['language']:<6} {b['backend']:<14} {b['category']:<16} "
+                f"{b['n']:>4} {b['wer_mean']:>8}"
+            )
+
     print(f"\nWrote {out_path}")
 
 
