@@ -41,7 +41,8 @@ omnivoice:
 	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps omnivoice && \
 	uv pip install --no-deps soundfile safetensors accelerate transformers \
-	    huggingface_hub einops && \
+	    huggingface_hub einops 'regex>=2025.10.22' tokenizers tqdm \
+	    packaging filelock pyyaml && \
 	python -c "from omnivoice import OmniVoice; print('OmniVoice import OK')"
 
 
