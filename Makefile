@@ -6,6 +6,7 @@ venvs: neucodec cosyvoice2 xcodec2 wavtokenizer glm4voice
 
 
 # XTTS v2 (Coqui) — voice-cloning multilingual TTS, non-commercial license
+# Uses --system-site-packages + --no-deps to inherit NGC's aarch64 torch.
 xtts:
 	mv .venv-xtts .venv-xtts-old || true
 	rm -rf .venv-xtts-old &
@@ -13,21 +14,25 @@ xtts:
 	uv venv .venv-xtts --system-site-packages
 
 	source .venv-xtts/bin/activate && \
-	uv pip install --no-build-isolation TTS==0.22.0 && \
+	uv pip install --no-deps --no-build-isolation TTS==0.22.0 && \
+	uv pip install --no-deps coqpit trainer encodec gruut[de,es,fr] anyascii \
+	    inflect pysbd num2words bangla bnnumerizer bnunicodenormalizer \
+	    nltk pypinyin jieba spacy g2pkk hangul_romanize jamo && \
 	python -c "from TTS.api import TTS; print('XTTS import OK')"
 
 
 # OmniVoice (k2-fsa) — Apache 2.0, 600+ langs, voice cloning, requires ref_text
+# Inherits NGC's aarch64 torch (Clariden has no x86_64 torch 2.8 wheels).
 omnivoice:
 	mv .venv-omnivoice .venv-omnivoice-old || true
 	rm -rf .venv-omnivoice-old &
 
-	uv venv .venv-omnivoice
+	uv venv .venv-omnivoice --system-site-packages
 
 	source .venv-omnivoice/bin/activate && \
-	uv pip install torch==2.8.0+cu128 torchaudio==2.8.0+cu128 \
-	    --extra-index-url https://download.pytorch.org/whl/cu128 && \
-	uv pip install omnivoice && \
+	uv pip install --no-deps omnivoice && \
+	uv pip install --no-deps soundfile safetensors accelerate transformers \
+	    huggingface_hub einops && \
 	python -c "from omnivoice import OmniVoice; print('OmniVoice import OK')"
 
 
