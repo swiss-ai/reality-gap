@@ -26,7 +26,8 @@ xtts:
 	    g2pkk hangul_romanize jamo \
 	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    regex tqdm safetensors packaging filelock pyyaml && \
-	python -c "from TTS.api import TTS; print('XTTS import OK')"
+	python -c "from TTS.api import TTS; print('XTTS import OK')" && \
+	touch .venv-xtts/.build_complete
 
 
 # OmniVoice (k2-fsa) — Apache 2.0, 600+ langs, voice cloning, requires ref_text.
@@ -45,7 +46,8 @@ omnivoice:
 	uv pip install --no-deps soundfile safetensors accelerate \
 	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    einops regex tqdm packaging filelock pyyaml && \
-	python -c "from omnivoice import OmniVoice; print('OmniVoice import OK')"
+	python -c "from omnivoice import OmniVoice; print('OmniVoice import OK')" && \
+	touch .venv-omnivoice/.build_complete
 
 
 

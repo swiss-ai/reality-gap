@@ -29,10 +29,10 @@ OUT_DIR="${OUT_DIR:-results/tts_bench}"
 VENV="${VENV:-$BACKEND}"
 
 # ── venv ──────────────────────────────────────────────────────────────
-# Check for bin/activate, not just the directory — partial builds leave a
-# stub dir behind and the original `[ ! -d ... ]` check would skip rebuild.
-if [ ! -f ".venv-${VENV}/bin/activate" ]; then
-    echo "=== Creating ${VENV} venv (existing was missing or incomplete) ==="
+# Check for the build-complete marker (created at the end of the Makefile
+# target). If missing, partial/stale build → rebuild from scratch.
+if [ ! -f ".venv-${VENV}/.build_complete" ]; then
+    echo "=== Creating ${VENV} venv (no build-complete marker) ==="
     rm -rf ".venv-${VENV}"
     make "${VENV}"
 fi
