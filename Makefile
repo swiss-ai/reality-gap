@@ -71,6 +71,70 @@ voxcpm2:
 	touch .venv-voxcpm2/.build_complete
 
 
+# Piper TTS (rhasspy) — MIT, Polish-native, ONNXRuntime-based, lightweight.
+# Requires the pl_PL-gosia-medium voice files (.onnx + .onnx.json) under
+# voices/. Voice files are tiny (~25 MB) and downloaded once.
+piper:
+	mv .venv-piper .venv-piper-old || true
+	rm -rf .venv-piper-old &
+
+	uv venv .venv-piper --system-site-packages
+
+	source .venv-piper/bin/activate && \
+	uv pip install piper-tts && \
+	mkdir -p voices && \
+	if [ ! -f voices/pl_PL-gosia-medium.onnx ]; then \
+	    cd voices && \
+	    curl -L -O https://huggingface.co/rhasspy/piper-voices/resolve/main/pl/pl_PL/gosia/medium/pl_PL-gosia-medium.onnx && \
+	    curl -L -O https://huggingface.co/rhasspy/piper-voices/resolve/main/pl/pl_PL/gosia/medium/pl_PL-gosia-medium.onnx.json && \
+	    cd ..; \
+	fi && \
+	python -c "from piper import PiperVoice; print('Piper import OK')" && \
+	touch .venv-piper/.build_complete
+
+
+# Parler-TTS Mini Multilingual — Apache 2.0, prompt-controlled, multilingual.
+# Inherits NGC's aarch64 torch; pulls parler-tts package + transformers.
+parler:
+	mv .venv-parler .venv-parler-old || true
+	rm -rf .venv-parler-old &
+
+	uv venv .venv-parler --system-site-packages
+
+	source .venv-parler/bin/activate && \
+	uv pip install --no-deps --no-build-isolation \
+	    git+https://github.com/pytorch/audio.git@release/2.6 && \
+	uv pip install --no-deps git+https://github.com/huggingface/parler-tts.git && \
+	uv pip install --no-deps soundfile safetensors accelerate \
+	    'transformers>=4.55,<5.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    sentencepiece protobuf descript-audio-codec encodec einops regex tqdm \
+	    packaging filelock pyyaml && \
+	python -c "from parler_tts import ParlerTTSForConditionalGeneration; print('Parler-TTS import OK')" && \
+	touch .venv-parler/.build_complete
+
+
+# F5-TTS — MIT code, diffusion, voice cloning.
+# Base checkpoint is English/Chinese; Polish either via cross-lingual prompt
+# or via a community Polish fine-tune via `--checkpoint`.
+f5:
+	mv .venv-f5 .venv-f5-old || true
+	rm -rf .venv-f5-old &
+
+	uv venv .venv-f5 --system-site-packages
+
+	source .venv-f5/bin/activate && \
+	uv pip install --no-deps --no-build-isolation \
+	    git+https://github.com/pytorch/audio.git@release/2.6 && \
+	uv pip install --no-deps f5-tts && \
+	uv pip install --no-deps soundfile safetensors accelerate \
+	    'transformers>=4.55,<5.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    librosa vocos x-transformers einops einx jieba pypinyin \
+	    cached_path datasets bitsandbytes scipy hydra-core omegaconf \
+	    regex tqdm packaging filelock pyyaml && \
+	python -c "from f5_tts.api import F5TTS; print('F5-TTS import OK')" && \
+	touch .venv-f5/.build_complete
+
+
 
 # xcodec2 with cuda
 xcodec2:

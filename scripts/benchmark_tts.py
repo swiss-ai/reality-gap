@@ -82,6 +82,35 @@ def _build_voxcpm2(args):
     )
 
 
+def _build_piper(args):
+    from speech_generation.backends.piper_tts import PiperTTSBackend
+
+    return PiperTTSBackend(
+        voice_path=args.checkpoint or "voices/pl_PL-gosia-medium.onnx",
+        device=args.device,
+    )
+
+
+def _build_parler(args):
+    from speech_generation.backends.parler_tts import ParlerTTSBackend
+
+    return ParlerTTSBackend(
+        checkpoint=args.checkpoint or "parler-tts/parler-tts-mini-multilingual-v1.1",
+        device=args.device,
+    )
+
+
+def _build_f5(args):
+    from speech_generation.backends.f5_tts import F5TTSBackend
+
+    # Default to the Sticzu/marek-f5tts-polish Polish fine-tune (MIT, native PL).
+    # Pass --checkpoint to override (e.g. "F5TTS_v1_Base" for EN/ZH base).
+    return F5TTSBackend(
+        checkpoint=args.checkpoint or "Sticzu/marek-f5tts-polish",
+        device=args.device,
+    )
+
+
 # Non-commercial backends, kept for reference comparisons only.
 def _build_xtts(args):
     from speech_generation.backends.xtts_tts import XTTSTTSBackend
@@ -101,10 +130,12 @@ def _build_mms_tts(args):
 
 
 BACKENDS = {
-    "cosyvoice2": _build_cosyvoice2,   # Apache 2.0 — bad Polish quality (cross-lingual)
-    "omnivoice": _build_omnivoice,     # Apache 2.0 — multilingual + voice cloning
+    "cosyvoice2": _build_cosyvoice2,   # Apache 2.0 — bad Polish quality (cross-lingual baseline)
+    "omnivoice":  _build_omnivoice,    # Apache 2.0 — multilingual + voice cloning
     "voxcpm2":    _build_voxcpm2,      # Apache 2.0 — supervisor's pick, vLLM-servable
-    # TODO: f5_tts, oute_tts
+    "piper":      _build_piper,        # MIT — Polish-native, fixed-voice, lightweight
+    "parler":     _build_parler,       # Apache 2.0 — text-description-controlled
+    "f5":         _build_f5,           # MIT (code + Sticzu Polish fine-tune weights)
 }
 
 # Available only with --allow-reference. License disqualifies these from
@@ -112,6 +143,17 @@ BACKENDS = {
 REFERENCE_BACKENDS = {
     "xtts": _build_xtts,         # Coqui non-commercial license
     "mms_tts": _build_mms_tts,   # CC-BY-NC 4.0  (baseline: WER 0.19 on pl_50)
+}
+
+BACKEND_LICENSES = {
+    "cosyvoice2": "Apache-2.0",
+    "omnivoice":  "Apache-2.0",
+    "voxcpm2":    "Apache-2.0",
+    "piper":      "MIT",
+    "parler":     "Apache-2.0",
+    "f5":         "MIT",
+    "xtts":       "Coqui-Public-Model-License (non-commercial)",
+    "mms_tts":    "CC-BY-NC-4.0",
 }
 
 
@@ -256,12 +298,23 @@ def cmd_generate(args):
             logger.error("[%d/%d] %s FAILED: %s", i + 1, len(sentences), sid, e, exc_info=True)
             manifest.append({"id": sid, "error": str(e)})
 
+    ok_samples = [m for m in manifest if "error" not in m]
+    total_audio = sum(m.get("duration_seconds", 0.0) for m in ok_samples)
+    total_gen = sum(m.get("generation_seconds", 0.0) for m in ok_samples)
+
     summary = {
         "backend": args.backend,
         "language": args.language,
+        "license": BACKEND_LICENSES.get(args.backend, "Unknown"),
+        "commercial_usable": args.backend in BACKENDS,
         "n_sentences": len(sentences),
-        "n_succeeded": sum(1 for m in manifest if "error" not in m),
+        "n_succeeded": len(ok_samples),
         "wall_time_seconds": round(time.time() - t_start, 2),
+        "total_audio_seconds": round(total_audio, 2),
+        "total_generation_seconds": round(total_gen, 2),
+        # aggregate RTF: GPU-seconds per audio-second across the whole run
+        # (less noisy than averaging per-sample RTFs; what matters for cost projection)
+        "aggregate_rtf": round(total_gen / total_audio, 4) if total_audio > 0 else None,
         "samples": manifest,
     }
     with open(out_dir / "manifest.json", "w", encoding="utf-8") as f:
@@ -404,10 +457,15 @@ def cmd_aggregate(args):
                 {
                     "language": lang_dir.name,
                     "backend": backend_dir.name,
+                    "license": m.get("license", BACKEND_LICENSES.get(backend_dir.name, "Unknown")),
+                    "commercial_usable": m.get("commercial_usable", backend_dir.name in BACKENDS),
                     "n_ok": len(ok),
                     "n_failed": len(m["samples"]) - len(ok),
                     "wer_mean": round(sum(wers) / len(wers), 4) if wers else None,
                     "rtf_mean": round(sum(rtfs) / len(rtfs), 3) if rtfs else None,
+                    "aggregate_rtf": m.get("aggregate_rtf"),
+                    "total_audio_seconds": m.get("total_audio_seconds"),
+                    "total_generation_seconds": m.get("total_generation_seconds"),
                 }
             )
 
@@ -435,13 +493,20 @@ def cmd_aggregate(args):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"summary": rows, "breakdown": breakdowns}, f, indent=2, ensure_ascii=False)
 
-    print(f"\n{'language':<8} {'backend':<14} {'n_ok':>6} {'wer':>8} {'rtf':>8}")
-    print("-" * 50)
+    print(
+        f"\n{'language':<6} {'backend':<14} {'license':<22} {'comm':>5} "
+        f"{'n_ok':>5} {'wer':>7} {'rtf':>6} {'agg_rtf':>8}"
+    )
+    print("-" * 80)
     for r in rows:
+        comm = "yes" if r.get("commercial_usable") else "no"
+        wer = r["wer_mean"] if r["wer_mean"] is not None else "—"
+        rtf = r["rtf_mean"] if r["rtf_mean"] is not None else "—"
+        agg = r.get("aggregate_rtf") if r.get("aggregate_rtf") is not None else "—"
         print(
-            f"{r['language']:<8} {r['backend']:<14} {r['n_ok']:>6} "
-            f"{(r['wer_mean'] if r['wer_mean'] is not None else '—'):>8} "
-            f"{(r['rtf_mean'] if r['rtf_mean'] is not None else '—'):>8}"
+            f"{r['language']:<6} {r['backend']:<14} "
+            f"{(r.get('license') or 'Unknown')[:22]:<22} {comm:>5} "
+            f"{r['n_ok']:>5} {wer:>7} {rtf:>6} {agg:>8}"
         )
 
     if breakdowns:
