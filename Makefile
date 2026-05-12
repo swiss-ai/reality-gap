@@ -5,12 +5,13 @@ SHELL := /bin/bash
 venvs: neucodec cosyvoice2 xcodec2 wavtokenizer glm4voice
 
 
-# XTTS v2 — voice-cloning multilingual TTS, non-commercial license.
+# XTTS v2 — REFERENCE-ONLY (non-commercial license, Coqui Public Model License).
+# Not part of the active TTS pipeline. Build only if running a reference-only
+# comparison via `benchmark_tts.py generate --backend xtts --allow-reference`.
 # Uses the Idiap-maintained `coqui-tts` fork (Coqui's `TTS==0.22.0` is pinned
-# to Python <3.12 and won't build on NGC 24.11). Same import path: `from TTS.api import TTS`.
-# Inherits NGC's aarch64 torch via --system-site-packages; torchaudio from source
-# (NGC 24.11 doesn't ship torchaudio).
-xtts:
+# to Python <3.12 and won't build on NGC 24.11). Same import path.
+# Inherits NGC's aarch64 torch; torchaudio installed from source.
+xtts-reference-only:
 	mv .venv-xtts .venv-xtts-old || true
 	rm -rf .venv-xtts-old &
 
@@ -44,7 +45,7 @@ omnivoice:
 	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps omnivoice && \
 	uv pip install --no-deps soundfile safetensors accelerate \
-	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    'transformers>=4.55,<5.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    einops regex tqdm packaging filelock pyyaml && \
 	python -c "from omnivoice import OmniVoice; print('OmniVoice import OK')" && \
 	touch .venv-omnivoice/.build_complete
