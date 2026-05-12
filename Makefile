@@ -51,6 +51,26 @@ omnivoice:
 	touch .venv-omnivoice/.build_complete
 
 
+# VoxCPM2 (OpenBMB) — Apache 2.0, 30 languages incl. Polish, voice cloning.
+# Supervisor's recommended TTS. Direct PyTorch path; vLLM-omni serving wired
+# separately later. Inherits NGC's aarch64 torch.
+voxcpm2:
+	mv .venv-voxcpm2 .venv-voxcpm2-old || true
+	rm -rf .venv-voxcpm2-old &
+
+	uv venv .venv-voxcpm2 --system-site-packages
+
+	source .venv-voxcpm2/bin/activate && \
+	uv pip install --no-deps --no-build-isolation \
+	    git+https://github.com/pytorch/audio.git@release/2.6 && \
+	uv pip install --no-deps voxcpm && \
+	uv pip install --no-deps soundfile safetensors accelerate \
+	    'transformers>=4.55,<5.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    einops regex tqdm packaging filelock pyyaml && \
+	python -c "from voxcpm import VoxCPM; print('VoxCPM2 import OK')" && \
+	touch .venv-voxcpm2/.build_complete
+
+
 
 # xcodec2 with cuda
 xcodec2:

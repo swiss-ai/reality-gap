@@ -49,17 +49,11 @@ logger = logging.getLogger(__name__)
 
 
 # ── Backend registry ──────────────────────────────────────────────────
-# Add new backends here. Each entry returns an instantiated TTSBackend.
-def _build_xtts(args):
-    from speech_generation.backends.xtts_tts import XTTSTTSBackend
-
-    return XTTSTTSBackend(
-        checkpoint=args.checkpoint or "tts_models/multilingual/multi-dataset/xtts_v2",
-        device=args.device,
-        language=args.language,
-    )
-
-
+# Only commercially-usable TTS backends (CC-BY-4.0 no SA/NC, MIT, Apache 2.0)
+# are registered for active runs. Backends with non-commercial licenses live in
+# REFERENCE_BACKENDS — they can still be invoked explicitly via --backend
+# <name> --allow-reference for comparison baselines, but cannot be used to
+# produce training data.
 def _build_cosyvoice2(args):
     from speech_generation.backends.cosyvoice2_tts import CosyVoice2TTSBackend
 
@@ -68,13 +62,6 @@ def _build_cosyvoice2(args):
         device=args.device,
         mode="cross_lingual",
     )
-
-
-def _build_mms_tts(args):
-    from speech_generation.backends.mms_tts import MMSTTSBackend
-
-    iso3 = {"pl": "pol", "en": "eng", "de": "deu", "fr": "fra"}.get(args.language, args.language)
-    return MMSTTSBackend(language=iso3, device=args.device)
 
 
 def _build_omnivoice(args):
@@ -86,12 +73,45 @@ def _build_omnivoice(args):
     )
 
 
+def _build_voxcpm2(args):
+    from speech_generation.backends.voxcpm2_tts import VoxCPM2TTSBackend
+
+    return VoxCPM2TTSBackend(
+        checkpoint=args.checkpoint or "openbmb/VoxCPM2",
+        device=args.device,
+    )
+
+
+# Non-commercial backends, kept for reference comparisons only.
+def _build_xtts(args):
+    from speech_generation.backends.xtts_tts import XTTSTTSBackend
+
+    return XTTSTTSBackend(
+        checkpoint=args.checkpoint or "tts_models/multilingual/multi-dataset/xtts_v2",
+        device=args.device,
+        language=args.language,
+    )
+
+
+def _build_mms_tts(args):
+    from speech_generation.backends.mms_tts import MMSTTSBackend
+
+    iso3 = {"pl": "pol", "en": "eng", "de": "deu", "fr": "fra"}.get(args.language, args.language)
+    return MMSTTSBackend(language=iso3, device=args.device)
+
+
 BACKENDS = {
-    "xtts": _build_xtts,
-    "cosyvoice2": _build_cosyvoice2,
-    "mms_tts": _build_mms_tts,
-    "omnivoice": _build_omnivoice,
-    # TODO: f5_tts, maskgct, kokoro
+    "cosyvoice2": _build_cosyvoice2,   # Apache 2.0 — bad Polish quality (cross-lingual)
+    "omnivoice": _build_omnivoice,     # Apache 2.0 — multilingual + voice cloning
+    "voxcpm2":    _build_voxcpm2,      # Apache 2.0 — supervisor's pick, vLLM-servable
+    # TODO: f5_tts, oute_tts
+}
+
+# Available only with --allow-reference. License disqualifies these from
+# producing training data, but they're useful as quality baselines.
+REFERENCE_BACKENDS = {
+    "xtts": _build_xtts,         # Coqui non-commercial license
+    "mms_tts": _build_mms_tts,   # CC-BY-NC 4.0  (baseline: WER 0.19 on pl_50)
 }
 
 
@@ -166,10 +186,29 @@ def cmd_generate(args):
         sys.exit(1)
     logger.info("Loaded %d reference clips", len(refs))
 
-    if args.backend not in BACKENDS:
-        logger.error("Unknown backend %r. Available: %s", args.backend, list(BACKENDS))
+    if args.backend in BACKENDS:
+        build_fn = BACKENDS[args.backend]
+    elif args.backend in REFERENCE_BACKENDS:
+        if not getattr(args, "allow_reference", False):
+            logger.error(
+                "Backend %r has a non-commercial license — pass --allow-reference "
+                "to run it as a comparison baseline (cannot be used for training data).",
+                args.backend,
+            )
+            sys.exit(2)
+        logger.warning(
+            "Running reference-only backend %r (non-commercial license). "
+            "Output is for comparison only, not training data.",
+            args.backend,
+        )
+        build_fn = REFERENCE_BACKENDS[args.backend]
+    else:
+        logger.error(
+            "Unknown backend %r. Available: %s   (reference-only: %s)",
+            args.backend, list(BACKENDS), list(REFERENCE_BACKENDS),
+        )
         sys.exit(2)
-    backend = BACKENDS[args.backend](args)
+    backend = build_fn(args)
     backend.load_model()
 
     manifest = []
@@ -424,13 +463,23 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     g = sub.add_parser("generate", help="Generate WAVs for one backend")
-    g.add_argument("--backend", required=True, choices=list(BACKENDS))
+    g.add_argument(
+        "--backend", required=True,
+        choices=list(BACKENDS) + list(REFERENCE_BACKENDS),
+        help="Commercially-usable: " + ", ".join(BACKENDS) + ". "
+             "Reference-only (non-commercial): " + ", ".join(REFERENCE_BACKENDS),
+    )
     g.add_argument("--language", required=True, help="ISO code, e.g. 'pl'")
     g.add_argument("--sentences-file", required=True, help="JSON list of {id, text}")
     g.add_argument("--reference-audio", nargs="+", required=True)
     g.add_argument("--output-dir", default="results/tts_bench")
     g.add_argument("--checkpoint", default=None, help="Override default checkpoint")
     g.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    g.add_argument(
+        "--allow-reference", action="store_true",
+        help="Allow running a non-commercial reference backend as a baseline. "
+             "Output is not eligible for training data.",
+    )
 
     s = sub.add_parser("score", help="Compute WER / speaker-sim on generated WAVs")
     s.add_argument("--output-dir", default="results/tts_bench")
