@@ -1,8 +1,13 @@
-"""MMS-TTS (Meta) backend: Polish-trained monolingual TTS.
+"""MMS-TTS (Meta) backend — REFERENCE-ONLY.
+
+License: CC-BY-NC 4.0 (non-commercial). Not registered in the active
+benchmark_tts BACKENDS dict; available via REFERENCE_BACKENDS with the
+`--allow-reference` flag for quality comparison only. Cannot be used to
+produce training data for this project.
+
+Baseline measured on `data/tts_bench/pl_50.json`: WER 0.19, RTF 0.025.
 
 Single fixed speaker per language. No voice cloning — reference_audio is ignored.
-Useful as a baseline to confirm a TTS that was actually trained on Polish.
-
 Runs in the cosyvoice2 venv (transformers is already installed there).
 """
 

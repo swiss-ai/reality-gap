@@ -1,4 +1,4 @@
-"""XTTS v2 (Coqui) TTS backend: text -> waveform, voice cloning via reference audio.
+"""XTTS v2 (Coqui) TTS backend — REFERENCE-ONLY.
 
 XTTS does not emit discrete tokens directly. The benchmark harness compares
 backends on audio-level metrics (WER, MOS, speaker similarity); token-level
