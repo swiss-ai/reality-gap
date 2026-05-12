@@ -61,14 +61,8 @@ def _looks_like_hf(p: Path) -> bool:
 def iter_lhotse_shar(path: Path, limit: int):
     """Yield (id, text, duration_seconds) tuples from a Lhotse Shar dir."""
     from lhotse import CutSet
-    from lhotse.shar import SharIterator
 
-    shar_index = path / "shar_index.json"
-    if not shar_index.exists():
-        # Some dumps use a flat layout; try loading via CutSet.from_shar() directly
-        cuts = CutSet.from_shar(in_dir=str(path))
-    else:
-        cuts = CutSet.from_shar(fields=None, in_dir=str(path))
+    cuts = CutSet.from_shar(in_dir=str(path))
 
     n = 0
     for cut in cuts:
