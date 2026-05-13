@@ -34,9 +34,16 @@ VENV="${VENV:-$BACKEND}"
 # ── venv ──────────────────────────────────────────────────────────────
 # Check for the build-complete marker (created at the end of the Makefile
 # target). If missing, partial/stale build → rebuild from scratch.
+# Use atomic `mv` (not `rm -rf`) for cleanup — NFS sometimes refuses to
+# remove partial-install dirs ("Directory not empty"); rename is always
+# atomic and doesn't fail. Stale dir gets garbage-collected in background.
 if [ ! -f ".venv-${VENV}/.build_complete" ]; then
     echo "=== Creating ${VENV} venv (no build-complete marker) ==="
-    rm -rf ".venv-${VENV}"
+    if [ -e ".venv-${VENV}" ]; then
+        STALE=".venv-${VENV}.stale.$$"
+        mv ".venv-${VENV}" "$STALE" || true
+        rm -rf "$STALE" 2>/dev/null &
+    fi
     make "${VENV}"
 fi
 source ".venv-${VENV}/bin/activate"
