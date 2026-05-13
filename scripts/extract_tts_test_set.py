@@ -61,17 +61,34 @@ def _looks_like_hf(p: Path) -> bool:
 def iter_lhotse_shar(path: Path, limit: int):
     """Yield (id, text, duration_seconds) tuples from a Lhotse Shar dir.
 
-    Handles two layouts:
-      - flat:      <path>/cuts.*.jsonl.gz + recording.*.tar
-      - sharded:   <path>/worker_*/cuts.*.jsonl.gz (cscs prepare_shar output)
+    Reads shar_index.json (CSCS-style sharded layout with workers/) to build a
+    `fields` dict, then calls CutSet.from_shar(fields=...). This matches what
+    audio_tokenization/pipelines/lhotse/data.py does for the production
+    tokenization pipeline.
     """
-    from itertools import chain
     from lhotse import CutSet
 
-    worker_dirs = sorted(d for d in path.glob("worker_*") if d.is_dir())
-    if worker_dirs:
-        cuts = chain.from_iterable(
-            CutSet.from_shar(in_dir=str(d)) for d in worker_dirs
+    index_path = path / "shar_index.json"
+    if index_path.is_file():
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        fields = index.get("fields") or index  # support both wrapped + flat layouts
+        if "cuts" not in fields:
+            raise RuntimeError(
+                f"shar_index.json at {index_path} has no 'cuts' field "
+                f"(keys: {list(fields.keys())})"
+            )
+        # Resolve paths to absolute under the shar dir.
+        resolved = {}
+        for field_name, shards in fields.items():
+            if isinstance(shards, list):
+                resolved[field_name] = [
+                    str((path / s).resolve()) if not str(s).startswith("/") else s
+                    for s in shards
+                ]
+        # Sort each field's shards for determinism.
+        resolved = {k: sorted(v) for k, v in resolved.items()}
+        cuts = CutSet.from_shar(
+            fields=resolved, split_for_dataloading=False, shuffle_shards=False
         )
     else:
         cuts = CutSet.from_shar(in_dir=str(path))
