@@ -32,11 +32,16 @@ OUT_DIR="${OUT_DIR:-results/tts_bench/${SET_NAME}}"
 VENV="${VENV:-$BACKEND}"
 
 # ── venv ──────────────────────────────────────────────────────────────
-# Check for the build-complete marker (created at the end of the Makefile
-# target). If missing, partial/stale build → rebuild from scratch.
-# Use atomic `mv` (not `rm -rf`) for cleanup — NFS sometimes refuses to
-# remove partial-install dirs ("Directory not empty"); rename is always
-# atomic and doesn't fail. Stale dir gets garbage-collected in background.
+# Concurrency-safe venv build:
+#  - flock serializes builds when multiple jobs target the same backend;
+#    other jobs wait at the lock, then find .build_complete and skip rebuild.
+#  - Atomic `mv` (not `rm -rf`) for cleanup — NFS sometimes refuses to
+#    remove partial-install dirs; rename is always atomic.
+LOCKFILE=".venv-${VENV}.lock"
+exec 200>"$LOCKFILE"
+echo "=== Acquiring build lock for ${VENV} ==="
+flock 200 || { echo "ERROR: failed to acquire build lock"; exit 1; }
+
 if [ ! -f ".venv-${VENV}/.build_complete" ]; then
     echo "=== Creating ${VENV} venv (no build-complete marker) ==="
     if [ -e ".venv-${VENV}" ]; then
@@ -45,7 +50,10 @@ if [ ! -f ".venv-${VENV}/.build_complete" ]; then
         rm -rf "$STALE" 2>/dev/null &
     fi
     make "${VENV}"
+else
+    echo "=== Reusing existing ${VENV} venv ==="
 fi
+flock -u 200
 source ".venv-${VENV}/bin/activate"
 pip install --quiet num2words "ruamel.yaml==0.18.6" "ruamel.yaml.clib==0.2.8" 2>/dev/null || true
 
