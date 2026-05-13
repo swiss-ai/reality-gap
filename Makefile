@@ -130,6 +130,7 @@ f5:
 	    'transformers>=4.55,<4.56' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    librosa vocos x-transformers einops einx jieba pypinyin \
 	    cached_path datasets bitsandbytes scipy hydra-core omegaconf \
+	    google-api-core google-cloud-storage google-auth boto3 \
 	    regex tqdm packaging filelock pyyaml && \
 	python -c "from f5_tts.api import F5TTS; print('F5-TTS import OK')" && \
 	touch .venv-f5/.build_complete
