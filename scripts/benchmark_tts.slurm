@@ -23,7 +23,10 @@ echo "Job $SLURM_JOB_ID started at $(date)"
 BACKEND="${BACKEND:-cosyvoice2}"
 LANG="${LANG:-pl}"
 SENTENCES="${SENTENCES:-data/tts_bench/pl_50.json}"
-OUT_DIR="${OUT_DIR:-results/tts_bench}"
+# Output dir defaults to results/tts_bench/<sentences_stem>/ so different test
+# sets land in different directories and don't overwrite each other.
+SET_NAME="$(basename "$SENTENCES" .json)"
+OUT_DIR="${OUT_DIR:-results/tts_bench/${SET_NAME}}"
 # VENV defaults to BACKEND; override when reusing another backend's venv
 # (e.g. mms_tts has no Makefile target — it reuses cosyvoice2's venv).
 VENV="${VENV:-$BACKEND}"
