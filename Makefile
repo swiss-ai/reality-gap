@@ -45,7 +45,7 @@ omnivoice:
 	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps omnivoice && \
 	uv pip install --no-deps soundfile safetensors accelerate \
-	    'transformers>=4.55,<5.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    'transformers>=4.55,<4.56' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    einops regex tqdm packaging filelock pyyaml && \
 	python -c "from omnivoice import OmniVoice; print('OmniVoice import OK')" && \
 	touch .venv-omnivoice/.build_complete
@@ -65,7 +65,7 @@ voxcpm2:
 	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps voxcpm && \
 	uv pip install --no-deps soundfile safetensors accelerate \
-	    'transformers>=4.55,<5.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    'transformers>=4.55,<4.56' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    einops regex tqdm packaging filelock pyyaml && \
 	python -c "from voxcpm import VoxCPM; print('VoxCPM2 import OK')" && \
 	touch .venv-voxcpm2/.build_complete
@@ -106,7 +106,7 @@ parler:
 	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps git+https://github.com/huggingface/parler-tts.git && \
 	uv pip install --no-deps soundfile safetensors accelerate \
-	    'transformers>=4.55,<5.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    'transformers>=4.55,<4.56' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    sentencepiece protobuf descript-audio-codec encodec einops regex tqdm \
 	    packaging filelock pyyaml && \
 	python -c "from parler_tts import ParlerTTSForConditionalGeneration; print('Parler-TTS import OK')" && \
@@ -127,7 +127,7 @@ f5:
 	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps f5-tts && \
 	uv pip install --no-deps soundfile safetensors accelerate \
-	    'transformers>=4.55,<5.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    'transformers>=4.55,<4.56' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    librosa vocos x-transformers einops einx jieba pypinyin \
 	    cached_path datasets bitsandbytes scipy hydra-core omegaconf \
 	    regex tqdm packaging filelock pyyaml && \

@@ -59,10 +59,22 @@ def _looks_like_hf(p: Path) -> bool:
 
 
 def iter_lhotse_shar(path: Path, limit: int):
-    """Yield (id, text, duration_seconds) tuples from a Lhotse Shar dir."""
+    """Yield (id, text, duration_seconds) tuples from a Lhotse Shar dir.
+
+    Handles two layouts:
+      - flat:      <path>/cuts.*.jsonl.gz + recording.*.tar
+      - sharded:   <path>/worker_*/cuts.*.jsonl.gz (cscs prepare_shar output)
+    """
+    from itertools import chain
     from lhotse import CutSet
 
-    cuts = CutSet.from_shar(in_dir=str(path))
+    worker_dirs = sorted(d for d in path.glob("worker_*") if d.is_dir())
+    if worker_dirs:
+        cuts = chain.from_iterable(
+            CutSet.from_shar(in_dir=str(d)) for d in worker_dirs
+        )
+    else:
+        cuts = CutSet.from_shar(in_dir=str(path))
 
     n = 0
     for cut in cuts:
