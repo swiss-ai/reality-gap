@@ -92,15 +92,24 @@ def index_recording_tar(tar_path: Path) -> dict[str, bytes]:
 def convert(shar_in: Path, parquet_out: Path, tokenizer_path: str) -> dict:
     import pyarrow as pa
     import pyarrow.parquet as pq
-    from transformers import AutoTokenizer
+    # Use the raw `tokenizers` library, not transformers' AutoTokenizer. The
+    # voxcpm2 venv ships transformers 4.55 which pulls in `masking_utils` ->
+    # `torch._dynamo._trace_wrapped_higher_order_op.TransformGetItemToIndex`,
+    # a torch 2.7+ symbol that NGC 24.11 (torch 2.6) lacks. Raw `tokenizers`
+    # has no torch dependency. We don't need special-token wrapping anyway
+    # (supervisor said add_special_tokens=False), so vocab+encode is enough.
+    from tokenizers import Tokenizer
 
     cuts_path = shar_in / "cuts.000000.jsonl.gz"
     tar_path = shar_in / "recording.000000.tar"
     if not cuts_path.exists() or not tar_path.exists():
         raise FileNotFoundError(f"Expected cuts + recording in {shar_in}")
 
-    logger.info("Loading tokenizer: %s", tokenizer_path)
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+    tokenizer_json = Path(tokenizer_path) / "tokenizer.json"
+    if not tokenizer_json.exists():
+        raise FileNotFoundError(f"tokenizer.json not found in {tokenizer_path}")
+    logger.info("Loading tokenizer: %s", tokenizer_json)
+    tokenizer = Tokenizer.from_file(str(tokenizer_json))
 
     logger.info("Reading cuts manifest: %s", cuts_path)
     cuts = load_cuts(cuts_path)
@@ -129,7 +138,10 @@ def convert(shar_in: Path, parquet_out: Path, tokenizer_path: str) -> dict:
             logger.warning("No WAV for cut %s (recording_id=%s)", cid, rec_id)
             continue
 
-        token_ids = tokenizer.encode(text, add_special_tokens=False)
+        # `tokenizers.Tokenizer.encode` does not add special tokens by default
+        # (parity with `AutoTokenizer.encode(..., add_special_tokens=False)`).
+        # Returns an Encoding object; we take .ids.
+        token_ids = tokenizer.encode(text).ids
 
         # Sample rate + duration: prefer the recording's sampling_rate; fall back
         # to cut.duration. Lhotse stores both, but the canonical source is the
