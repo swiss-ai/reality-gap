@@ -17,9 +17,11 @@ scorer:
 	uv venv .venv-scorer --system-site-packages
 
 	source .venv-scorer/bin/activate && \
+	uv pip install --no-deps --no-build-isolation \
+	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps openai-whisper tiktoken more-itertools \
 	    numba llvmlite && \
-	python -c "import whisper; print('Whisper import OK')" && \
+	python -c "import torchaudio, whisper; print('Scorer import OK')" && \
 	touch .venv-scorer/.build_complete
 
 
