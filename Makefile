@@ -81,7 +81,10 @@ piper:
 	uv venv .venv-piper --system-site-packages
 
 	source .venv-piper/bin/activate && \
-	uv pip install piper-tts && \
+	uv pip install --no-deps --no-build-isolation \
+	    git+https://github.com/pytorch/audio.git@release/2.6 && \
+	uv pip install --no-deps piper-tts onnxruntime pathvalidate \
+	    flatbuffers protobuf packaging && \
 	mkdir -p voices && \
 	if [ ! -f voices/pl_PL-gosia-medium.onnx ]; then \
 	    cd voices && \
