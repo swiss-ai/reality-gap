@@ -30,7 +30,7 @@ vllm-omni:
 	export TORCH_CUDA_ARCH_LIST="9.0" && \
 	export MAX_JOBS=4 && \
 	export VLLM_TARGET_DEVICE=cuda && \
-	uv pip install --no-deps ninja cmake packaging wheel 'setuptools-scm<9' pybind11 cython && \
+	uv pip install --no-deps ninja cmake packaging wheel 'setuptools>=77' 'setuptools-scm<9' pybind11 cython && \
 	uv pip install --no-deps \
 	    transformers tokenizers huggingface-hub sentencepiece protobuf safetensors \
 	    aiohttp fastapi 'uvicorn[standard]' httpx pydantic pyzmq msgspec \
