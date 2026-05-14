@@ -87,7 +87,8 @@ voxcpm2:
 	uv pip install --no-deps soundfile safetensors accelerate \
 	    'transformers>=4.55,<4.56' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    einops regex tqdm packaging filelock pyyaml && \
-	python -c "from voxcpm import VoxCPM; print('VoxCPM2 import OK')" && \
+	uv pip install --no-deps lhotse cytoolz click intervaltree audioread tabulate && \
+	python -c "from voxcpm import VoxCPM; import lhotse; print('VoxCPM2 + lhotse import OK')" && \
 	touch .venv-voxcpm2/.build_complete
 
 
