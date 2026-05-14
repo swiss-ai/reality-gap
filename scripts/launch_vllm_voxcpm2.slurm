@@ -4,7 +4,7 @@
 #SBATCH --job-name=vllm_voxcpm2
 #SBATCH --output=logs/%j_vllm_voxcpm2.out
 #SBATCH --error=logs/%j_vllm_voxcpm2.err
-#SBATCH --time=04:00:00
+#SBATCH --time=00:30:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
