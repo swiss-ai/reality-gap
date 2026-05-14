@@ -2,8 +2,8 @@
 #SBATCH --account=infra01
 #SBATCH --environment=./ngc-24.11.toml
 #SBATCH --job-name=synth_to_shar
-#SBATCH --output=logs/%j_synth_to_shar.out
-#SBATCH --error=logs/%j_synth_to_shar.err
+#SBATCH --output=logs/%A_%a_synth_to_shar.out
+#SBATCH --error=logs/%A_%a_synth_to_shar.err
 #SBATCH --time=00:30:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
@@ -15,8 +15,18 @@
 # that turns a JSON text manifest into a Lhotse Shar dataset, ready for
 # audio_tokenization/tokenize.py downstream.
 #
-# Usage (smoke test):
+# Array-aware: pass --array=0-N-1 to scale across N GPUs. The bridge
+# script slices the input round-robin (items[shard_idx::num_shards]) so
+# each task processes its own subset and writes to its own shard_NNNN/
+# subdirectory — no inter-task coordination needed.
+#
+# Usage:
+#   # single task (smoke):
 #   sbatch --export=ALL,BACKEND=voxcpm2,INPUT=data/tts_bench/pl_voxpopuli.json \
+#       scripts/synthesize_to_shar.slurm
+#
+#   # 32-way scale-out:
+#   sbatch --array=0-31 --export=ALL,BACKEND=voxcpm2,INPUT=data/big_pl.json \
 #       scripts/synthesize_to_shar.slurm
 
 set -e
@@ -26,7 +36,7 @@ export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 
 cd ~/benchmark-audio-tokenizer
-echo "Job $SLURM_JOB_ID started at $(date)"
+echo "Job $SLURM_JOB_ID (array task ${SLURM_ARRAY_TASK_ID:-0}/${SLURM_ARRAY_TASK_COUNT:-1}) started at $(date)"
 
 BACKEND="${BACKEND:-voxcpm2}"
 INPUT="${INPUT:-data/tts_bench/pl_voxpopuli.json}"
@@ -34,6 +44,10 @@ OUT_NAME="${OUT_NAME:-$(basename "$INPUT" .json)}"
 OUT_DIR="${OUT_DIR:-results/synthetic_shar/${BACKEND}/${OUT_NAME}}"
 REF_WAV="${REF_WAV:-outputs/reference_audio/pl_speaker_0.wav}"
 TARGET_SR="${TARGET_SR:-24000}"
+
+# Sharding from SLURM array env. Defaults (0,1) = non-array single task.
+SHARD_IDX="${SLURM_ARRAY_TASK_ID:-0}"
+NUM_SHARDS="${SLURM_ARRAY_TASK_COUNT:-1}"
 
 # ── venv build (same flock pattern as benchmark_tts.slurm) ────────────
 LOCKFILE=".venv-${BACKEND}.lock"
@@ -71,7 +85,7 @@ python -c "import lhotse" || {
 }
 
 # ── synthesize ────────────────────────────────────────────────────────
-echo "=== Synthesizing ${BACKEND} → ${OUT_DIR} ==="
+echo "=== Synthesizing ${BACKEND} → ${OUT_DIR} (shard ${SHARD_IDX}/${NUM_SHARDS}) ==="
 mkdir -p "$(dirname "$OUT_DIR")"
 python scripts/synthesize_to_shar.py \
     --backend "${BACKEND}" \
@@ -79,10 +93,19 @@ python scripts/synthesize_to_shar.py \
     --output-shar "${OUT_DIR}" \
     --reference-audio "${REF_WAV}" \
     --target-sr "${TARGET_SR}" \
+    --shard-idx "${SHARD_IDX}" \
+    --num-shards "${NUM_SHARDS}" \
     --device cuda
 
-echo "=== Output Shar contents ==="
-ls -la "${OUT_DIR}" || true
-[ -f "${OUT_DIR}/synthesis_stats.json" ] && cat "${OUT_DIR}/synthesis_stats.json"
+# When sharded, each task writes to <OUT_DIR>/shard_NNNN/. Report that
+# task's stats. When non-sharded, output sits directly in OUT_DIR.
+if [ "${NUM_SHARDS}" -gt 1 ]; then
+    SHARD_PATH=$(printf "%s/shard_%04d" "${OUT_DIR}" "${SHARD_IDX}")
+else
+    SHARD_PATH="${OUT_DIR}"
+fi
+echo "=== Output Shar contents (${SHARD_PATH}) ==="
+ls -la "${SHARD_PATH}" || true
+[ -f "${SHARD_PATH}/synthesis_stats.json" ] && cat "${SHARD_PATH}/synthesis_stats.json"
 
-echo "Job $SLURM_JOB_ID finished at $(date)"
+echo "Job $SLURM_JOB_ID (array task ${SHARD_IDX}/${NUM_SHARDS}) finished at $(date)"

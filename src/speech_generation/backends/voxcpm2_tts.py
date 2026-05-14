@@ -51,6 +51,7 @@ class VoxCPM2TTSBackend(TTSBackend):
         self.inference_timesteps = inference_timesteps
         self._model = None
         self._sample_rate: Optional[int] = None
+        self._ref_cache: dict[int, str] = {}
 
     def load_model(self, device: Optional[str] = None) -> None:
         if device:
@@ -123,12 +124,21 @@ class VoxCPM2TTSBackend(TTSBackend):
     def _write_reference_to_tmp(
         self, reference_audio: torch.Tensor, sr: Optional[int]
     ) -> str:
+        # Cache by tensor identity so a long synthesis run that re-uses the
+        # same reference audio writes the tmp WAV only once. At 36M utterance
+        # scale the saved fopen/encode/fsync per call is non-trivial wall time.
+        key = id(reference_audio)
+        cached = self._ref_cache.get(key)
+        if cached is not None:
+            return cached
+
         import torchaudio
 
         if reference_audio.ndim == 1:
             reference_audio = reference_audio.unsqueeze(0)
         f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         torchaudio.save(f.name, reference_audio.cpu(), sr or 16000)
+        self._ref_cache[key] = f.name
         return f.name
 
     @property

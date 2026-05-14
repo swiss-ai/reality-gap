@@ -221,16 +221,44 @@ def main() -> None:
     p.add_argument("--reference-audio", default=None, help="Path to reference WAV for voice cloning")
     p.add_argument("--reference-text", default=None, help="Reference transcript (for OmniVoice/F5)")
     p.add_argument("--shard-size", type=int, default=1000, help="Cuts per shard in the output Shar")
+    p.add_argument("--batch-size", type=int, default=1,
+                   help="Utterances per backend call. Placeholder: VoxCPM2 Direct-Python path "
+                        "doesn't support true batched inference, so values >1 fall through to "
+                        "the sequential default. The flag is wired so a future vLLM-backed "
+                        "backend can light up batching without further CLI changes.")
     p.add_argument("--target-sr", type=int, default=24000,
                    help="Resample to this rate before writing Shar. Default 24000 matches "
                         "WavTokenizer's expected input; the interleave config's 16000 floor "
                         "is a filter, not a target.")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--shard-idx", type=int, default=0,
+                   help="0-indexed shard this task processes. Combined with --num-shards lets "
+                        "a SLURM array distribute the input round-robin across tasks.")
+    p.add_argument("--num-shards", type=int, default=1,
+                   help="Total number of shards. Each task processes items[shard_idx::num_shards] "
+                        "(round-robin, balances variable utterance lengths across tasks). "
+                        "When >1, output is written under <output-shar>/shard_{idx:04d}/.")
     args = p.parse_args()
 
     if not args.input.exists():
         logger.error("Input not found: %s", args.input)
         sys.exit(2)
+    if args.num_shards < 1 or not (0 <= args.shard_idx < args.num_shards):
+        logger.error("Invalid sharding: shard-idx=%d num-shards=%d", args.shard_idx, args.num_shards)
+        sys.exit(2)
+
+    logger.info("Reading input: %s", args.input)
+    items = load_input(args.input)
+    total = len(items)
+    if args.num_shards > 1:
+        items = items[args.shard_idx::args.num_shards]
+        # Each shard writes to its own subdir so SLURM array tasks don't race
+        # on the same SharWriter. Combine post-hoc by enumerating shard_*/.
+        shard_out = args.output_shar / f"shard_{args.shard_idx:04d}"
+        logger.info("  shard %d/%d: %d of %d utterances", args.shard_idx, args.num_shards, len(items), total)
+    else:
+        shard_out = args.output_shar
+        logger.info("  %d utterances to synthesize", total)
 
     logger.info("Loading backend: %s", args.backend)
     backend = load_backend(args.backend, args.device, args.checkpoint)
@@ -238,15 +266,11 @@ def main() -> None:
     logger.info("Loading reference audio: %s", args.reference_audio)
     ref_audio, ref_sr = load_reference(args.reference_audio)
 
-    logger.info("Reading input: %s", args.input)
-    items = load_input(args.input)
-    logger.info("  %d utterances to synthesize", len(items))
-
     t_start = time.time()
     stats = synthesize_and_write_shar(
         backend=backend,
         items=items,
-        output_shar=args.output_shar,
+        output_shar=shard_out,
         reference_audio=ref_audio,
         reference_audio_sr=ref_sr,
         reference_text=args.reference_text,
@@ -254,13 +278,14 @@ def main() -> None:
         target_sr=args.target_sr,
     )
     stats["wall_seconds"] = round(time.time() - t_start, 2)
+    stats["shard_idx"] = args.shard_idx
+    stats["num_shards"] = args.num_shards
     if stats["total_audio_seconds"] > 0:
         stats["aggregate_rtf"] = round(
             stats["total_generation_seconds"] / stats["total_audio_seconds"], 4
         )
 
-    # Write a small stats file next to the Shar.
-    (args.output_shar / "synthesis_stats.json").write_text(
+    (shard_out / "synthesis_stats.json").write_text(
         json.dumps(stats, indent=2), encoding="utf-8"
     )
 
