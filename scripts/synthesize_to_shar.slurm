@@ -44,30 +44,42 @@ OUT_NAME="${OUT_NAME:-$(basename "$INPUT" .json)}"
 OUT_DIR="${OUT_DIR:-results/synthetic_shar/${BACKEND}/${OUT_NAME}}"
 REF_WAV="${REF_WAV:-outputs/reference_audio/pl_speaker_0.wav}"
 TARGET_SR="${TARGET_SR:-24000}"
+# When BACKEND=voxcpm2_vllm, this points at the running vllm-omni server.
+VLLM_ENDPOINT="${VLLM_ENDPOINT:-}"
+
+# For voxcpm2_vllm the client is CPU-only (server holds the GPU) and uses
+# the regular voxcpm2 venv (has requests + soundfile + lhotse already).
+if [ "$BACKEND" = "voxcpm2_vllm" ]; then
+    VENV="voxcpm2"
+    EXTRA_ARGS="--vllm-endpoint ${VLLM_ENDPOINT}"
+else
+    VENV="$BACKEND"
+    EXTRA_ARGS=""
+fi
 
 # Sharding from SLURM array env. Defaults (0,1) = non-array single task.
 SHARD_IDX="${SLURM_ARRAY_TASK_ID:-0}"
 NUM_SHARDS="${SLURM_ARRAY_TASK_COUNT:-1}"
 
 # ── venv build (same flock pattern as benchmark_tts.slurm) ────────────
-LOCKFILE=".venv-${BACKEND}.lock"
+LOCKFILE=".venv-${VENV}.lock"
 exec 200>"$LOCKFILE"
-echo "=== Acquiring build lock for ${BACKEND} ==="
+echo "=== Acquiring build lock for ${VENV} ==="
 flock 200 || { echo "ERROR: failed to acquire build lock"; exit 1; }
 
-if [ ! -f ".venv-${BACKEND}/.build_complete" ]; then
-    echo "=== Building ${BACKEND} venv ==="
-    if [ -e ".venv-${BACKEND}" ]; then
-        STALE=".venv-${BACKEND}.stale.$$"
-        mv ".venv-${BACKEND}" "$STALE" || true
+if [ ! -f ".venv-${VENV}/.build_complete" ]; then
+    echo "=== Building ${VENV} venv ==="
+    if [ -e ".venv-${VENV}" ]; then
+        STALE=".venv-${VENV}.stale.$$"
+        mv ".venv-${VENV}" "$STALE" || true
         rm -rf "$STALE" 2>/dev/null &
     fi
-    make "${BACKEND}"
+    make "${VENV}"
 else
-    echo "=== Reusing existing ${BACKEND} venv ==="
+    echo "=== Reusing existing ${VENV} venv ==="
 fi
 flock -u 200
-source ".venv-${BACKEND}/bin/activate"
+source ".venv-${VENV}/bin/activate"
 
 # ── sanity checks ─────────────────────────────────────────────────────
 if [ ! -f "$INPUT" ]; then
@@ -80,7 +92,7 @@ if [ ! -f "$REF_WAV" ]; then
     exit 2
 fi
 python -c "import lhotse" || {
-    echo "ERROR: lhotse missing from .venv-${BACKEND}. Rebuild venv: rm .venv-${BACKEND}/.build_complete"
+    echo "ERROR: lhotse missing from .venv-${VENV}. Rebuild venv: rm .venv-${VENV}/.build_complete"
     exit 2
 }
 
@@ -95,7 +107,8 @@ python scripts/synthesize_to_shar.py \
     --target-sr "${TARGET_SR}" \
     --shard-idx "${SHARD_IDX}" \
     --num-shards "${NUM_SHARDS}" \
-    --device cuda
+    --device cuda \
+    ${EXTRA_ARGS}
 
 # When sharded, each task writes to <OUT_DIR>/shard_NNNN/. Report that
 # task's stats. When non-sharded, output sits directly in OUT_DIR.

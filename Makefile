@@ -5,6 +5,53 @@ SHELL := /bin/bash
 venvs: neucodec cosyvoice2 xcodec2 wavtokenizer glm4voice
 
 
+# Shared vllm-omni serving venv — for the Stage-3 batched VoxCPM2 path.
+# No official aarch64 wheels exist for vllm or vllm-omni, so we build both
+# from source against NGC's aarch64 torch (inherited via --system-site-packages).
+#
+# Expected first-build cost: ~30-60 min of CUDA compile on GH200 (sm_90).
+# After that, .build_complete short-circuits the rebuild.
+#
+# Known risks (iterate when these fail):
+#   - Transitive dep list below is a best-guess from vllm 0.20.0's pyproject;
+#     expect to add packages as imports surface in the server log.
+#   - vllm-omni PyPI wheel may be x86_64-only — the recipe falls through to
+#     a from-source vllm-omni build on failure.
+#   - TORCH_CUDA_ARCH_LIST="9.0" is set for GH200; change for other GPUs.
+#   - MAX_JOBS=4 keeps the compile from OOMing on small nodes; tune up if
+#     you have headroom and want a faster first build.
+vllm-omni:
+	mv .venv-vllm-omni .venv-vllm-omni-old || true
+	rm -rf .venv-vllm-omni-old &
+
+	uv venv .venv-vllm-omni --system-site-packages
+
+	source .venv-vllm-omni/bin/activate && \
+	export TORCH_CUDA_ARCH_LIST="9.0" && \
+	export MAX_JOBS=4 && \
+	export VLLM_TARGET_DEVICE=cuda && \
+	uv pip install --no-deps ninja cmake packaging wheel setuptools-scm pybind11 cython && \
+	uv pip install --no-deps \
+	    transformers tokenizers huggingface-hub sentencepiece protobuf safetensors \
+	    aiohttp fastapi 'uvicorn[standard]' httpx pydantic pyzmq msgspec \
+	    cloudpickle gguf typing-extensions tqdm prometheus-client \
+	    importlib-metadata partial-json-parser regex requests \
+	    pillow psutil six && \
+	if [ ! -d vllm-src ]; then \
+	    git clone --branch v0.20.0 --depth 1 https://github.com/vllm-project/vllm.git vllm-src; \
+	fi && \
+	cd vllm-src && pip install --no-deps --no-build-isolation -e . && cd .. && \
+	( uv pip install --no-deps vllm-omni || ( \
+	    echo "PyPI vllm-omni failed (likely no aarch64 wheel) — building from source"; \
+	    if [ ! -d vllm-omni-src ]; then \
+	        git clone --depth 1 https://github.com/vllm-project/vllm-omni.git vllm-omni-src; \
+	    fi && \
+	    cd vllm-omni-src && pip install --no-deps --no-build-isolation -e . && cd .. \
+	) ) && \
+	python -c "import vllm, vllm_omni; print('vllm + vllm-omni import OK')" && \
+	touch .venv-vllm-omni/.build_complete
+
+
 # Shared scorer venv — Whisper WER (and future audio metrics) used by
 # `benchmark_tts.py score` / `aggregate`. Split out so we don't reinstall
 # Whisper's deps inside every backend's venv, and so backend dep-pins

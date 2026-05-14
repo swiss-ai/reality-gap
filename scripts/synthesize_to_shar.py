@@ -59,11 +59,18 @@ logger = logging.getLogger(__name__)
 
 
 # ── Backend loader (mirrors benchmark_tts.py BACKENDS) ───────────────
-def load_backend(name: str, device: str, checkpoint: Optional[str]):
+def load_backend(name: str, device: str, checkpoint: Optional[str],
+                 vllm_endpoint: Optional[str] = None):
     """Instantiate one of the commercially-licensed TTS backends."""
     if name == "voxcpm2":
         from speech_generation.backends.voxcpm2_tts import VoxCPM2TTSBackend
         b = VoxCPM2TTSBackend(checkpoint=checkpoint or "openbmb/VoxCPM2", device=device)
+    elif name == "voxcpm2_vllm":
+        from speech_generation.backends.voxcpm2_vllm_tts import VoxCPM2VLLMTTSBackend
+        if not vllm_endpoint:
+            raise ValueError("voxcpm2_vllm backend requires --vllm-endpoint")
+        b = VoxCPM2VLLMTTSBackend(endpoint=vllm_endpoint,
+                                  model=checkpoint or "openbmb/VoxCPM2")
     elif name == "piper":
         from speech_generation.backends.piper_tts import PiperTTSBackend
         b = PiperTTSBackend(voice_path=checkpoint or "voices/pl_PL-gosia-medium.onnx", device=device)
@@ -214,7 +221,10 @@ def synthesize_and_write_shar(
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--backend", required=True,
-                   choices=["voxcpm2", "piper", "parler", "f5", "cosyvoice2"])
+                   choices=["voxcpm2", "voxcpm2_vllm", "piper", "parler", "f5", "cosyvoice2"])
+    p.add_argument("--vllm-endpoint", default=None,
+                   help="Base URL of the running vllm-omni server. Required for "
+                        "--backend=voxcpm2_vllm. e.g. http://nid001234:8000")
     p.add_argument("--input", required=True, type=Path, help="JSON manifest (id, text)")
     p.add_argument("--output-shar", required=True, type=Path, help="Output Lhotse Shar directory")
     p.add_argument("--checkpoint", default=None, help="Backend-specific checkpoint override")
@@ -261,7 +271,8 @@ def main() -> None:
         logger.info("  %d utterances to synthesize", total)
 
     logger.info("Loading backend: %s", args.backend)
-    backend = load_backend(args.backend, args.device, args.checkpoint)
+    backend = load_backend(args.backend, args.device, args.checkpoint,
+                           vllm_endpoint=args.vllm_endpoint)
 
     logger.info("Loading reference audio: %s", args.reference_audio)
     ref_audio, ref_sr = load_reference(args.reference_audio)
