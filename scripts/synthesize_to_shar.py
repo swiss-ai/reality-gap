@@ -35,6 +35,7 @@ Output:
 """
 
 import argparse
+import io
 import json
 import logging
 import sys
@@ -42,6 +43,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import soundfile as sf
 import torch
 import torchaudio
 
@@ -161,10 +163,14 @@ def synthesize_and_write_shar(
 
                 duration = audio.numel() / sr
 
-                # Construct a Lhotse Recording from raw samples.
-                recording = Recording.from_data(
-                    audio.numpy(),
-                    sampling_rate=sr,
+                # Lhotse Recording from in-memory audio: encode to WAV bytes
+                # (PCM_16 — lossless for speech, half the size of float32) and
+                # pass to from_bytes. lhotse 1.33 doesn't have a from_data API.
+                buf = io.BytesIO()
+                sf.write(buf, audio.detach().cpu().numpy(), sr,
+                         format="WAV", subtype="PCM_16")
+                recording = Recording.from_bytes(
+                    data=buf.getvalue(),
                     recording_id=sid,
                 )
 
