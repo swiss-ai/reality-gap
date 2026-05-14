@@ -5,6 +5,24 @@ SHELL := /bin/bash
 venvs: neucodec cosyvoice2 xcodec2 wavtokenizer glm4voice
 
 
+# Shared scorer venv — Whisper WER (and future audio metrics) used by
+# `benchmark_tts.py score` / `aggregate`. Split out so we don't reinstall
+# Whisper's deps inside every backend's venv, and so backend dep-pins
+# (numpy, transformers, torch) can't fight Whisper's.
+# Inherits NGC's aarch64 torch / torchaudio via --system-site-packages.
+scorer:
+	mv .venv-scorer .venv-scorer-old || true
+	rm -rf .venv-scorer-old &
+
+	uv venv .venv-scorer --system-site-packages
+
+	source .venv-scorer/bin/activate && \
+	uv pip install --no-deps openai-whisper tiktoken more-itertools \
+	    numba llvmlite && \
+	python -c "import whisper; print('Whisper import OK')" && \
+	touch .venv-scorer/.build_complete
+
+
 # XTTS v2 — REFERENCE-ONLY (non-commercial license, Coqui Public Model License).
 # Not part of the active TTS pipeline. Build only if running a reference-only
 # comparison via `benchmark_tts.py generate --backend xtts --allow-reference`.

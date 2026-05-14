@@ -85,6 +85,30 @@ python scripts/benchmark_tts.py generate \
     --output-dir "${OUT_DIR}" \
     --device cuda
 
+# ── swap to shared scorer venv ────────────────────────────────────────
+# Whisper + future metrics live in a single shared venv so we don't
+# reinstall heavy deps (numba, llvmlite, tiktoken) into every backend's
+# venv, and so backend pins can't fight Whisper's.
+deactivate || true
+
+SCORER_LOCK=".venv-scorer.lock"
+exec 201>"$SCORER_LOCK"
+echo "=== Acquiring build lock for scorer ==="
+flock 201 || { echo "ERROR: failed to acquire scorer build lock"; exit 1; }
+if [ ! -f ".venv-scorer/.build_complete" ]; then
+    echo "=== Building scorer venv ==="
+    if [ -e ".venv-scorer" ]; then
+        STALE=".venv-scorer.stale.$$"
+        mv ".venv-scorer" "$STALE" || true
+        rm -rf "$STALE" 2>/dev/null &
+    fi
+    make scorer
+else
+    echo "=== Reusing existing scorer venv ==="
+fi
+flock -u 201
+source ".venv-scorer/bin/activate"
+
 # ── 2. score (Whisper WER) ────────────────────────────────────────────
 echo "=== Score (Whisper) ==="
 python scripts/benchmark_tts.py score \
