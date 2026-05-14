@@ -40,13 +40,13 @@ vllm-omni:
 	if [ ! -d vllm-src ]; then \
 	    git clone --branch v0.20.0 --depth 1 https://github.com/vllm-project/vllm.git vllm-src; \
 	fi && \
-	cd vllm-src && pip install --no-deps --no-build-isolation -e . && cd .. && \
+	cd vllm-src && uv pip install --no-deps --no-build-isolation -e . && cd .. && \
 	( uv pip install --no-deps vllm-omni || ( \
 	    echo "PyPI vllm-omni failed (likely no aarch64 wheel) — building from source"; \
 	    if [ ! -d vllm-omni-src ]; then \
 	        git clone --depth 1 https://github.com/vllm-project/vllm-omni.git vllm-omni-src; \
 	    fi && \
-	    cd vllm-omni-src && pip install --no-deps --no-build-isolation -e . && cd .. \
+	    cd vllm-omni-src && uv pip install --no-deps --no-build-isolation -e . && cd .. \
 	) ) && \
 	python -c "import vllm, vllm_omni; print('vllm + vllm-omni import OK')" && \
 	touch .venv-vllm-omni/.build_complete
