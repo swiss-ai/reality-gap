@@ -133,6 +133,9 @@ parler:
 	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    sentencepiece protobuf descript-audio-codec encodec einops regex tqdm \
 	    packaging filelock pyyaml && \
+	uv pip install --no-deps descript-audiotools argbind librosa flatten-dict \
+	    ffmpy gitpython numba llvmlite pyloudnorm randomname rich pystoi \
+	    julius markdown2 scipy && \
 	python -c "from parler_tts import ParlerTTSForConditionalGeneration; print('Parler-TTS import OK')" && \
 	touch .venv-parler/.build_complete
 
@@ -154,8 +157,11 @@ f5:
 	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    librosa vocos x-transformers einops einx jieba pypinyin \
 	    cached_path datasets bitsandbytes scipy hydra-core omegaconf \
-	    google-api-core google-cloud-storage google-auth boto3 \
+	    boto3 \
+	    google-api-core google-cloud-storage google-cloud-core google-auth \
+	    google-resumable-media google-crc32c \
 	    googleapis-common-protos proto-plus cachetools pyasn1 pyasn1-modules rsa \
+	    requests \
 	    regex tqdm packaging filelock pyyaml && \
 	python -c "from f5_tts.api import F5TTS; print('F5-TTS import OK')" && \
 	touch .venv-f5/.build_complete
