@@ -62,8 +62,10 @@ else
 fi
 
 # Sharding from SLURM array env. Defaults (0,1) = non-array single task.
-SHARD_IDX="${SLURM_ARRAY_TASK_ID:-0}"
-NUM_SHARDS="${SLURM_ARRAY_TASK_COUNT:-1}"
+# NUM_SHARDS can be overridden via env to slice the input as if a larger
+# array were running — useful for calibration runs (--array=0-0 NUM_SHARDS=128).
+SHARD_IDX="${SHARD_IDX:-${SLURM_ARRAY_TASK_ID:-0}}"
+NUM_SHARDS="${NUM_SHARDS:-${SLURM_ARRAY_TASK_COUNT:-1}}"
 
 # ── venv build (same flock pattern as benchmark_tts.slurm) ────────────
 LOCKFILE=".venv-${VENV}.lock"
