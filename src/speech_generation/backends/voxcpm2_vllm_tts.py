@@ -7,14 +7,29 @@ The vllm-omni server is launched separately via
 `scripts/launch_vllm_voxcpm2.slurm`. This backend POSTs to that
 server's endpoint and reconstructs the audio from the response.
 
-UNVERIFIED API — the docs page documenting VoxCPM2's request format
-in vllm-omni was 404 at research time. The HTTP shape below is a
-best-guess against vLLM's OpenAI-compat audio API conventions. When
-the launcher proves the actual API on first run, update _post_audio()
-to match.
+API surface (confirmed against /openapi.json on 2026-05-15):
+
+  POST /v1/audio/voices            multipart/form-data
+      audio_sample (file)
+      name (string)
+      consent (string)
+      ref_text (string, optional)
+  GET  /v1/audio/voices
+  POST /v1/audio/speech            application/json
+      {model, input, voice, instructions, ...}
+      returns audio/wav bytes (default) or audio/* depending on Accept
+  POST /v1/audio/speech/batch      application/json
+      {model, items: [SpeechBatchItem], voice, ...}
+      returns JSON
+
+Reference audio is uploaded once via POST /v1/audio/voices and reused by
+`name` in all subsequent /v1/audio/speech calls. We cache the voice name
+by id() of the reference tensor — same pattern as the Direct-Python
+backend's tmp-file cache.
 """
 
 import base64
+import hashlib
 import io
 import logging
 import time
@@ -33,12 +48,14 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
 
     Args:
         endpoint: Base URL of the running vllm-omni server, e.g.
-            "http://nid001234:8000". Set via VLLM_ENDPOINT env var or
-            passed explicitly.
+            "http://172.28.26.8:8000".
         model: Model name to send in the request. Must match the
             --model arg the server was launched with.
         timeout_s: Per-request HTTP timeout. Server-side warmup +
             sequence packing means cold starts can take ~30 s.
+        consent: Consent string passed when uploading reference voices.
+            The server requires it but accepts any non-empty string for
+            user-provided clips.
     """
 
     def __init__(
@@ -46,15 +63,17 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
         endpoint: str,
         model: str = "openbmb/VoxCPM2",
         timeout_s: float = 60.0,
+        consent: str = "user-provided reference audio",
     ):
         self.endpoint = endpoint.rstrip("/")
         self.model = model
         self.timeout_s = timeout_s
+        self.consent = consent
         self._session = None
         self._sample_rate: Optional[int] = None
-        # Cache base64-encoded reference audio so we don't re-encode on every
-        # request; analogous to the id()-based cache in voxcpm2_tts.py.
-        self._ref_cache: dict[int, str] = {}
+        # Cache registered-voice names by id(reference_audio) so we don't
+        # re-upload the same reference WAV for every call.
+        self._voice_cache: dict[int, str] = {}
 
     def load_model(self, device: Optional[str] = None) -> None:
         # "Loading" the model is really just a health check against the
@@ -72,10 +91,9 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
                 f"for the endpoint URL in the log? Underlying error: {e}"
             ) from e
 
-        # VoxCPM2 native is 48 kHz; the server should expose this via /v1/models
-        # or similar. Until we verify, assume 48 k. The bridge script
+        # VoxCPM2 native is 48 kHz per the model card. The bridge script
         # resamples to --target-sr (default 24 k) downstream so this only
-        # matters for accurate stats reporting.
+        # matters for accurate stats reporting on the client side.
         self._sample_rate = 48000
         logger.info("VoxCPM2-vLLM backend ready at %s (sr=%d)",
                     self.endpoint, self._sample_rate)
@@ -92,8 +110,10 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
         if self._session is None:
             raise RuntimeError("load_model() not called. Run it before generate().")
 
-        ref_b64 = self._encode_reference(reference_audio, reference_audio_sr)
-        audio_np, sr = self._post_audio(text, ref_b64)
+        # Upload reference voice once (cached by tensor identity) and use
+        # its registered name in the speech request.
+        voice_name = self._ensure_voice_uploaded(reference_audio, reference_audio_sr)
+        audio_np, sr = self._post_speech(text, voice_name)
 
         audio = torch.from_numpy(audio_np).to(torch.float32)
         if audio.ndim > 1:
@@ -109,7 +129,7 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
                 "backend": "voxcpm2_vllm",
                 "endpoint": self.endpoint,
                 "model": self.model,
-                "voice_cloning": reference_audio is not None,
+                "voice": voice_name,
                 "direct_tokens": False,
             },
         )
@@ -122,16 +142,14 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
         render_audio: bool = False,
         **kwargs,
     ) -> list[TTSOutput]:
-        """True batched generation — the whole point of this backend.
+        """True batched generation via /v1/audio/speech/batch.
 
-        Posts a single request with N texts. The vllm-omni server batches
-        them internally (continuous batching, CUDA graph, shared mem pool).
-
-        UNVERIFIED: the batched-request schema may not be `input: list[str]`.
-        Update _post_audio_batch() once the real API is confirmed.
+        BatchSpeechRequest has `items: list[SpeechBatchItem]` and a shared
+        `voice`. Per-item overrides are documented; we keep it simple and
+        send N items with one shared voice.
         """
-        ref_b64 = self._encode_reference(reference_audio, reference_audio_sr)
-        results = self._post_audio_batch(texts, ref_b64)
+        voice_name = self._ensure_voice_uploaded(reference_audio, reference_audio_sr)
+        results = self._post_speech_batch(texts, voice_name)
 
         outputs = []
         for audio_np, sr in results:
@@ -148,6 +166,7 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
                     "backend": "voxcpm2_vllm",
                     "endpoint": self.endpoint,
                     "model": self.model,
+                    "voice": voice_name,
                     "batched": True,
                     "direct_tokens": False,
                 },
@@ -155,116 +174,141 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
         return outputs
 
     # ── HTTP plumbing ─────────────────────────────────────────────────
-    # The two _post_* methods are the ONLY places the actual vllm-omni
-    # API shape lives. When we confirm the real schema on first run,
-    # edit here.
 
-    def _post_audio(self, text: str, ref_b64: Optional[str]) -> tuple:
-        """POST a single text → return (audio_np, sample_rate).
-
-        ASSUMED SCHEMA (vLLM OpenAI-compat-style):
-            POST {endpoint}/v1/audio/generations
-            {
-              "model": "...",
-              "input": "...",
-              "voice": "<base64 wav>",   # optional
-              "response_format": "wav"
-            }
-            response: WAV bytes (audio/wav content type), OR
-                      JSON with base64-encoded "audio" field.
-        """
-        import numpy as np
-        import soundfile as sf
-
-        payload = {
-            "model": self.model,
-            "input": text,
-            "response_format": "wav",
-        }
-        if ref_b64:
-            payload["voice"] = ref_b64
-
-        r = self._session.post(
-            f"{self.endpoint}/v1/audio/generations",
-            json=payload,
-            timeout=self.timeout_s,
-        )
-        r.raise_for_status()
-
-        # Two response styles to handle until verified:
-        ct = r.headers.get("content-type", "")
-        if "audio/wav" in ct or "audio/x-wav" in ct:
-            buf = io.BytesIO(r.content)
-        else:
-            # JSON with base64 audio
-            data = r.json()
-            audio_b64 = data.get("audio") or data["data"][0]["audio"]
-            buf = io.BytesIO(base64.b64decode(audio_b64))
-
-        audio_np, sr = sf.read(buf, dtype="float32")
-        return audio_np, sr
-
-    def _post_audio_batch(self, texts: list[str], ref_b64: Optional[str]) -> list[tuple]:
-        """POST a batch of texts → list of (audio_np, sample_rate).
-
-        Falls back to sequential _post_audio if the server rejects the
-        batched schema. Once we verify a batched endpoint exists, drop
-        the fallback.
-        """
-        try:
-            return self._post_audio_batch_native(texts, ref_b64)
-        except Exception as e:
-            logger.warning("Batched endpoint failed (%s); falling back to sequential", e)
-            return [self._post_audio(t, ref_b64) for t in texts]
-
-    def _post_audio_batch_native(self, texts: list[str], ref_b64: Optional[str]) -> list[tuple]:
-        import base64 as b64m
-        import soundfile as sf
-
-        payload = {
-            "model": self.model,
-            "input": texts,             # ASSUMED: list[str] for batched
-            "response_format": "wav",
-        }
-        if ref_b64:
-            payload["voice"] = ref_b64
-
-        r = self._session.post(
-            f"{self.endpoint}/v1/audio/generations",
-            json=payload,
-            timeout=self.timeout_s * max(len(texts), 1),
-        )
-        r.raise_for_status()
-        data = r.json()
-        out = []
-        for item in data["data"]:
-            audio_bytes = b64m.b64decode(item["audio"])
-            audio_np, sr = sf.read(io.BytesIO(audio_bytes), dtype="float32")
-            out.append((audio_np, sr))
-        return out
-
-    def _encode_reference(
+    def _ensure_voice_uploaded(
         self,
         reference_audio: Optional[torch.Tensor],
         sr: Optional[int],
     ) -> Optional[str]:
+        """Register the reference voice on first sight, return its name.
+
+        Cached by tensor identity — synthesize_to_shar loads the reference
+        once outside the per-utt loop, so id(tensor) is stable across calls.
+        """
         if reference_audio is None:
             return None
         key = id(reference_audio)
-        cached = self._ref_cache.get(key)
+        cached = self._voice_cache.get(key)
         if cached is not None:
             return cached
 
         import soundfile as sf
 
-        if reference_audio.ndim > 1:
-            reference_audio = reference_audio.mean(dim=0)
+        ra = reference_audio
+        if ra.ndim > 1:
+            ra = ra.mean(dim=0)
         buf = io.BytesIO()
-        sf.write(buf, reference_audio.detach().cpu().numpy(), sr or 16000,
+        sf.write(buf, ra.detach().cpu().numpy(), sr or 16000,
                  format="WAV", subtype="PCM_16")
-        encoded = base64.b64encode(buf.getvalue()).decode("ascii")
-        self._ref_cache[key] = encoded
-        return encoded
+        wav_bytes = buf.getvalue()
+
+        # Stable name from the audio content — re-running the synth job with
+        # the same reference re-uses the same voice rather than littering the
+        # server with one-shot uploads.
+        voice_name = "voice_" + hashlib.sha1(wav_bytes).hexdigest()[:12]
+
+        # multipart/form-data per the openapi schema. `name` and `consent`
+        # are required; `ref_text` is optional and improves quality in ICL
+        # mode but we don't have transcripts of the reference WAV.
+        files = {"audio_sample": (f"{voice_name}.wav", wav_bytes, "audio/wav")}
+        data = {"name": voice_name, "consent": self.consent}
+
+        logger.info("Uploading reference voice as %s (%d bytes)",
+                    voice_name, len(wav_bytes))
+        r = self._session.post(
+            f"{self.endpoint}/v1/audio/voices",
+            files=files, data=data, timeout=self.timeout_s,
+        )
+        # If the server already knows this voice (we picked a stable hash),
+        # it may return 400 "already exists" — that's fine, name still works.
+        if r.status_code >= 400 and "already" in r.text.lower():
+            logger.info("Voice %s already registered server-side", voice_name)
+        else:
+            r.raise_for_status()
+
+        self._voice_cache[key] = voice_name
+        return voice_name
+
+    def _post_speech(self, text: str, voice_name: Optional[str]) -> tuple:
+        """POST /v1/audio/speech. Returns (audio_np float32, sample_rate int).
+
+        Per the OpenAICreateSpeechRequest schema: required `input`; optional
+        `model`, `voice`. Response is audio bytes by default (audio/*).
+        """
+        import soundfile as sf
+
+        payload = {"model": self.model, "input": text}
+        if voice_name:
+            payload["voice"] = voice_name
+
+        r = self._session.post(
+            f"{self.endpoint}/v1/audio/speech",
+            json=payload, timeout=self.timeout_s,
+        )
+        r.raise_for_status()
+
+        # Per /openapi.json, both audio/* and application/json are possible.
+        # Server's default is audio bytes; handle both shapes.
+        ct = r.headers.get("content-type", "")
+        if ct.startswith("audio/"):
+            buf = io.BytesIO(r.content)
+        else:
+            # JSON wrapper — likely base64-encoded audio field
+            data = r.json()
+            audio_b64 = data.get("audio") or (data.get("data") or [{}])[0].get("audio")
+            if audio_b64 is None:
+                raise RuntimeError(f"unexpected JSON response (no audio field): {data!r}")
+            buf = io.BytesIO(base64.b64decode(audio_b64))
+
+        audio_np, sr = sf.read(buf, dtype="float32")
+        return audio_np, sr
+
+    def _post_speech_batch(
+        self, texts: list[str], voice_name: Optional[str]
+    ) -> list[tuple]:
+        """POST /v1/audio/speech/batch. Returns list of (audio_np, sr).
+
+        BatchSpeechRequest: {model, items: [SpeechBatchItem], voice, ...}
+        SpeechBatchItem shape is best-guess `{input: str}` until verified —
+        if the server 422s, the error response will name the missing field.
+        """
+        import soundfile as sf
+
+        payload = {
+            "model": self.model,
+            "items": [{"input": t} for t in texts],
+        }
+        if voice_name:
+            payload["voice"] = voice_name
+
+        r = self._session.post(
+            f"{self.endpoint}/v1/audio/speech/batch",
+            json=payload, timeout=self.timeout_s * max(len(texts), 1),
+        )
+        r.raise_for_status()
+        data = r.json()
+
+        # Response shape unverified — try common patterns. The server's
+        # 200 response is `type: object` with additionalProperties=true
+        # so we have to probe.
+        items_out = (
+            data.get("items")
+            or data.get("results")
+            or data.get("data")
+            or []
+        )
+        if not items_out:
+            raise RuntimeError(f"batched response had no items field: {data!r}")
+
+        out = []
+        for item in items_out:
+            audio_b64 = item.get("audio")
+            if audio_b64 is None:
+                raise RuntimeError(f"batched item had no audio field: {item!r}")
+            audio_np, sr = sf.read(io.BytesIO(base64.b64decode(audio_b64)),
+                                    dtype="float32")
+            out.append((audio_np, sr))
+        return out
 
     @property
     def codebook_size(self) -> int:
