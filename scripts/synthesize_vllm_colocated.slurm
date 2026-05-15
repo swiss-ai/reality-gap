@@ -101,7 +101,7 @@ fi
 # runtime via pip --no-deps + small dep list.
 python -c "import lhotse" 2>/dev/null || {
     echo "=== Installing lhotse client deps ==="
-    pip install --quiet --no-deps lhotse cytoolz click intervaltree audioread tabulate
+    pip install --quiet --no-deps lhotse cytoolz toolz click intervaltree audioread tabulate
 }
 
 # ── synthesize ────────────────────────────────────────────────────────
