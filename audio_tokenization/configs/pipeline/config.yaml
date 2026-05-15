@@ -1,0 +1,11 @@
+defaults:
+  - _self_
+  - optional stage: null
+  - runtime: default
+  - dataset: infore2
+
+# Root pipeline config is intentionally thin:
+# - `stage` is required for run/clean; plan/status inspect all when it is unset
+# - `runtime/*` carries operational knobs such as resume/debug
+# - `dataset/*` is the canonical typed dataset spec
+stage: ???

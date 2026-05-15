@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert a Lhotse Shar directory to a single parquet with tokenized text.
+"""Convert a Lhotse Shar directory to a HF-style parquet.
 
 Reads:
   <shar-in>/
@@ -9,21 +9,16 @@ Reads:
 
 Writes:
   <parquet-out>            - one row per utterance, columns:
-    id            : str          - utterance id
-    text          : str          - raw text (unchanged from supervision)
-    text_tokens   : list[int]    - joint tokenizer encode(text, add_special_tokens=False)
-    audio         : bytes        - WAV bytes verbatim (24 kHz PCM_16 mono)
-    sample_rate   : int          - 24000
-    duration_s    : float        - from cut.duration
-    language      : str          - "pl"
+    id        : string                                    - utterance id
+    text      : string                                    - raw Polish text
+    duration  : float64                                   - seconds (from cut)
+    audio     : struct<bytes: binary, sampling_rate: int64> - HF audio struct
+    language  : string                                    - "pl"
 
-Schema follows the supervisor's spec (2026-05-14):
-- Pre-tokenized text in `text_tokens` so the downstream pipeline doesn't
-  re-tokenize.
-- No special-token wrapping (BOS / <|speech_transcribe|> / EOS) — the
-  pipeline adds those. Hence add_special_tokens=False.
-- The text_tokens column matches the cut.custom["text_tokens"] convention
-  used by his Lhotse-Shar path; parquet just flattens it to a column.
+Schema mirrors what audio_tokenization/prepare/prepare_parquet_to_shar.py
+(supervisor's batch_tok branch) expects. Notable: NO `text_tokens` column —
+his pipeline tokenizes from `text` via load_text_tokenizer. NO `sample_rate`
+sibling column — it lives inside the audio struct.
 """
 
 import argparse
@@ -38,8 +33,6 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s",
                     datefmt="%H:%M:%S")
 logger = logging.getLogger(__name__)
-
-DEFAULT_TOKENIZER = "/capstor/store/cscs/swissai/infra01/MLLM/tokenizer/apertus_emu3.5_wavtok"
 
 
 def load_cuts(cuts_path: Path) -> list[dict]:
@@ -89,27 +82,14 @@ def index_recording_tar(tar_path: Path) -> dict[str, bytes]:
     return out
 
 
-def convert(shar_in: Path, parquet_out: Path, tokenizer_path: str) -> dict:
+def convert(shar_in: Path, parquet_out: Path) -> dict:
     import pyarrow as pa
     import pyarrow.parquet as pq
-    # Use the raw `tokenizers` library, not transformers' AutoTokenizer. The
-    # voxcpm2 venv ships transformers 4.55 which pulls in `masking_utils` ->
-    # `torch._dynamo._trace_wrapped_higher_order_op.TransformGetItemToIndex`,
-    # a torch 2.7+ symbol that NGC 24.11 (torch 2.6) lacks. Raw `tokenizers`
-    # has no torch dependency. We don't need special-token wrapping anyway
-    # (supervisor said add_special_tokens=False), so vocab+encode is enough.
-    from tokenizers import Tokenizer
 
     cuts_path = shar_in / "cuts.000000.jsonl.gz"
     tar_path = shar_in / "recording.000000.tar"
     if not cuts_path.exists() or not tar_path.exists():
         raise FileNotFoundError(f"Expected cuts + recording in {shar_in}")
-
-    tokenizer_json = Path(tokenizer_path) / "tokenizer.json"
-    if not tokenizer_json.exists():
-        raise FileNotFoundError(f"tokenizer.json not found in {tokenizer_path}")
-    logger.info("Loading tokenizer: %s", tokenizer_json)
-    tokenizer = Tokenizer.from_file(str(tokenizer_json))
 
     logger.info("Reading cuts manifest: %s", cuts_path)
     cuts = load_cuts(cuts_path)
@@ -121,9 +101,8 @@ def convert(shar_in: Path, parquet_out: Path, tokenizer_path: str) -> dict:
 
     ids: list[str] = []
     texts: list[str] = []
-    token_lists: list[list[int]] = []
-    audios: list[bytes] = []
-    srs: list[int] = []
+    audio_bytes_list: list[bytes] = []
+    audio_srs: list[int] = []
     durs: list[float] = []
     langs: list[str] = []
 
@@ -138,14 +117,6 @@ def convert(shar_in: Path, parquet_out: Path, tokenizer_path: str) -> dict:
             logger.warning("No WAV for cut %s (recording_id=%s)", cid, rec_id)
             continue
 
-        # `tokenizers.Tokenizer.encode` does not add special tokens by default
-        # (parity with `AutoTokenizer.encode(..., add_special_tokens=False)`).
-        # Returns an Encoding object; we take .ids.
-        token_ids = tokenizer.encode(text).ids
-
-        # Sample rate + duration: prefer the recording's sampling_rate; fall back
-        # to cut.duration. Lhotse stores both, but the canonical source is the
-        # Recording for sample_rate.
         rec = cut.get("recording") or {}
         sr = int(rec.get("sampling_rate") or 24000)
         duration = float(cut.get("duration") or 0.0)
@@ -153,22 +124,32 @@ def convert(shar_in: Path, parquet_out: Path, tokenizer_path: str) -> dict:
 
         ids.append(cid)
         texts.append(text)
-        token_lists.append(token_ids)
-        audios.append(wav_bytes)
-        srs.append(sr)
+        audio_bytes_list.append(wav_bytes)
+        audio_srs.append(sr)
         durs.append(duration)
         langs.append(lang)
 
     if missing_audio:
         logger.warning("%d cuts missing audio — skipped", missing_audio)
 
+    # Schema mirrors batch_tok prepare_parquet_to_shar.py expectations:
+    #   audio: struct<bytes: Binary, sampling_rate: Int64>
+    #   id (str), text (optional), duration (optional), language (optional)
+    # No text_tokens — his pipeline tokenizes from `text` via load_text_tokenizer.
+    audio_type = pa.struct([
+        pa.field("bytes", pa.binary()),
+        pa.field("sampling_rate", pa.int64()),
+    ])
+    audio_struct = pa.array(
+        [{"bytes": b, "sampling_rate": sr} for b, sr in zip(audio_bytes_list, audio_srs)],
+        type=audio_type,
+    )
+
     table = pa.table({
         "id": pa.array(ids, type=pa.string()),
         "text": pa.array(texts, type=pa.string()),
-        "text_tokens": pa.array(token_lists, type=pa.list_(pa.int32())),
-        "audio": pa.array(audios, type=pa.binary()),
-        "sample_rate": pa.array(srs, type=pa.int32()),
-        "duration_s": pa.array(durs, type=pa.float32()),
+        "duration": pa.array(durs, type=pa.float64()),
+        "audio": audio_struct,
         "language": pa.array(langs, type=pa.string()),
     })
 
@@ -191,15 +172,13 @@ def main() -> None:
                    help="Lhotse Shar directory to read")
     p.add_argument("--parquet-out", required=True, type=Path,
                    help="Output .parquet file path")
-    p.add_argument("--tokenizer-path", default=DEFAULT_TOKENIZER,
-                   help=f"Joint tokenizer path (default: {DEFAULT_TOKENIZER})")
     args = p.parse_args()
 
     if not args.shar_in.exists():
         logger.error("Shar dir not found: %s", args.shar_in)
         sys.exit(2)
 
-    stats = convert(args.shar_in, args.parquet_out, args.tokenizer_path)
+    stats = convert(args.shar_in, args.parquet_out)
     print(json.dumps(stats, indent=2))
 
 

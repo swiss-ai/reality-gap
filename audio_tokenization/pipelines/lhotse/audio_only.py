@@ -7,6 +7,8 @@ import os
 
 import torch
 
+from audio_tokenization.config.schema import TokenizeSpec
+
 from .checkpoint import finalize_shard_writer, open_chunk_writer
 
 
@@ -18,20 +20,30 @@ class AudioOnlyHandler:
     to Megatron indexed dataset micro-shards.
     """
 
-    def __init__(self, cfg):
+    def __init__(self, spec: TokenizeSpec):
         self.chunk_samples = 0
+        self.chunks_written = 0
 
     def create_dataset(self):
         from lhotse.dataset import UnsupervisedWaveformDataset
         return UnsupervisedWaveformDataset(collate=True)
 
-    def setup_writer(self, output_dir, rank, chunk_id, tokenizer):
+    def setup_writer(self, output_dir, rank, writer_state, tokenizer):
         self._output_dir = output_dir
         self._rank = rank
-        self._chunk_id = chunk_id
+        self._chunk_id = int(writer_state)
         self._vocab_size = len(tokenizer.omni_tokenizer)
-        self._builder, self._tmp_bin, self._tmp_idx, self._bin, self._idx = \
-            open_chunk_writer(output_dir, rank, chunk_id, self._vocab_size)
+        (
+            self._builder,
+            self._cut_ids,
+            self._tmp_bin,
+            self._tmp_idx,
+            self._tmp_cut_ids,
+            self._bin,
+            self._idx,
+            self._cut_ids_path,
+        ) = \
+            open_chunk_writer(output_dir, rank, self._chunk_id, self._vocab_size)
         self.chunk_samples = 0
 
     def process_batch(self, batch, tokenizer, stats, target_sr, device):
@@ -39,6 +51,7 @@ class AudioOnlyHandler:
         #   {"audio": tensor (B, T), "audio_lens": tensor (B,)}
         audios = batch["audio"]           # (B, T) float
         audio_lens = batch["audio_lens"]  # (B,) int -- original lengths
+        cuts = list(batch["cuts"])
 
         batch_audio_secs = audio_lens.sum().item() / target_sr
         audios_gpu = audios.to(device, non_blocking=True)
@@ -52,18 +65,19 @@ class AudioOnlyHandler:
             )
 
         # Single batched GPU→CPU transfer: cat, one sync, split
-        valid = [t for t in token_list if t is not None]
-        stats.errors += len(token_list) - len(valid)
-        if not valid:
+        valid_pairs = [(t, cut) for t, cut in zip(token_list, cuts) if t is not None]
+        stats.errors += len(token_list) - len(valid_pairs)
+        if not valid_pairs:
             return batch_audio_secs
 
-        lengths = [t.shape[0] for t in valid]
-        all_cpu = torch.cat(valid).to(dtype=torch.int64).cpu()
+        lengths = [t.shape[0] for t, _ in valid_pairs]
+        all_cpu = torch.cat([t for t, _ in valid_pairs]).to(dtype=torch.int64).cpu()
         cpu_tensors = all_cpu.split(lengths)
 
-        for t in cpu_tensors:
+        for t, (_, cut) in zip(cpu_tensors, valid_pairs):
             self._builder.add_item(t)
             self._builder.end_document()
+            self._cut_ids.write(cut.id)
             stats.samples_processed += 1
             stats.tokens_generated += len(t)
             self.chunk_samples += 1
@@ -71,18 +85,47 @@ class AudioOnlyHandler:
         return batch_audio_secs
 
     def checkpoint_writer(self) -> int:
-        finalize_shard_writer(self._builder, self._tmp_bin, self._tmp_idx, self._bin, self._idx)
-        done = self._chunk_id
+        finalize_shard_writer(
+            self._builder,
+            self._tmp_bin,
+            self._tmp_idx,
+            self._bin,
+            self._idx,
+            self._cut_ids,
+        )
         self._chunk_id += 1
         self.chunk_samples = 0
-        self._builder, self._tmp_bin, self._tmp_idx, self._bin, self._idx = \
+        self.chunks_written += 1
+        (
+            self._builder,
+            self._cut_ids,
+            self._tmp_bin,
+            self._tmp_idx,
+            self._tmp_cut_ids,
+            self._bin,
+            self._idx,
+            self._cut_ids_path,
+        ) = \
             open_chunk_writer(self._output_dir, self._rank, self._chunk_id, self._vocab_size)
-        return done
+        return self._chunk_id
+
+    def get_writer_state(self) -> int:
+        return self._chunk_id
 
     def finalize_writer(self):
         if self.chunk_samples > 0:
-            finalize_shard_writer(self._builder, self._tmp_bin, self._tmp_idx, self._bin, self._idx)
+            finalize_shard_writer(
+                self._builder,
+                self._tmp_bin,
+                self._tmp_idx,
+                self._bin,
+                self._idx,
+                self._cut_ids,
+            )
+            self.chunks_written += 1
+            self._chunk_id += 1
         else:
+            self._cut_ids.abort()
             for p in (self._tmp_bin, self._tmp_idx):
                 try:
                     if os.path.exists(p):

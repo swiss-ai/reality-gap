@@ -1,20 +1,15 @@
-"""Checkpointing, micro-shard I/O, stats tracking, and W&B logging.
+"""Micro-shard I/O, stats tracking, and W&B logging.
 
 Design decisions:
 - **Micro-shard chunking**: Each rank writes independent chunks named
   ``rank_XXXX_chunk_YYYY.{bin,idx}``.  Chunks are written to ``.tmp``
   files first and atomically renamed on finalize — no partial files on crash.
-- **Sampler-state checkpointing**: Lhotse's ``DynamicBucketingSampler``
-  supports ``state_dict()`` / ``load_state_dict()``. On resume the sampler
-  restores progress through metadata bookkeeping (no audio decoding), so
-  recovery is typically fast.
 - **WorkerStats** is an inline dataclass (no Ray dependency from base.py).
 - **SimpleWandbLogger**: Plain Python class (rank 0 only), rate-limited
   by a configurable interval.  No Ray actor overhead.
 """
 
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,7 +17,11 @@ from typing import Any, Dict, Optional, Tuple
 
 import torch
 
-from audio_tokenization.pipelines.shard_io import finalize_shard_writer
+from audio_tokenization.pipelines.shard_io import (
+    CUT_ID_SIDECAR_SUFFIX,
+    CutIdSidecarWriter,
+    finalize_shard_writer,
+)
 from audio_tokenization.utils.indexed_dataset import DType, IndexedDatasetBuilder
 
 logger = logging.getLogger(__name__)
@@ -31,12 +30,23 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "WorkerStats",
     "open_chunk_writer",
-    "save_checkpoint",
-    "load_checkpoint",
     "SimpleWandbLogger",
     "finalize_shard_writer",
     "is_cuda_oom",
+    "_get_rss_gb",
 ]
+
+
+def _get_rss_gb() -> float:
+    """Return current process RSS in GiB by reading /proc/self/status."""
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / (1024 * 1024)  # kB -> GiB
+    except Exception:
+        pass
+    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +83,8 @@ class WorkerStats:
     text_tokens_generated: int = 0
     errors: int = 0
     samples_skipped: int = 0
-    duration_skipped: int = 0
-    frequency_skipped: int = 0
+    rms_skipped: int = 0
+    no_text_skipped: int = 0
     start_time: float = field(default_factory=time.time)
     elapsed_time: float = 0.0
     throughput: float = 0.0
@@ -85,8 +95,8 @@ class WorkerStats:
             "tokens_generated": self.tokens_generated,
             "errors": self.errors,
             "samples_skipped": self.samples_skipped,
-            "duration_skipped": self.duration_skipped,
-            "frequency_skipped": self.frequency_skipped,
+            "rms_skipped": self.rms_skipped,
+            "no_text_skipped": self.no_text_skipped,
             "elapsed_time": self.elapsed_time,
             "throughput": self.throughput,
         }
@@ -113,7 +123,7 @@ def open_chunk_writer(
     rank: int,
     chunk_id: int,
     vocab_size: int,
-) -> Tuple[IndexedDatasetBuilder, str, str, str, str]:
+) -> Tuple[IndexedDatasetBuilder, CutIdSidecarWriter, str, str, str, str, str, str]:
     """Open a Megatron IndexedDatasetBuilder for a micro-shard chunk.
 
     Naming: ``rank_XXXX_chunk_YYYY.{bin,idx}``
@@ -121,56 +131,28 @@ def open_chunk_writer(
     rename to the final paths.
 
     Returns:
-        (builder, tmp_bin_path, tmp_idx_path, final_bin_path, final_idx_path)
+        (builder, cut_id_writer, tmp_bin_path, tmp_idx_path,
+         tmp_cut_ids_path, final_bin_path, final_idx_path, final_cut_ids_path)
     """
     output_prefix = Path(output_dir) / f"rank_{rank:04d}_chunk_{chunk_id:04d}"
     bin_path = str(output_prefix) + ".bin"
     idx_path = str(output_prefix) + ".idx"
+    cut_ids_path = str(output_prefix) + CUT_ID_SIDECAR_SUFFIX
     tmp_bin_path = bin_path + ".tmp"
     tmp_idx_path = idx_path + ".tmp"
+    cut_id_writer = CutIdSidecarWriter(cut_ids_path)
     dtype = DType.optimal_dtype(vocab_size)
     builder = IndexedDatasetBuilder(tmp_bin_path, dtype=dtype)
-    return builder, tmp_bin_path, tmp_idx_path, bin_path, idx_path
-
-
-# ---------------------------------------------------------------------------
-# Checkpoint save / load
-# ---------------------------------------------------------------------------
-
-
-def _checkpoint_path(output_dir: str, rank: int) -> Path:
-    return Path(output_dir) / f"rank_{rank:04d}_checkpoint.pt"
-
-
-def save_checkpoint(
-    output_dir: str,
-    rank: int,
-    sampler_state: Dict[str, Any],
-    chunk_id: int,
-    stats: Dict[str, Any],
-    world_size: int = 1,
-) -> None:
-    """Atomically save checkpoint via ``.tmp`` + ``os.replace()``."""
-    ckpt_path = _checkpoint_path(output_dir, rank)
-    tmp_path = str(ckpt_path) + ".tmp"
-    payload = {
-        "sampler_state": sampler_state,
-        "chunk_id": chunk_id,
-        "stats": stats,
-        "world_size": world_size,
-    }
-    torch.save(payload, tmp_path)
-    os.replace(tmp_path, str(ckpt_path))
-    logger.debug(f"[rank {rank}] Saved checkpoint chunk_id={chunk_id}")
-
-
-def load_checkpoint(output_dir: str, rank: int) -> Optional[Dict[str, Any]]:
-    """Load checkpoint if it exists, else return None."""
-    ckpt_path = _checkpoint_path(output_dir, rank)
-    if not ckpt_path.exists():
-        return None
-    logger.info(f"[rank {rank}] Loading checkpoint from {ckpt_path}")
-    return torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
+    return (
+        builder,
+        cut_id_writer,
+        tmp_bin_path,
+        tmp_idx_path,
+        str(cut_id_writer.tmp_path),
+        bin_path,
+        idx_path,
+        cut_ids_path,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +192,10 @@ class SimpleWandbLogger:
         self._start_time = time.time()
         self._step = 0
 
+    def should_log_now(self) -> bool:
+        """Return True if the flush interval has elapsed since the last log."""
+        return (time.time() - self._last_flush) >= self._interval
+
     def log(
         self,
         samples: int,
@@ -217,7 +203,9 @@ class SimpleWandbLogger:
         errors: int,
         skipped: int,
         batch_audio_seconds: float = 0.0,
+        text_tokens: int = 0,
         force: bool = False,
+        metrics: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Log absolute totals if the flush interval has elapsed."""
         now = time.time()
@@ -226,30 +214,27 @@ class SimpleWandbLogger:
         import wandb
 
         elapsed = now - self._start_time
-        wandb.log(
-            {
-                "samples_processed": samples,
-                "tokens_generated": tokens,
-                "errors": errors,
-                "samples_skipped": skipped,
-                "samples_per_second": samples / elapsed if elapsed > 0 else 0,
-                "tokens_per_second": tokens / elapsed if elapsed > 0 else 0,
-                "elapsed_seconds": elapsed,
-                "batch_audio_seconds": batch_audio_seconds,
-            },
-            step=self._step,
-        )
+        payload = {
+            "samples_processed": samples,
+            "audio_tokens_generated": tokens,
+            "tokens_per_second": (tokens + text_tokens) / elapsed if elapsed > 0 else 0,
+            "errors": errors,
+            "samples_skipped": skipped,
+            "samples_per_second": samples / elapsed if elapsed > 0 else 0,
+            "audio_tokens_per_second": tokens / elapsed if elapsed > 0 else 0,
+            "elapsed_seconds": elapsed,
+            "batch_audio_seconds": batch_audio_seconds,
+        }
+        if text_tokens > 0:
+            payload["text_tokens_generated"] = text_tokens
+            payload["text_tokens_per_second"] = text_tokens / elapsed if elapsed > 0 else 0
+        if metrics:
+            payload.update(metrics)
+        wandb.log(payload, step=self._step)
         self._step += 1
         self._last_flush = now
-
-    def log_final(self, metrics: Dict[str, Any]) -> None:
-        import wandb
-
-        wandb.log({f"final/{k}": v for k, v in metrics.items()})
 
     def finish(self) -> None:
         import wandb
 
         wandb.finish()
-
-
