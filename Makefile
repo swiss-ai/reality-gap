@@ -34,7 +34,7 @@ scorer:
 	uv pip install --no-deps openai-whisper tiktoken more-itertools \
 	    numba llvmlite && \
 	uv pip install --no-deps epitran panphon unicodecsv marisa-trie \
-	    regex requests && \
+	    regex requests jamo && \
 	python -c "import torchaudio, whisper, epitran; print('Scorer import OK')" && \
 	touch .venv-scorer/.build_complete
 
