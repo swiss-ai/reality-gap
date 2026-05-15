@@ -4,7 +4,7 @@
 #SBATCH --job-name=synth_to_shar
 #SBATCH --output=logs/%A_%a_synth_to_shar.out
 #SBATCH --error=logs/%A_%a_synth_to_shar.err
-#SBATCH --time=00:30:00
+#SBATCH --time=02:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
