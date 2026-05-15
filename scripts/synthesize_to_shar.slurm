@@ -46,6 +46,10 @@ REF_WAV="${REF_WAV:-outputs/reference_audio/pl_speaker_0.wav}"
 TARGET_SR="${TARGET_SR:-24000}"
 # When BACKEND=voxcpm2_vllm, this points at the running vllm-omni server.
 VLLM_ENDPOINT="${VLLM_ENDPOINT:-}"
+# Utterances per backend.generate_batch() call. >1 unlocks vllm-omni's
+# continuous batching via /v1/audio/speech/batch. =1 (default) keeps the
+# per-utt loop — required for Direct-Python backends which don't batch.
+BATCH_SIZE="${BATCH_SIZE:-1}"
 
 # For voxcpm2_vllm the client is CPU-only (server holds the GPU) and uses
 # the regular voxcpm2 venv (has requests + soundfile + lhotse already).
@@ -107,6 +111,7 @@ python scripts/synthesize_to_shar.py \
     --target-sr "${TARGET_SR}" \
     --shard-idx "${SHARD_IDX}" \
     --num-shards "${NUM_SHARDS}" \
+    --batch-size "${BATCH_SIZE}" \
     --device cuda \
     ${EXTRA_ARGS}
 

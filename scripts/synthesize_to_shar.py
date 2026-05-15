@@ -111,6 +111,31 @@ def load_reference(ref_audio_path: Optional[str]) -> tuple[Optional[torch.Tensor
 
 
 # ── Shar writing ─────────────────────────────────────────────────────
+def _write_cut(writer, sid: str, text: str, audio, sr: int, target_sr: int):
+    """Resample if needed, encode to WAV, build MonoCut, write to SharWriter."""
+    from lhotse import MonoCut, Recording, SupervisionSegment
+
+    if sr != target_sr:
+        audio = torchaudio.transforms.Resample(sr, target_sr)(audio.unsqueeze(0)).squeeze(0)
+        sr = target_sr
+
+    duration = audio.numel() / sr
+    buf = io.BytesIO()
+    sf.write(buf, audio.detach().cpu().numpy(), sr,
+             format="WAV", subtype="PCM_16")
+    recording = Recording.from_bytes(data=buf.getvalue(), recording_id=sid)
+    supervision = SupervisionSegment(
+        id=sid, recording_id=sid, start=0.0, duration=duration,
+        channel=0, text=text, language="pl",
+    )
+    cut = MonoCut(
+        id=sid, start=0.0, duration=duration, channel=0,
+        recording=recording, supervisions=[supervision],
+    )
+    writer.write(cut)
+    return duration
+
+
 def synthesize_and_write_shar(
     backend,
     items: list[dict],
@@ -120,13 +145,18 @@ def synthesize_and_write_shar(
     reference_text: Optional[str],
     shard_size: int,
     target_sr: int,
+    batch_size: int = 1,
 ) -> dict:
     """Synthesize each utterance and emit a Lhotse Shar dataset.
+
+    When batch_size > 1, items are chunked and dispatched via
+    backend.generate_batch() — this is the path that actually leverages
+    vllm-omni's continuous batching. batch_size=1 keeps the per-utt loop
+    (Direct-Python and other non-batched backends).
 
     Each entry becomes a Cut with one recording + one supervision (text).
     Cuts are streamed into a SharWriter so memory stays bounded for large runs.
     """
-    from lhotse import MonoCut, Recording, SupervisionSegment
     from lhotse.shar import SharWriter
 
     output_shar.mkdir(parents=True, exist_ok=True)
@@ -137,82 +167,99 @@ def synthesize_and_write_shar(
         "n_failed": 0,
         "total_audio_seconds": 0.0,
         "total_generation_seconds": 0.0,
+        "batch_size": batch_size,
     }
 
-    # SharWriter handles sharding into <shard_size> cuts per file.
     with SharWriter(
         str(output_shar),
         fields={"recording": "wav"},
         shard_size=shard_size,
     ) as writer:
-        for i, item in enumerate(items):
-            sid = item["id"]
-            text = item["text"]
+        if batch_size <= 1:
+            # Sequential per-utt path — used for Direct-Python backends or
+            # when explicitly running batch_size=1 for comparison.
+            for i, item in enumerate(items):
+                sid = item["id"]
+                text = item["text"]
+                t0 = time.time()
+                try:
+                    out = backend.generate(
+                        text=text,
+                        reference_audio=reference_audio,
+                        reference_audio_sr=reference_audio_sr,
+                        render_audio=True,
+                        ref_text=reference_text,
+                    )
+                    elapsed = time.time() - t0
+                    if out.audio is None:
+                        raise RuntimeError("Backend returned no audio.")
+                    duration = _write_cut(
+                        writer, sid, text, out.audio,
+                        out.audio_sample_rate or target_sr, target_sr,
+                    )
+                    stats["n_succeeded"] += 1
+                    stats["total_audio_seconds"] += duration
+                    stats["total_generation_seconds"] += elapsed
+                    if (i + 1) % 25 == 0 or i == 0:
+                        logger.info(
+                            "[%d/%d] %s ok (%.2fs gen, %.2fs audio, rtf=%.3f)",
+                            i + 1, len(items), sid, elapsed, duration,
+                            elapsed / max(duration, 1e-6),
+                        )
+                except Exception as e:
+                    stats["n_failed"] += 1
+                    logger.error("[%d/%d] %s FAILED: %s",
+                                 i + 1, len(items), sid, e, exc_info=False)
+            return stats
+
+        # Batched path — chunk items, dispatch each chunk in one request.
+        for batch_start in range(0, len(items), batch_size):
+            batch = items[batch_start:batch_start + batch_size]
+            texts = [it["text"] for it in batch]
             t0 = time.time()
             try:
-                out = backend.generate(
-                    text=text,
+                outs = backend.generate_batch(
+                    texts=texts,
                     reference_audio=reference_audio,
                     reference_audio_sr=reference_audio_sr,
                     render_audio=True,
-                    ref_text=reference_text,
                 )
-                elapsed = time.time() - t0
-                audio = out.audio
-                sr = out.audio_sample_rate or target_sr
-                if audio is None:
-                    raise RuntimeError("Backend returned no audio.")
-
-                # Resample to target_sr if backend's native rate differs.
-                if sr != target_sr:
-                    audio = torchaudio.transforms.Resample(sr, target_sr)(audio.unsqueeze(0)).squeeze(0)
-                    sr = target_sr
-
-                duration = audio.numel() / sr
-
-                # Lhotse Recording from in-memory audio: encode to WAV bytes
-                # (PCM_16 — lossless for speech, half the size of float32) and
-                # pass to from_bytes. lhotse 1.33 doesn't have a from_data API.
-                buf = io.BytesIO()
-                sf.write(buf, audio.detach().cpu().numpy(), sr,
-                         format="WAV", subtype="PCM_16")
-                recording = Recording.from_bytes(
-                    data=buf.getvalue(),
-                    recording_id=sid,
-                )
-
-                supervision = SupervisionSegment(
-                    id=sid,
-                    recording_id=sid,
-                    start=0.0,
-                    duration=duration,
-                    channel=0,
-                    text=text,
-                    language="pl",
-                )
-
-                cut = MonoCut(
-                    id=sid,
-                    start=0.0,
-                    duration=duration,
-                    channel=0,
-                    recording=recording,
-                    supervisions=[supervision],
-                )
-
-                writer.write(cut)
-
-                stats["n_succeeded"] += 1
-                stats["total_audio_seconds"] += duration
-                stats["total_generation_seconds"] += elapsed
-                if (i + 1) % 25 == 0 or i == 0:
-                    logger.info(
-                        "[%d/%d] %s ok (%.2fs gen, %.2fs audio, rtf=%.3f)",
-                        i + 1, len(items), sid, elapsed, duration, elapsed / max(duration, 1e-6),
+                batch_elapsed = time.time() - t0
+                batch_audio_s = 0.0
+                # Write each cut. Per-utt elapsed is amortized batch_elapsed/N
+                # for stats purposes; the real metric is batch RTF which we
+                # log per-batch below.
+                for it, out in zip(batch, outs):
+                    sid = it["id"]
+                    text = it["text"]
+                    if out.audio is None:
+                        stats["n_failed"] += 1
+                        logger.error("[batch %d-%d] %s: no audio",
+                                     batch_start, batch_start + len(batch), sid)
+                        continue
+                    duration = _write_cut(
+                        writer, sid, text, out.audio,
+                        out.audio_sample_rate or target_sr, target_sr,
                     )
+                    stats["n_succeeded"] += 1
+                    batch_audio_s += duration
+                stats["total_audio_seconds"] += batch_audio_s
+                stats["total_generation_seconds"] += batch_elapsed
+                logger.info(
+                    "[batch %d-%d/%d] %d ok in %.2fs gen, %.2fs audio, batch_rtf=%.3f",
+                    batch_start, batch_start + len(batch), len(items),
+                    len(outs), batch_elapsed, batch_audio_s,
+                    batch_elapsed / max(batch_audio_s, 1e-6),
+                )
             except Exception as e:
-                stats["n_failed"] += 1
-                logger.error("[%d/%d] %s FAILED: %s", i + 1, len(items), sid, e, exc_info=False)
+                # Failure of a whole batch — count all as failed, log loudly,
+                # and continue with the next batch (don't crash the run).
+                stats["n_failed"] += len(batch)
+                logger.error(
+                    "[batch %d-%d/%d] FAILED: %s",
+                    batch_start, batch_start + len(batch), len(items), e,
+                    exc_info=False,
+                )
 
     return stats
 
@@ -232,10 +279,10 @@ def main() -> None:
     p.add_argument("--reference-text", default=None, help="Reference transcript (for OmniVoice/F5)")
     p.add_argument("--shard-size", type=int, default=1000, help="Cuts per shard in the output Shar")
     p.add_argument("--batch-size", type=int, default=1,
-                   help="Utterances per backend call. Placeholder: VoxCPM2 Direct-Python path "
-                        "doesn't support true batched inference, so values >1 fall through to "
-                        "the sequential default. The flag is wired so a future vLLM-backed "
-                        "backend can light up batching without further CLI changes.")
+                   help="Utterances per backend call. Values >1 use backend.generate_batch() "
+                        "instead of per-utt generate() — the path that unlocks vllm-omni's "
+                        "continuous batching via /v1/audio/speech/batch. For Direct-Python "
+                        "backends generate_batch() falls back to a sequential loop (no win).")
     p.add_argument("--target-sr", type=int, default=24000,
                    help="Resample to this rate before writing Shar. Default 24000 matches "
                         "WavTokenizer's expected input; the interleave config's 16000 floor "
@@ -287,6 +334,7 @@ def main() -> None:
         reference_text=args.reference_text,
         shard_size=args.shard_size,
         target_sr=args.target_sr,
+        batch_size=args.batch_size,
     )
     stats["wall_seconds"] = round(time.time() - t_start, 2)
     stats["shard_idx"] = args.shard_idx
