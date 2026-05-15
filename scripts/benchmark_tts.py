@@ -358,9 +358,13 @@ def cmd_score(args):
                 continue
 
             if whisper_model:
-                sample["wer"] = _compute_wer(
+                metrics = _compute_metrics(
                     whisper_model, wav_path, sample["normalized_text"], args.language
                 )
+                sample["wer"] = metrics["wer"]
+                sample["cer"] = metrics["cer"]
+                sample["per"] = metrics["per"]
+                sample["hyp"] = metrics["hyp"]
             if spk_model:
                 ref_idx = sample["speaker_idx"]
                 # TODO: cache reference embeddings; for now recompute via wav_path
@@ -378,30 +382,9 @@ def _load_whisper(model_name: str, device: str):
     return whisper.load_model(model_name, device=device)
 
 
-def _compute_wer(model, wav_path: Path, reference_text: str, language: str) -> Optional[float]:
-    """Transcribe the WAV with Whisper and compute WER vs reference text.
-
-    Loads audio via torchaudio (not ffmpeg) so we don't depend on ffmpeg being
-    installed in the container.
-    """
-    try:
-        audio, sr = torchaudio.load(str(wav_path))
-        if audio.ndim > 1:
-            audio = audio.mean(dim=0)
-        if sr != 16000:
-            audio = torchaudio.transforms.Resample(sr, 16000)(audio)
-        audio_np = audio.numpy().astype("float32")
-        result = model.transcribe(audio_np, language=language, fp16=False)
-        hyp = result["text"].strip().lower()
-        ref = reference_text.strip().lower()
-        return _wer(ref.split(), hyp.split())
-    except Exception as e:
-        logger.warning("WER failed for %s: %s", wav_path.name, e)
-        return None
-
-
-def _wer(ref: list[str], hyp: list[str]) -> float:
-    """Levenshtein-based WER. Trivial implementation; for large eval use jiwer."""
+def _edit_distance_norm(ref: list, hyp: list) -> float:
+    """Levenshtein distance / len(ref). Works for any token sequence: words
+    (WER), chars (CER), or phonemes (PER)."""
     if not ref:
         return 0.0 if not hyp else 1.0
     n, m = len(ref), len(hyp)
@@ -415,6 +398,79 @@ def _wer(ref: list[str], hyp: list[str]) -> float:
             cost = 0 if ref[i - 1] == hyp[j - 1] else 1
             dp[i][j] = min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost)
     return round(dp[n][m] / n, 4)
+
+
+# Backwards-compat alias; existing callers (if any) keep working.
+_wer = _edit_distance_norm
+
+
+_EPITRAN_PL = None
+
+
+def _g2p_polish(text: str) -> list[str]:
+    """Polish grapheme→phoneme via epitran (pol-Latn). Returns IPA chars.
+
+    Each Unicode codepoint of the IPA output is a token. Affricates like
+    "t͡ʂ" (cz) get split across multiple tokens but the edit distance is
+    still meaningful for measuring pronunciation correctness — which is
+    what we care about when "się" comes out as "sze".
+    """
+    global _EPITRAN_PL
+    if _EPITRAN_PL is None:
+        import epitran  # pip install epitran (pure-python, no system deps)
+        _EPITRAN_PL = epitran.Epitran("pol-Latn")
+    return list(_EPITRAN_PL.transliterate(text))
+
+
+def _compute_metrics(
+    model, wav_path: Path, reference_text: str, language: str
+) -> dict:
+    """Transcribe with Whisper + compute WER/CER/PER vs reference.
+
+    Returns dict with wer (word-level), cer (char-level, whitespace-stripped),
+    per (IPA phoneme-level via Polish G2P), and hyp (the transcript).
+    PER is None for non-Polish languages or if epitran isn't installed.
+    """
+    import re
+
+    try:
+        audio, sr = torchaudio.load(str(wav_path))
+        if audio.ndim > 1:
+            audio = audio.mean(dim=0)
+        if sr != 16000:
+            audio = torchaudio.transforms.Resample(sr, 16000)(audio)
+        audio_np = audio.numpy().astype("float32")
+        result = model.transcribe(audio_np, language=language, fp16=False)
+        hyp = result["text"].strip().lower()
+        ref = reference_text.strip().lower()
+
+        wer = _edit_distance_norm(ref.split(), hyp.split())
+
+        # CER on whitespace-stripped char sequences. "się" vs "sie" is 1 char
+        # diff (CER 0.33 on a 3-char ref), but WER counts it as a whole word
+        # wrong (WER 1.0).
+        ref_chars = list(re.sub(r"\s+", "", ref))
+        hyp_chars = list(re.sub(r"\s+", "", hyp))
+        cer = _edit_distance_norm(ref_chars, hyp_chars)
+
+        # PER via Polish G2P — directly measures pronunciation independent of
+        # orthography. Catches "sze" instead of "się" which CER underweights.
+        per: Optional[float] = None
+        if language == "pl":
+            try:
+                per = _edit_distance_norm(_g2p_polish(ref), _g2p_polish(hyp))
+            except Exception as e:
+                logger.debug("PER skipped for %s: %s", wav_path.name, e)
+
+        return {"wer": wer, "cer": cer, "per": per, "hyp": hyp}
+    except Exception as e:
+        logger.warning("metrics failed for %s: %s", wav_path.name, e)
+        return {"wer": None, "cer": None, "per": None, "hyp": None}
+
+
+def _compute_wer(model, wav_path: Path, reference_text: str, language: str) -> Optional[float]:
+    """Backwards-compat shim around _compute_metrics — returns just WER."""
+    return _compute_metrics(model, wav_path, reference_text, language)["wer"]
 
 
 def _load_speaker_encoder(device: str):
@@ -452,6 +508,8 @@ def cmd_aggregate(args):
                 m = json.load(f)
             ok = [s for s in m["samples"] if "error" not in s]
             wers = [s["wer"] for s in ok if s.get("wer") is not None]
+            cers = [s["cer"] for s in ok if s.get("cer") is not None]
+            pers = [s["per"] for s in ok if s.get("per") is not None]
             rtfs = [s["rtf"] for s in ok if "rtf" in s]
             rows.append(
                 {
@@ -462,6 +520,8 @@ def cmd_aggregate(args):
                     "n_ok": len(ok),
                     "n_failed": len(m["samples"]) - len(ok),
                     "wer_mean": round(sum(wers) / len(wers), 4) if wers else None,
+                    "cer_mean": round(sum(cers) / len(cers), 4) if cers else None,
+                    "per_mean": round(sum(pers) / len(pers), 4) if pers else None,
                     "rtf_mean": round(sum(rtfs) / len(rtfs), 3) if rtfs else None,
                     "aggregate_rtf": m.get("aggregate_rtf"),
                     "total_audio_seconds": m.get("total_audio_seconds"),
@@ -473,19 +533,29 @@ def cmd_aggregate(args):
             if cats:
                 from collections import defaultdict
 
-                buckets: dict[str, list[float]] = defaultdict(list)
+                w_buckets: dict[str, list[float]] = defaultdict(list)
+                c_buckets: dict[str, list[float]] = defaultdict(list)
+                p_buckets: dict[str, list[float]] = defaultdict(list)
                 for s in ok:
-                    if s.get("wer") is None:
-                        continue
-                    buckets[cats.get(s["id"], "uncategorized")].append(s["wer"])
-                for c, vs in sorted(buckets.items()):
+                    cat = cats.get(s["id"], "uncategorized")
+                    if s.get("wer") is not None:
+                        w_buckets[cat].append(s["wer"])
+                    if s.get("cer") is not None:
+                        c_buckets[cat].append(s["cer"])
+                    if s.get("per") is not None:
+                        p_buckets[cat].append(s["per"])
+                all_cats = set(w_buckets) | set(c_buckets) | set(p_buckets)
+                for c in sorted(all_cats):
+                    ws, cs, ps = w_buckets[c], c_buckets[c], p_buckets[c]
                     breakdowns.append(
                         {
                             "language": lang_dir.name,
                             "backend": backend_dir.name,
                             "category": c,
-                            "n": len(vs),
-                            "wer_mean": round(sum(vs) / len(vs), 4),
+                            "n": max(len(ws), len(cs), len(ps)),
+                            "wer_mean": round(sum(ws) / len(ws), 4) if ws else None,
+                            "cer_mean": round(sum(cs) / len(cs), 4) if cs else None,
+                            "per_mean": round(sum(ps) / len(ps), 4) if ps else None,
                         }
                     )
 

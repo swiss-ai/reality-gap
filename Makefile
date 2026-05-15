@@ -33,7 +33,9 @@ scorer:
 	    git+https://github.com/pytorch/audio.git@release/2.6 && \
 	uv pip install --no-deps openai-whisper tiktoken more-itertools \
 	    numba llvmlite && \
-	python -c "import torchaudio, whisper; print('Scorer import OK')" && \
+	uv pip install --no-deps epitran panphon unicodecsv marisa-trie \
+	    regex requests && \
+	python -c "import torchaudio, whisper, epitran; print('Scorer import OK')" && \
 	touch .venv-scorer/.build_complete
 
 
