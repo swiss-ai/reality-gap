@@ -288,23 +288,42 @@ class VoxCPM2VLLMTTSBackend(TTSBackend):
         r.raise_for_status()
         data = r.json()
 
-        # Response shape unverified — try common patterns. The server's
-        # 200 response is `type: object` with additionalProperties=true
-        # so we have to probe.
-        items_out = (
-            data.get("items")
-            or data.get("results")
-            or data.get("data")
-            or []
-        )
+        # Confirmed response shape: items wrapped in some top-level key.
+        # Each item: {index, status, audio_data: <base64>, media_type, error}.
+        # Key is `audio_data`, NOT `audio`.
+        if isinstance(data, list):
+            items_out = data
+        else:
+            items_out = (
+                data.get("items")
+                or data.get("results")
+                or data.get("data")
+                or data.get("outputs")
+                or []
+            )
+            # Last-resort: any list of dicts at the top level.
+            if not items_out:
+                for v in data.values():
+                    if isinstance(v, list) and v and isinstance(v[0], dict):
+                        items_out = v
+                        break
         if not items_out:
             raise RuntimeError(f"batched response had no items field: {data!r}")
 
+        # Reorder by index — server may return out of order under batching.
+        items_out = sorted(items_out, key=lambda it: it.get("index", 0))
+
         out = []
         for item in items_out:
-            audio_b64 = item.get("audio")
+            status = item.get("status")
+            if status and status != "success":
+                raise RuntimeError(
+                    f"batched item {item.get('index')} failed: "
+                    f"{item.get('error') or 'unknown error'}"
+                )
+            audio_b64 = item.get("audio_data") or item.get("audio")
             if audio_b64 is None:
-                raise RuntimeError(f"batched item had no audio field: {item!r}")
+                raise RuntimeError(f"batched item had no audio_data field: {item!r}")
             audio_np, sr = sf.read(io.BytesIO(base64.b64decode(audio_b64)),
                                     dtype="float32")
             out.append((audio_np, sr))
