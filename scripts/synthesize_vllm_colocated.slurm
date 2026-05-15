@@ -105,29 +105,77 @@ python -c "import lhotse" 2>/dev/null || {
 }
 
 # ── synthesize ────────────────────────────────────────────────────────
-echo "=== Synthesizing ${BACKEND} → ${OUT_DIR} (shard ${SHARD_IDX}/${NUM_SHARDS}, batch=${BATCH_SIZE}) ==="
+# NUM_CLIENTS: how many parallel python client processes to launch against
+# the single server. Each gets its own shard via the existing
+# --shard-idx/--num-shards round-robin slicing in synthesize_to_shar.py.
+# This is the test for whether vllm-omni actually uses its continuous-batching
+# concurrency (server log advertised 528x at 4k tokens). If wall time drops
+# proportionally to NUM_CLIENTS, the server batches concurrent requests
+# server-side. If wall time stays flat, vLLM is single-threaded for this
+# model and we should switch to Stage 1 SLURM array (Direct-Python RTF 0.21).
+NUM_CLIENTS="${NUM_CLIENTS:-1}"
+
 mkdir -p "$(dirname "$OUT_DIR")"
-python "${REPO_ROOT}/scripts/synthesize_to_shar.py" \
-    --backend "${BACKEND}" \
-    --input "${REPO_ROOT}/${INPUT}" \
-    --output-shar "${OUT_DIR}" \
-    --reference-audio "${REF_WAV}" \
-    --target-sr "${TARGET_SR}" \
-    --shard-idx "${SHARD_IDX}" \
-    --num-shards "${NUM_SHARDS}" \
-    --batch-size "${BATCH_SIZE}" \
-    --vllm-endpoint "${ENDPOINT}" \
-    --device cpu
+
+if [ "${NUM_CLIENTS}" -le 1 ]; then
+    echo "=== Synthesizing ${BACKEND} → ${OUT_DIR} (shard ${SHARD_IDX}/${NUM_SHARDS}, batch=${BATCH_SIZE}) ==="
+    python "${REPO_ROOT}/scripts/synthesize_to_shar.py" \
+        --backend "${BACKEND}" \
+        --input "${REPO_ROOT}/${INPUT}" \
+        --output-shar "${OUT_DIR}" \
+        --reference-audio "${REF_WAV}" \
+        --target-sr "${TARGET_SR}" \
+        --shard-idx "${SHARD_IDX}" \
+        --num-shards "${NUM_SHARDS}" \
+        --batch-size "${BATCH_SIZE}" \
+        --vllm-endpoint "${ENDPOINT}" \
+        --device cpu
+else
+    echo "=== Synthesizing ${BACKEND} → ${OUT_DIR} (NUM_CLIENTS=${NUM_CLIENTS} parallel, batch=${BATCH_SIZE}) ==="
+    T0=$(date +%s)
+    for i in $(seq 0 $((NUM_CLIENTS - 1))); do
+        SHARD_LOG="logs/${SLURM_JOB_ID}_shard_${i}.log"
+        (
+            python "${REPO_ROOT}/scripts/synthesize_to_shar.py" \
+                --backend "${BACKEND}" \
+                --input "${REPO_ROOT}/${INPUT}" \
+                --output-shar "${OUT_DIR}" \
+                --reference-audio "${REF_WAV}" \
+                --target-sr "${TARGET_SR}" \
+                --shard-idx "${i}" \
+                --num-shards "${NUM_CLIENTS}" \
+                --batch-size "${BATCH_SIZE}" \
+                --vllm-endpoint "${ENDPOINT}" \
+                --device cpu \
+                > "${SHARD_LOG}" 2>&1
+            echo "shard ${i} done at $(date +%s)"
+        ) &
+    done
+    wait
+    T1=$(date +%s)
+    echo "=== All ${NUM_CLIENTS} parallel clients finished in $((T1 - T0))s wall ==="
+fi
 
 # When sharded, each task writes to <OUT_DIR>/shard_NNNN/. Report stats.
-if [ "${NUM_SHARDS}" -gt 1 ]; then
+if [ "${NUM_CLIENTS}" -gt 1 ]; then
+    echo "=== Per-shard stats ==="
+    for i in $(seq 0 $((NUM_CLIENTS - 1))); do
+        SHARD_PATH=$(printf "%s/shard_%04d" "${OUT_DIR}" "$i")
+        if [ -f "${SHARD_PATH}/synthesis_stats.json" ]; then
+            echo "--- shard $i ---"
+            cat "${SHARD_PATH}/synthesis_stats.json"
+        fi
+    done
+elif [ "${NUM_SHARDS}" -gt 1 ]; then
     SHARD_PATH=$(printf "%s/shard_%04d" "${OUT_DIR}" "${SHARD_IDX}")
+    echo "=== Output Shar contents (${SHARD_PATH}) ==="
+    ls -la "${SHARD_PATH}" 2>/dev/null || true
+    [ -f "${SHARD_PATH}/synthesis_stats.json" ] && cat "${SHARD_PATH}/synthesis_stats.json"
 else
-    SHARD_PATH="${OUT_DIR}"
+    echo "=== Output Shar contents (${OUT_DIR}) ==="
+    ls -la "${OUT_DIR}" 2>/dev/null || true
+    [ -f "${OUT_DIR}/synthesis_stats.json" ] && cat "${OUT_DIR}/synthesis_stats.json"
 fi
-echo "=== Output Shar contents (${SHARD_PATH}) ==="
-ls -la "${SHARD_PATH}" 2>/dev/null || true
-[ -f "${SHARD_PATH}/synthesis_stats.json" ] && cat "${SHARD_PATH}/synthesis_stats.json"
 
 echo "Job $SLURM_JOB_ID (array task ${SHARD_IDX}/${NUM_SHARDS}) finished at $(date)"
 # trap will kill the server on exit
