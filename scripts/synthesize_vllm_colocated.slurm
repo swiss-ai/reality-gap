@@ -104,6 +104,36 @@ python -c "import lhotse" 2>/dev/null || {
     pip install --quiet --no-deps lhotse cytoolz toolz click intervaltree audioread tabulate
 }
 
+# ── pre-register the reference voice ──────────────────────────────────
+# When NUM_CLIENTS > 1, all clients otherwise race to upload the same
+# voice at startup, which deadlocked the 8x smoke on 2026-05-15. Upload
+# once here, then each client sees "already exists" and skips.
+echo "=== Pre-registering voice ==="
+python - <<PY
+import hashlib, io, sys
+import soundfile as sf
+import torchaudio
+import requests
+
+ref_path = "${REF_WAV}"
+wav, sr = torchaudio.load(ref_path)
+if wav.ndim > 1:
+    wav = wav.mean(dim=0)
+buf = io.BytesIO()
+sf.write(buf, wav.numpy(), sr, format="WAV", subtype="PCM_16")
+wav_bytes = buf.getvalue()
+name = "voice_" + hashlib.sha1(wav_bytes).hexdigest()[:12]
+print(f"Voice name: {name}")
+files = {"audio_sample": (f"{name}.wav", wav_bytes, "audio/wav")}
+data = {"name": name, "consent": "user-provided reference audio"}
+r = requests.post("${ENDPOINT}/v1/audio/voices", files=files, data=data, timeout=60)
+print(f"Upload status: {r.status_code}")
+if r.status_code >= 400 and "already" not in r.text.lower():
+    print(f"Upload failed: {r.text[:300]}")
+    sys.exit(1)
+print("Voice ready.")
+PY
+
 # ── synthesize ────────────────────────────────────────────────────────
 # NUM_CLIENTS: how many parallel python client processes to launch against
 # the single server. Each gets its own shard via the existing
