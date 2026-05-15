@@ -16,15 +16,22 @@ set -e
 cd ~/benchmark-audio-tokenizer
 echo "Job $SLURM_JOB_ID started at $(date)"
 
-DEST="${DEST:-/capstor/scratch/cscs/mkwapniewska/synthetic-polish-voxcpm2}"
+# SRC = where the Lhotse Shar dirs live (our scratch, written by synthesize_to_shar)
+# OUT = where the parquets should land (the supervisor's audio-datasets/synthesized
+#       path by default, since that's where his tokenization pipeline picks them up).
+SRC="${SRC:-/capstor/scratch/cscs/mkwapniewska/synthetic-polish-voxcpm2}"
+OUT="${OUT:-/capstor/store/cscs/swissai/infra01/audio-datasets/synthesized/voxcpm2}"
 SETS="${SETS:-pl_50 pl_fleurs pl_commonvoice pl_voxpopuli}"
 
-# Reuse the voxcpm2 venv — already has transformers + lhotse (=> pyarrow).
+# Reuse the voxcpm2 venv — already has lhotse (=> pyarrow).
 source .venv-voxcpm2/bin/activate
 
+mkdir -p "$OUT"
 for set_name in $SETS; do
-    shar_in="$DEST/$set_name"
-    out="$DEST/$set_name/$set_name.parquet"
+    shar_in="$SRC/$set_name"
+    # Use slopalspeech-style layout: <set>/data/train-NNNNN-of-NNNNN.parquet.
+    mkdir -p "$OUT/$set_name/data"
+    out_file="$OUT/$set_name/data/train-00000-of-00001.parquet"
     echo "=== Converting $set_name ==="
     if [ ! -d "$shar_in" ]; then
         echo "SKIP: $shar_in not found"
@@ -32,10 +39,10 @@ for set_name in $SETS; do
     fi
     python scripts/shar_to_parquet.py \
         --shar-in "$shar_in" \
-        --parquet-out "$out"
+        --parquet-out "$out_file"
 done
 
 echo "=== Output ==="
-ls -lh "$DEST"/*/*.parquet 2>/dev/null || echo "No parquet files produced"
+ls -lh "$OUT"/*/data/*.parquet 2>/dev/null || echo "No parquet files produced"
 
 echo "Job $SLURM_JOB_ID finished at $(date)"
