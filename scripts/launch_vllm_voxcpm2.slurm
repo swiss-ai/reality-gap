@@ -30,7 +30,10 @@
 
 set -e
 ulimit -c 0
-cd ~/benchmark-audio-tokenizer
+# Don't cd into the repo — vllm-voxcpm2.toml only mounts /capstor and /iopsstor,
+# not /users. The server lives at /opt inside the container; our repo files are
+# not needed here. The SLURM log path (logs/%j_*) is resolved by slurmd on the
+# host filesystem before container handoff, so it writes correctly regardless.
 echo "Job $SLURM_JOB_ID started at $(date)"
 
 PORT="${PORT:-8000}"
