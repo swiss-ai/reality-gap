@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --account=infra01
-#SBATCH --environment=./ngc-24.11.toml
+#SBATCH --environment=./vllm-voxcpm2.toml
 #SBATCH --job-name=vllm_voxcpm2
 #SBATCH --output=logs/%j_vllm_voxcpm2.out
 #SBATCH --error=logs/%j_vllm_voxcpm2.err
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
@@ -18,17 +18,15 @@
 # USAGE:
 #   sbatch scripts/launch_vllm_voxcpm2.slurm
 #
-# Then watch logs/<jobid>_vllm_voxcpm2.out for the endpoint URL. Set
-# VLLM_ENDPOINT env var to that URL in client jobs.
+# Then watch logs/<jobid>_vllm_voxcpm2.out for the endpoint URL.
 #
-# CAUTION: This is a spike. Two unknowns to verify on first run:
-#   1. Entry-point module name. vllm-omni's actual server entry-point
-#      is undocumented for VoxCPM2 specifically (docs page 404). Best
-#      guess below; if it ImportErrors, check `python -m vllm_omni
-#      --help` and `pip show vllm-omni` for the right module.
-#   2. Request/response format. The TTS API likely differs from
-#      OpenAI's chat completion. See voxcpm2_vllm_tts.py for the
-#      client-side assumption that has to match.
+# Container: vllm-voxcpm2-cuda13.sqsh — pre-built by swiss-ai infra with
+# vllm-omni + VoxCPM2 + CUDA 13 + matching torch already installed. No venv
+# build needed; the entry point lives inside the container at /opt.
+#
+# Note: this is a DIFFERENT environment file than ngc-24.11.toml — our
+# regular synthesis/scoring jobs keep using NGC 24.11. Only the vLLM server
+# uses this container.
 
 set -e
 ulimit -c 0
@@ -39,26 +37,6 @@ PORT="${PORT:-8000}"
 MODEL="${MODEL:-openbmb/VoxCPM2}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.85}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
-
-# ── venv build (flock-protected, matches other recipes) ───────────────
-LOCKFILE=".venv-vllm-omni.lock"
-exec 200>"$LOCKFILE"
-echo "=== Acquiring build lock for vllm-omni ==="
-flock 200 || { echo "ERROR: failed to acquire build lock"; exit 1; }
-
-if [ ! -f ".venv-vllm-omni/.build_complete" ]; then
-    echo "=== Building vllm-omni venv (FIRST RUN — ~30-60 min CUDA compile) ==="
-    if [ -e ".venv-vllm-omni" ]; then
-        STALE=".venv-vllm-omni.stale.$$"
-        mv ".venv-vllm-omni" "$STALE" || true
-        rm -rf "$STALE" 2>/dev/null &
-    fi
-    make vllm-omni
-else
-    echo "=== Reusing existing vllm-omni venv ==="
-fi
-flock -u 200
-source ".venv-vllm-omni/bin/activate"
 
 # Tell clients where to reach us. Clariden compute nodes share an
 # internal network; the IB-routable IP is what other jobs hit.
@@ -73,10 +51,12 @@ echo "  Job ID:   ${SLURM_JOB_ID}"
 echo "======================================================================"
 echo
 
-# ── server ────────────────────────────────────────────────────────────
-# UNVERIFIED ENTRY-POINT — see header CAUTION block.
-# vllm-omni's release notes mention CUDA graphs and torch.compile, so
-# expect first ~1 min of warm-up before /health flips green.
+# Entry point inside the pre-built container.
+# UNVERIFIED on first run — if `python -m vllm_omni.entrypoints.openai.api_server`
+# is wrong, look inside the container with:
+#   srun --environment=./vllm-voxcpm2.toml --pty bash
+#   python -c "import vllm_omni; print(vllm_omni.__file__)"
+# and adjust below.
 python -m vllm_omni.entrypoints.openai.api_server \
     --model "${MODEL}" \
     --host 0.0.0.0 \
