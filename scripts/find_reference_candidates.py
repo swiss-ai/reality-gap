@@ -112,7 +112,11 @@ def main():
         # typically <cut_id>.flac or <cut_id>.wav.
         try:
             with tarfile.open(rec_tar, "r") as tf:
-                name_map = {Path(m.name).stem: m for m in tf.getmembers()}
+                # Shar tars often contain both <id>.flac and <id>.json for
+                # each cut. Only consider audio files when matching by stem.
+                AUDIO_EXTS = {".flac", ".wav", ".opus", ".ogg", ".mp3"}
+                name_map = {Path(m.name).stem: m for m in tf.getmembers()
+                            if Path(m.name).suffix.lower() in AUDIO_EXTS}
                 for cps, cut, text in items:
                     cut_id = cut["id"]
                     member = name_map.get(cut_id)
