@@ -121,6 +121,7 @@ def main():
         by_tar[rec_tar].append((cps, cut, text))
 
     print(f"\nWriting {len(picked)} candidates to {args.output_dir}/")
+    manifest = []
     idx = 0
     for rec_tar, items in by_tar.items():
         # Build a name->member map for fast lookup. Audio in Shar is
@@ -142,18 +143,32 @@ def main():
                     wav, sr = sf.read(io.BytesIO(audio_bytes))
                     if wav.ndim > 1:
                         wav = wav.mean(axis=1)
-                    name = f"mls_{idx:02d}_cps{cps:.1f}_dur{cut['duration']:.1f}s"
+                    speaker = cut["id"].split("_")[0]
+                    name = (f"mls_{idx:02d}_spk{speaker}"
+                            f"_cps{cps:.1f}_dur{cut['duration']:.1f}s")
                     sf.write(args.output_dir / f"{name}.wav", wav, sr,
                              subtype="PCM_16")
                     (args.output_dir / f"{name}.txt").write_text(
                         text + "\n", encoding="utf-8")
+                    manifest.append({
+                        "filename": f"{name}.wav",
+                        "speaker_id": speaker,
+                        "cut_id": cut["id"],
+                        "duration": cut["duration"],
+                        "cps": round(cps, 2),
+                        "text": text,
+                    })
                     print(f"  {name}.wav -- "
                           f"'{text[:70]}{'...' if len(text) > 70 else ''}'")
                     idx += 1
         except Exception as e:
             print(f"  ERROR opening {rec_tar}: {e}")
 
-    print(f"\nDone. SCP from {args.output_dir}/ and listen.")
+    manifest_path = args.output_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
+                             encoding="utf-8")
+    print(f"\nDone. {len(manifest)} candidates + manifest.json at "
+          f"{args.output_dir}/")
 
 
 if __name__ == "__main__":
