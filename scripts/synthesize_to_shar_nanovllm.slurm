@@ -78,10 +78,17 @@ fi
 # ── runtime install of client deps not in the container ──────────────
 # nano-vllm container has nano-vllm-voxcpm + torch 2.11 + flash-attn but
 # NOT lhotse / soundfile. Install with --no-deps to avoid torch fights.
-"$PY" -c "import lhotse, soundfile" 2>/dev/null || {
+# Probe with a deep import — `import lhotse` triggers the whole intervaltree
+# → sortedcontainers chain, so a partial previous install gets re-completed
+# instead of being treated as already-good.
+"$PY" -c "from lhotse.shar import SharWriter; import soundfile, sortedcontainers" 2>/dev/null || {
     echo "=== Installing client deps (lhotse + soundfile + transitive) ==="
+    # nano-vllm container is more minimal than the omni one — the omni
+    # container shipped sortedcontainers/pyyaml/tqdm, this one doesn't.
+    # Keep --no-deps so we don't pull in a conflicting torch.
     "$PY" -m pip install --quiet --no-deps \
-        lhotse cytoolz toolz click intervaltree audioread tabulate soundfile
+        lhotse cytoolz toolz click intervaltree sortedcontainers \
+        audioread tabulate soundfile pyyaml tqdm
 }
 
 # ── environment summary ──────────────────────────────────────────────
