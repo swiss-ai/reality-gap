@@ -57,8 +57,9 @@ flock -u 200
 source ".venv-${VENV}/bin/activate"
 pip install --quiet num2words "ruamel.yaml==0.18.6" "ruamel.yaml.clib==0.2.8" 2>/dev/null || true
 
-# ── reference audio (Polish FLEURS) ───────────────────────────────────
-REF_DIR="outputs/reference_audio"
+# ── reference audio (Polish FLEURS by default) ────────────────────────
+# REF_DIR can be overridden via env to A/B different reference voices.
+REF_DIR="${REF_DIR:-outputs/reference_audio}"
 mkdir -p "$REF_DIR"
 if [ ! -f "${REF_DIR}/pl_speaker_0.wav" ] || [ ! -f "${REF_DIR}/pl_speaker_0.txt" ]; then
     echo "=== Extracting Polish reference audio + transcripts ==="
