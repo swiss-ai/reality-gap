@@ -98,7 +98,22 @@ def main():
 
     random.seed(args.seed)
     random.shuffle(candidates)
-    picked = candidates[:args.n_candidates]
+
+    # Dedupe by speaker. MLS cut IDs are <speaker>_<book>_<utt> so the first
+    # underscore-separated token is the speaker. Picks at most one candidate
+    # per speaker to maximize voice diversity.
+    seen_speakers = set()
+    picked = []
+    for entry in candidates:
+        cps, cut, rec_tar, text = entry
+        speaker = cut["id"].split("_")[0]
+        if speaker in seen_speakers:
+            continue
+        seen_speakers.add(speaker)
+        picked.append(entry)
+        if len(picked) >= args.n_candidates:
+            break
+    print(f"Picked {len(picked)} candidates from {len(seen_speakers)} distinct speakers")
 
     # Group by tar to avoid re-opening the same tar repeatedly.
     by_tar = defaultdict(list)
