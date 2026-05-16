@@ -71,6 +71,13 @@ def load_backend(name: str, device: str, checkpoint: Optional[str],
             raise ValueError("voxcpm2_vllm backend requires --vllm-endpoint")
         b = VoxCPM2VLLMTTSBackend(endpoint=vllm_endpoint,
                                   model=checkpoint or "openbmb/VoxCPM2")
+    elif name == "voxcpm2_nanovllm":
+        from speech_generation.backends.voxcpm2_nanovllm_tts import VoxCPM2NanoVLLMTTSBackend
+        b = VoxCPM2NanoVLLMTTSBackend(
+            model_path=checkpoint
+                or "/capstor/store/cscs/swissai/infra01/hf_models/models/openbmb/VoxCPM2",
+            device=device,
+        )
     elif name == "piper":
         from speech_generation.backends.piper_tts import PiperTTSBackend
         b = PiperTTSBackend(voice_path=checkpoint or "voices/pl_PL-gosia-medium.onnx", device=device)
@@ -223,6 +230,7 @@ def synthesize_and_write_shar(
                     reference_audio=reference_audio,
                     reference_audio_sr=reference_audio_sr,
                     render_audio=True,
+                    ref_text=reference_text,
                 )
                 batch_elapsed = time.time() - t0
                 batch_audio_s = 0.0
@@ -268,7 +276,8 @@ def synthesize_and_write_shar(
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--backend", required=True,
-                   choices=["voxcpm2", "voxcpm2_vllm", "piper", "parler", "f5", "cosyvoice2"])
+                   choices=["voxcpm2", "voxcpm2_vllm", "voxcpm2_nanovllm",
+                            "piper", "parler", "f5", "cosyvoice2"])
     p.add_argument("--vllm-endpoint", default=None,
                    help="Base URL of the running vllm-omni server. Required for "
                         "--backend=voxcpm2_vllm. e.g. http://nid001234:8000")
