@@ -175,7 +175,7 @@ f5:
 	    google-api-core google-cloud-storage google-cloud-core google-auth \
 	    google-resumable-media google-crc32c \
 	    googleapis-common-protos proto-plus cachetools pyasn1 pyasn1-modules rsa \
-	    requests \
+	    requests cryptography cffi pycparser \
 	    regex tqdm packaging filelock pyyaml && \
 	python -c "from f5_tts.api import F5TTS; print('F5-TTS import OK')" && \
 	touch .venv-f5/.build_complete
