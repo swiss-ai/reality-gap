@@ -176,6 +176,7 @@ f5:
 	    google-resumable-media google-crc32c \
 	    googleapis-common-protos proto-plus cachetools pyasn1 pyasn1-modules rsa \
 	    requests cryptography cffi pycparser \
+	    botocore jmespath s3transfer urllib3 python-dateutil \
 	    regex tqdm packaging filelock pyyaml && \
 	python -c "from f5_tts.api import F5TTS; print('F5-TTS import OK')" && \
 	touch .venv-f5/.build_complete
