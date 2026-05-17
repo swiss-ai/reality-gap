@@ -35,7 +35,15 @@ def main():
                    help="Skip cuts shorter than this many seconds")
     p.add_argument("--max-duration", type=float, default=30.0,
                    help="Skip cuts longer than this many seconds")
+    p.add_argument("--polish-filter", action="store_true", default=True,
+                   help="Drop items with no Polish-specific chars when "
+                        "--language=pl (default on). --no-polish-filter disables.")
+    p.add_argument("--no-polish-filter", dest="polish_filter",
+                   action="store_false")
     args = p.parse_args()
+
+    # Polish-specific characters used by --polish-filter (default on for pl).
+    PL_CHARS = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
 
     # Find cuts files. Multi-worker layout has worker_NN/cuts.*.jsonl.gz.
     cuts_files = sorted(glob.glob(str(args.shar_in / "**/cuts.*.jsonl.gz"),
@@ -48,6 +56,7 @@ def main():
 
     items = []
     skipped = 0
+    skipped_non_pl = 0
     total_seconds = 0.0
     for cuts_path in cuts_files:
         with gzip.open(cuts_path, "rt", encoding="utf-8") as f:
@@ -72,6 +81,10 @@ def main():
                 if duration < args.min_duration or duration > args.max_duration:
                     skipped += 1
                     continue
+                if args.language == "pl" and args.polish_filter and not any(
+                        c in PL_CHARS for c in text):
+                    skipped_non_pl += 1
+                    continue
                 items.append({
                     "id": cut["id"],
                     "text": text,
@@ -82,7 +95,7 @@ def main():
 
     print(f"Found {len(items)} items "
           f"({total_seconds / 3600:.2f} h of source audio); "
-          f"skipped {skipped}")
+          f"skipped {skipped} (filters), {skipped_non_pl} no Polish chars")
 
     if args.shuffle:
         random.seed(42)
