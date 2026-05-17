@@ -5,7 +5,7 @@
 #SBATCH --output=logs/%A_%a_shar2pq.out
 #SBATCH --error=logs/%A_%a_shar2pq.err
 #SBATCH --time=00:30:00
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 #SBATCH --partition=normal
 
@@ -31,27 +31,27 @@ echo "Job $SLURM_JOB_ID (array task ${SLURM_ARRAY_TASK_ID}/${SLURM_ARRAY_TASK_CO
 SRC="${SRC:?must set SRC=<dir containing shard_NNNN/>}"
 OUT_DIR="${OUT_DIR:?must set OUT_DIR=<target parquet dir>}"
 TOTAL_SHARDS="${TOTAL_SHARDS:-${SLURM_ARRAY_TASK_COUNT:-1}}"
-
 SHARD_IDX="${SLURM_ARRAY_TASK_ID:-0}"
-SHARD_DIR=$(printf "%s/shard_%04d" "$SRC" "$SHARD_IDX")
 OUT_FILE=$(printf "%s/train-%05d-of-%05d.parquet" "$OUT_DIR" "$SHARD_IDX" "$TOTAL_SHARDS")
 
 # Reuse voxcpm2 venv — already has lhotse + pyarrow.
 source .venv-voxcpm2/bin/activate
 
-if [ ! -d "$SHARD_DIR" ]; then
-    echo "ERROR: shard input dir missing: $SHARD_DIR"
-    exit 2
-fi
 mkdir -p "$OUT_DIR"
 
-echo "=== Converting shard ${SHARD_IDX} ==="
-echo "  SRC  = $SHARD_DIR"
-echo "  OUT  = $OUT_FILE"
+echo "=== Converting shard ${SHARD_IDX}/${TOTAL_SHARDS} ==="
+echo "  SRC      = $SRC"
+echo "  OUT_DIR  = $OUT_DIR"
+echo "  OUT_FILE = $OUT_FILE  (written by script per --shard-idx/--total-shards)"
 
+# Pass --shar-in at the full SRC; the script walks all shards, sorts, then
+# picks pair[--shard-idx] and writes train-{shard_idx:05d}-of-{total_shards:05d}.parquet.
+# This keeps memory bounded to ONE shard's audio bytes (~2-3 GB peak).
 python scripts/shar_to_parquet.py \
-    --shar-in "$SHARD_DIR" \
-    --parquet-out "$OUT_FILE"
+    --shar-in "$SRC" \
+    --parquet-out-dir "$OUT_DIR" \
+    --shard-idx "$SHARD_IDX" \
+    --total-shards "$TOTAL_SHARDS"
 
 ls -lh "$OUT_FILE"
 

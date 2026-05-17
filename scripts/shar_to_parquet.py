@@ -172,20 +172,24 @@ def _convert_one_shard(cuts_path: Path, tar_path: Path,
     }
 
 
-def convert(shar_in: Path, parquet_out_dir: Path) -> dict:
-    """Convert all (cuts, recording) pairs under shar_in to per-shard parquets.
+def convert(shar_in: Path, parquet_out_dir: Path,
+            shard_idx: int | None = None,
+            total_shards: int | None = None) -> dict:
+    """Convert (cuts, recording) pairs under shar_in to per-shard parquets.
 
-    Walks **/cuts.*.jsonl.gz so it handles both flat layout and our
-    shard_NNNN/ subdir layout (synthesize_to_shar output) and Spark-style
-    part-NNNNN/ layouts.
+    Walks **/cuts.*.jsonl.gz so it handles flat layout, shard_NNNN/ subdirs
+    (synthesize_to_shar output), and Spark-style part-NNNNN/ layouts.
 
-    Each Shar shard becomes one parquet:
-        <parquet_out_dir>/train-NNNNN-of-MMMMM.parquet
-    Memory is bounded by per-shard size (~150 MB), not the full set.
+    Sequential mode (shard_idx=None): processes every discovered pair.
+        Output: <parquet_out_dir>/train-NNNNN-of-MMMMM.parquet for each.
+
+    Single-shard mode (shard_idx given): processes ONE pair — pair[shard_idx]
+    after sorting. Output filename is train-{shard_idx:05d}-of-{total_shards:05d}.parquet.
+    This is the array-job task path: one SLURM task per shard, memory-bounded,
+    runs in parallel.
     """
     import re
 
-    # Find every (cuts.NNNNNN.jsonl.gz, recording.NNNNNN.tar) pair.
     cuts_files = sorted(shar_in.rglob("cuts.*.jsonl.gz"))
     pairs: list[tuple[Path, Path]] = []
     for cuts_path in cuts_files:
@@ -204,18 +208,31 @@ def convert(shar_in: Path, parquet_out_dir: Path) -> dict:
     logger.info("Found %d Shar shard(s) under %s", len(pairs), shar_in)
     parquet_out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Slice to one pair if single-shard mode; mirror naming behaviour.
+    if shard_idx is not None:
+        if total_shards is None:
+            raise ValueError("total_shards required when shard_idx is set")
+        if shard_idx < 0 or shard_idx >= len(pairs):
+            raise IndexError(
+                f"shard_idx={shard_idx} out of range; found {len(pairs)} pairs")
+        pairs_to_process = [(shard_idx, pairs[shard_idx])]
+        n_for_name = total_shards
+    else:
+        pairs_to_process = list(enumerate(pairs))
+        n_for_name = len(pairs)
+
     total_rows = 0
     total_missing = 0
     total_mb = 0.0
-    for i, (cuts_path, tar_path) in enumerate(pairs):
-        out_file = parquet_out_dir / f"train-{i:05d}-of-{len(pairs):05d}.parquet"
+    for idx, (cuts_path, tar_path) in pairs_to_process:
+        out_file = parquet_out_dir / f"train-{idx:05d}-of-{n_for_name:05d}.parquet"
         stats = _convert_one_shard(cuts_path, tar_path, out_file)
         total_rows += stats["n_rows"]
         total_missing += stats["n_missing_audio"]
         total_mb += stats["parquet_size_mb"]
 
     return {
-        "n_shards": len(pairs),
+        "n_shards": len(pairs_to_process),
         "n_rows": total_rows,
         "n_missing_audio": total_missing,
         "parquet_total_mb": round(total_mb, 2),
@@ -229,6 +246,14 @@ def main() -> None:
                    help="Lhotse Shar directory to read (walks subdirs).")
     p.add_argument("--parquet-out-dir", required=True, type=Path,
                    help="Output directory for per-shard parquets.")
+    p.add_argument("--shard-idx", type=int, default=None,
+                   help="Single-shard mode: 0-based index into the sorted list "
+                        "of discovered shar shards. Used by array SLURM jobs "
+                        "(one task per shard). Requires --total-shards.")
+    p.add_argument("--total-shards", type=int, default=None,
+                   help="Required with --shard-idx. The total shard count "
+                        "across the array — appears in the output filename's "
+                        "of-NNNNN suffix.")
     # Back-compat: --parquet-out is now treated as a dir
     p.add_argument("--parquet-out", dest="parquet_out_dir", type=Path,
                    help=argparse.SUPPRESS)
@@ -238,7 +263,8 @@ def main() -> None:
         logger.error("Shar dir not found: %s", args.shar_in)
         sys.exit(2)
 
-    stats = convert(args.shar_in, args.parquet_out_dir)
+    stats = convert(args.shar_in, args.parquet_out_dir,
+                    shard_idx=args.shard_idx, total_shards=args.total_shards)
     print(json.dumps(stats, indent=2))
 
 
