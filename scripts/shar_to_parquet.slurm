@@ -4,9 +4,9 @@
 #SBATCH --job-name=shar_to_parquet
 #SBATCH --output=logs/%j_shar_to_parquet.out
 #SBATCH --error=logs/%j_shar_to_parquet.err
-#SBATCH --time=00:30:00
-#SBATCH --mem=16G
-#SBATCH --cpus-per-task=4
+#SBATCH --time=02:00:00
+#SBATCH --mem=32G
+#SBATCH --cpus-per-task=8
 #SBATCH --partition=normal
 
 # Convert all 4 Lhotse Shar dirs under DEST to per-set parquet files with
@@ -29,17 +29,17 @@ source .venv-voxcpm2/bin/activate
 mkdir -p "$OUT"
 for set_name in $SETS; do
     shar_in="$SRC/$set_name"
-    # Use slopalspeech-style layout: <set>/data/train-NNNNN-of-NNNNN.parquet.
-    mkdir -p "$OUT/$set_name/data"
-    out_file="$OUT/$set_name/data/train-00000-of-00001.parquet"
-    echo "=== Converting $set_name ==="
+    out_dir="$OUT/$set_name/data"
+    echo "=== Converting $set_name → $out_dir ==="
     if [ ! -d "$shar_in" ]; then
         echo "SKIP: $shar_in not found"
         continue
     fi
+    # Per-shard parquets (slopalspeech-style train-NNNNN-of-MMMMM.parquet).
+    # Memory bounded by single shard (~150 MB) instead of full set (~8 GB).
     python scripts/shar_to_parquet.py \
         --shar-in "$shar_in" \
-        --parquet-out "$out_file"
+        --parquet-out-dir "$out_dir"
 done
 
 echo "=== Output ==="

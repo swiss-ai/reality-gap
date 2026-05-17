@@ -92,14 +92,11 @@ def index_recording_tar(tar_path: Path) -> dict[str, bytes]:
     return out
 
 
-def convert(shar_in: Path, parquet_out: Path) -> dict:
+def _convert_one_shard(cuts_path: Path, tar_path: Path,
+                       parquet_out: Path) -> dict:
+    """Convert one (cuts.NNNNNN.jsonl.gz, recording.NNNNNN.tar) pair."""
     import pyarrow as pa
     import pyarrow.parquet as pq
-
-    cuts_path = shar_in / "cuts.000000.jsonl.gz"
-    tar_path = shar_in / "recording.000000.tar"
-    if not cuts_path.exists() or not tar_path.exists():
-        raise FileNotFoundError(f"Expected cuts + recording in {shar_in}")
 
     logger.info("Reading cuts manifest: %s", cuts_path)
     cuts = load_cuts(cuts_path)
@@ -175,20 +172,73 @@ def convert(shar_in: Path, parquet_out: Path) -> dict:
     }
 
 
+def convert(shar_in: Path, parquet_out_dir: Path) -> dict:
+    """Convert all (cuts, recording) pairs under shar_in to per-shard parquets.
+
+    Walks **/cuts.*.jsonl.gz so it handles both flat layout and our
+    shard_NNNN/ subdir layout (synthesize_to_shar output) and Spark-style
+    part-NNNNN/ layouts.
+
+    Each Shar shard becomes one parquet:
+        <parquet_out_dir>/train-NNNNN-of-MMMMM.parquet
+    Memory is bounded by per-shard size (~150 MB), not the full set.
+    """
+    import re
+
+    # Find every (cuts.NNNNNN.jsonl.gz, recording.NNNNNN.tar) pair.
+    cuts_files = sorted(shar_in.rglob("cuts.*.jsonl.gz"))
+    pairs: list[tuple[Path, Path]] = []
+    for cuts_path in cuts_files:
+        m = re.match(r"cuts\.(\d+)\.jsonl\.gz$", cuts_path.name)
+        if not m:
+            continue
+        rec_tar = cuts_path.parent / f"recording.{m.group(1)}.tar"
+        if not rec_tar.exists():
+            logger.warning("No matching tar for %s, skipping", cuts_path)
+            continue
+        pairs.append((cuts_path, rec_tar))
+
+    if not pairs:
+        raise FileNotFoundError(f"No (cuts, recording) pairs found under {shar_in}")
+
+    logger.info("Found %d Shar shard(s) under %s", len(pairs), shar_in)
+    parquet_out_dir.mkdir(parents=True, exist_ok=True)
+
+    total_rows = 0
+    total_missing = 0
+    total_mb = 0.0
+    for i, (cuts_path, tar_path) in enumerate(pairs):
+        out_file = parquet_out_dir / f"train-{i:05d}-of-{len(pairs):05d}.parquet"
+        stats = _convert_one_shard(cuts_path, tar_path, out_file)
+        total_rows += stats["n_rows"]
+        total_missing += stats["n_missing_audio"]
+        total_mb += stats["parquet_size_mb"]
+
+    return {
+        "n_shards": len(pairs),
+        "n_rows": total_rows,
+        "n_missing_audio": total_missing,
+        "parquet_total_mb": round(total_mb, 2),
+    }
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--shar-in", required=True, type=Path,
-                   help="Lhotse Shar directory to read")
-    p.add_argument("--parquet-out", required=True, type=Path,
-                   help="Output .parquet file path")
+                   help="Lhotse Shar directory to read (walks subdirs).")
+    p.add_argument("--parquet-out-dir", required=True, type=Path,
+                   help="Output directory for per-shard parquets.")
+    # Back-compat: --parquet-out is now treated as a dir
+    p.add_argument("--parquet-out", dest="parquet_out_dir", type=Path,
+                   help=argparse.SUPPRESS)
     args = p.parse_args()
 
     if not args.shar_in.exists():
         logger.error("Shar dir not found: %s", args.shar_in)
         sys.exit(2)
 
-    stats = convert(args.shar_in, args.parquet_out)
+    stats = convert(args.shar_in, args.parquet_out_dir)
     print(json.dumps(stats, indent=2))
 
 
