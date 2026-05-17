@@ -32,11 +32,20 @@ def main():
     p.add_argument("--output-dir", required=True, type=Path,
                    help="Where to dump candidate WAVs + .txt transcripts")
     p.add_argument("--n-candidates", type=int, default=10)
+    # cps ranges by language:
+    #   pl (alphabetic): natural 14-16, slow audiobook 11-13. Use 11-14.
+    #   zh (logographic): natural 4-6 chars/sec, slow narration 3-4. Use 3-5.
+    # Override with --min-cps/--max-cps for other languages.
     p.add_argument("--min-cps", type=float, default=11.0)
     p.add_argument("--max-cps", type=float, default=14.0)
     p.add_argument("--min-duration", type=float, default=5.0)
     p.add_argument("--max-duration", type=float, default=12.0)
-    p.add_argument("--min-text-chars", type=int, default=30)
+    p.add_argument("--min-text-chars", type=int, default=30,
+                   help="Minimum text length. For Chinese (logographic), drop "
+                        "this to ~10 since each char carries more info.")
+    p.add_argument("--language", choices=["pl", "zh", "none"], default="pl",
+                   help="Skip cuts whose text doesn't match the target language's "
+                        "char set. 'none' disables the language filter.")
     p.add_argument("--scan-limit", type=int, default=2000,
                    help="Stop after this many matches")
     p.add_argument("--seed", type=int, default=42)
@@ -49,6 +58,12 @@ def main():
     if not cuts_files:
         raise SystemExit(f"No cuts.*.jsonl.gz under {args.shar_in}")
     print(f"Found {len(cuts_files)} cuts files. Scanning...")
+
+    PL_CHARS = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
+    def _has_pl(t): return any(c in PL_CHARS for c in t)
+    def _has_cjk(t): return any("一" <= c <= "鿿" for c in t)
+    LANG_PRED = {"pl": _has_pl, "zh": _has_cjk, "none": lambda t: True}
+    lang_pred = LANG_PRED[args.language]
 
     # candidates: list of (cps, cut_dict, rec_tar_path, text)
     candidates = []
@@ -82,6 +97,8 @@ def main():
                     continue
                 text = (supervisions[0].get("text") or "").strip()
                 if len(text) < args.min_text_chars:
+                    continue
+                if not lang_pred(text):
                     continue
                 cps = len(text) / dur
                 if args.min_cps <= cps <= args.max_cps:
