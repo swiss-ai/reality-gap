@@ -21,7 +21,10 @@ cd ~/benchmark-audio-tokenizer
 echo "Job $SLURM_JOB_ID started at $(date)"
 
 BACKEND="${BACKEND:-cosyvoice2}"
-LANG="${LANG:-pl}"
+# NOTE: do NOT use plain $LANG — it's the POSIX locale variable that
+# pyxis/SLURM/login-shell reliably clobber to "C" or unset. Use BENCH_LANG.
+BENCH_LANG="${BENCH_LANG:-${LANG:-pl}}"
+LANG="$BENCH_LANG"   # downstream refs keep working
 SENTENCES="${SENTENCES:-data/tts_bench/pl_50.json}"
 # Output dir defaults to results/tts_bench/<sentences_stem>/ so different test
 # sets land in different directories and don't overwrite each other.
@@ -80,10 +83,10 @@ print('Saved 3 reference clips + transcripts')
 fi
 
 # ── 1. generate ───────────────────────────────────────────────────────
-echo "=== Generate (${BACKEND}, ${LANG}) ==="
+echo "=== Generate (${BACKEND}, ${BENCH_LANG}) ==="
 python scripts/benchmark_tts.py generate \
     --backend "${BACKEND}" \
-    --language "${LANG}" \
+    --language "${BENCH_LANG}" \
     --sentences-file "${SENTENCES}" \
     --reference-audio ${REF_DIR}/${SPEAKER_PREFIX}_0.wav ${REF_DIR}/${SPEAKER_PREFIX}_1.wav ${REF_DIR}/${SPEAKER_PREFIX}_2.wav \
     --output-dir "${OUT_DIR}" \
@@ -117,7 +120,7 @@ source ".venv-scorer/bin/activate"
 echo "=== Score (Whisper) ==="
 python scripts/benchmark_tts.py score \
     --output-dir "${OUT_DIR}" \
-    --language "${LANG}" \
+    --language "${BENCH_LANG}" \
     --whisper-model large-v3 \
     --device cuda
 
