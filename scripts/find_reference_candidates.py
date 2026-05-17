@@ -22,7 +22,12 @@ import tarfile
 from collections import defaultdict
 from pathlib import Path
 
-import soundfile as sf
+try:
+    import soundfile as sf
+    _HAVE_SF = True
+except ImportError:
+    sf = None
+    _HAVE_SF = False
 
 
 def main():
@@ -157,18 +162,27 @@ def main():
                         print(f"  WARN: {cut_id} not found in {rec_tar.name}")
                         continue
                     audio_bytes = tf.extractfile(member).read()
-                    wav, sr = sf.read(io.BytesIO(audio_bytes))
-                    if wav.ndim > 1:
-                        wav = wav.mean(axis=1)
                     speaker = cut["id"].split("_")[0]
+                    src_ext = Path(member.name).suffix.lower()
                     name = (f"mls_{idx:02d}_spk{speaker}"
                             f"_cps{cps:.1f}_dur{cut['duration']:.1f}s")
-                    sf.write(args.output_dir / f"{name}.wav", wav, sr,
-                             subtype="PCM_16")
+                    if _HAVE_SF:
+                        # Re-encode to PCM_16 WAV (consistent format for downstream)
+                        wav, sr = sf.read(io.BytesIO(audio_bytes))
+                        if wav.ndim > 1:
+                            wav = wav.mean(axis=1)
+                        sf.write(args.output_dir / f"{name}.wav", wav, sr,
+                                 subtype="PCM_16")
+                    else:
+                        # Login-node fallback: dump raw audio bytes with
+                        # original extension. QuickTime/VLC play .flac fine.
+                        out_path = args.output_dir / f"{name}{src_ext}"
+                        out_path.write_bytes(audio_bytes)
                     (args.output_dir / f"{name}.txt").write_text(
                         text + "\n", encoding="utf-8")
+                    out_ext = ".wav" if _HAVE_SF else src_ext
                     manifest.append({
-                        "filename": f"{name}.wav",
+                        "filename": f"{name}{out_ext}",
                         "speaker_id": speaker,
                         "cut_id": cut["id"],
                         "duration": cut["duration"],
