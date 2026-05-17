@@ -29,13 +29,25 @@ def main():
                    help="Polish chars/sec used to estimate duration from text")
     p.add_argument("--shuffle", action="store_true")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--polish-filter", action="store_true", default=True,
+                   help="Drop items with no Polish-specific chars (default on "
+                        "when --language=pl). Use --no-polish-filter to disable.")
+    p.add_argument("--no-polish-filter", dest="polish_filter",
+                   action="store_false")
     args = p.parse_args()
+
+    # Polish-specific characters. A Polish sentence almost always contains
+    # at least one of these; English/other-Latin lines rarely do. Cheap and
+    # dep-free language filter — catches the bulk of EP debate cross-talk
+    # where MEPs speak English but the Polish stream picks them up.
+    PL_CHARS = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
 
     print(f"Reading {args.granary_jsonl} ...")
     items = []
     skipped_short = 0
     skipped_long = 0
     skipped_other = 0
+    skipped_non_pl = 0
     total_seconds = 0.0
     with open(args.granary_jsonl, "r", encoding="utf-8") as f:
         for line in f:
@@ -57,6 +69,10 @@ def main():
             if len(text) > args.max_chars:
                 skipped_long += 1
                 continue
+            if args.language == "pl" and args.polish_filter and not any(
+                    c in PL_CHARS for c in text):
+                skipped_non_pl += 1
+                continue
             est_duration = len(text) / args.cps
             items.append({
                 "id": rec.get("utt_id") or rec.get("original_source_id"),
@@ -68,7 +84,7 @@ def main():
 
     print(f"Kept {len(items)} items (~{total_seconds/3600:.1f} h estimated). "
           f"Skipped: {skipped_short} too short, {skipped_long} too long, "
-          f"{skipped_other} no text")
+          f"{skipped_non_pl} no Polish chars, {skipped_other} no text")
 
     if args.shuffle:
         random.seed(args.seed)
