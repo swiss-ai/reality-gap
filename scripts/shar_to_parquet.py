@@ -63,16 +63,26 @@ def cut_recording_id(cut: dict) -> str:
     return rec.get("id") or cut.get("id")
 
 
+_AUDIO_SUFFIXES = {".wav", ".flac", ".opus", ".ogg", ".mp3"}
+
+
 def index_recording_tar(tar_path: Path) -> dict[str, bytes]:
     """Read recording.000000.tar once into memory: {member_basename_noext: wav_bytes}.
 
     Lhotse Shar tars typically name members like <recording_id>.flac or
     <recording_id>.wav. We key by stem so callers can look up by recording_id.
+
+    Filter to audio extensions only: Lhotse SharWriter also writes a tiny
+    `<recording_id>.json` sidecar into the same tar. Both share `Path.stem`,
+    so an unfiltered walk silently overwrites the audio bytes with the JSON
+    metadata (~200 B). Confirmed bug 2026-05-17 on synthesize_to_shar output.
     """
     out: dict[str, bytes] = {}
     with tarfile.open(tar_path, "r") as tf:
         for member in tf:
             if not member.isfile():
+                continue
+            if Path(member.name).suffix.lower() not in _AUDIO_SUFFIXES:
                 continue
             stem = Path(member.name).stem
             fh = tf.extractfile(member)
