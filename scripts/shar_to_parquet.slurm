@@ -5,7 +5,7 @@
 #SBATCH --output=logs/%j_shar_to_parquet.out
 #SBATCH --error=logs/%j_shar_to_parquet.err
 #SBATCH --time=02:00:00
-#SBATCH --mem=32G
+#SBATCH --mem=128G
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=normal
 
