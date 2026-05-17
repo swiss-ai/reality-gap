@@ -42,10 +42,9 @@ BACKEND="${BACKEND:-voxcpm2}"
 INPUT="${INPUT:-data/tts_bench/pl_voxpopuli.json}"
 OUT_NAME="${OUT_NAME:-$(basename "$INPUT" .json)}"
 OUT_DIR="${OUT_DIR:-results/synthetic_shar/${BACKEND}/${OUT_NAME}}"
-# Default to slow MLS-Polish ref (speaker 6892) — won A/B over Fleurs fast ref
-# on 2026-05-16 (WER 0.127 vs 0.150, PER 0.094 vs 0.107). Override REF_WAV to
-# A/B a different voice.
-REF_WAV="${REF_WAV:-outputs/reference_audio_slow/pl_speaker_0.wav}"
+# Speaker 1636 is the current production ref (won later A/B over 6892,
+# parallel session). Override REF_WAV to A/B a different voice.
+REF_WAV="${REF_WAV:-outputs/reference_audio_spk1636/pl_speaker_0.wav}"
 TARGET_SR="${TARGET_SR:-24000}"
 # When BACKEND=voxcpm2_vllm, this points at the running vllm-omni server.
 VLLM_ENDPOINT="${VLLM_ENDPOINT:-}"

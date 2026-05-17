@@ -42,8 +42,10 @@ BACKEND="voxcpm2_nanovllm"
 INPUT="${INPUT:-data/tts_bench/pl_voxpopuli_1kh.json}"
 OUT_NAME="${OUT_NAME:-$(basename "$INPUT" .json)}"
 OUT_DIR="${OUT_DIR:-results/synthetic_shar/${BACKEND}/${OUT_NAME}}"
-REF_WAV="${REF_WAV:-outputs/reference_audio_slow/pl_speaker_0.wav}"
-REF_TXT="${REF_TXT:-outputs/reference_audio_slow/pl_speaker_0.txt}"
+# Speaker 1636 is the current production ref (replaced 6892 after the
+# parallel-session A/B; see feedback_voxcpm2_production memory).
+REF_WAV="${REF_WAV:-outputs/reference_audio_spk1636/pl_speaker_0.wav}"
+REF_TXT="${REF_TXT:-outputs/reference_audio_spk1636/pl_speaker_0.txt}"
 TARGET_SR="${TARGET_SR:-24000}"
 # Batch size matches the pl_50 smoke sweet spot. nano-vllm fuses up to
 # max_num_seqs=512 in flight, but 32 captured the bulk of the speedup
