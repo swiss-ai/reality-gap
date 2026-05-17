@@ -177,7 +177,8 @@ f5:
 	    googleapis-common-protos proto-plus cachetools pyasn1 pyasn1-modules rsa \
 	    requests cryptography cffi pycparser \
 	    botocore jmespath s3transfer urllib3 python-dateutil \
-	    regex tqdm packaging filelock pyyaml && \
+	    regex tqdm packaging filelock pyyaml \
+	    antlr4-python3-runtime && \
 	python -c "from f5_tts.api import F5TTS; print('F5-TTS import OK')" && \
 	touch .venv-f5/.build_complete
 
