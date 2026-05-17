@@ -35,15 +35,28 @@ def main():
                    help="Skip cuts shorter than this many seconds")
     p.add_argument("--max-duration", type=float, default=30.0,
                    help="Skip cuts longer than this many seconds")
-    p.add_argument("--polish-filter", action="store_true", default=True,
-                   help="Drop items with no Polish-specific chars when "
-                        "--language=pl (default on). --no-polish-filter disables.")
-    p.add_argument("--no-polish-filter", dest="polish_filter",
+    p.add_argument("--lang-filter", action="store_true", default=True,
+                   help="Drop items whose text doesn't match the target "
+                        "language's character set (pl: Polish diacritics; "
+                        "zh: CJK ideographs). Default on. Use --no-lang-filter "
+                        "to disable.")
+    p.add_argument("--no-lang-filter", dest="lang_filter",
                    action="store_false")
+    # Back-compat alias from earlier sessions
+    p.add_argument("--polish-filter", dest="lang_filter",
+                   action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--no-polish-filter", dest="lang_filter",
+                   action="store_false", help=argparse.SUPPRESS)
     args = p.parse_args()
 
-    # Polish-specific characters used by --polish-filter (default on for pl).
+    # Per-language predicates: True = looks like target language.
     PL_CHARS = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
+    def _has_pl(t: str) -> bool:
+        return any(c in PL_CHARS for c in t)
+    def _has_cjk(t: str) -> bool:
+        # CJK Unified Ideographs main block (covers >99% of modern Chinese)
+        return any("一" <= c <= "鿿" for c in t)
+    LANG_PRED = {"pl": _has_pl, "zh": _has_cjk}
 
     # Find cuts files. Multi-worker layout has worker_NN/cuts.*.jsonl.gz.
     cuts_files = sorted(glob.glob(str(args.shar_in / "**/cuts.*.jsonl.gz"),
@@ -81,8 +94,8 @@ def main():
                 if duration < args.min_duration or duration > args.max_duration:
                     skipped += 1
                     continue
-                if args.language == "pl" and args.polish_filter and not any(
-                        c in PL_CHARS for c in text):
+                pred = LANG_PRED.get(args.language)
+                if args.lang_filter and pred is not None and not pred(text):
                     skipped_non_pl += 1
                     continue
                 items.append({
@@ -95,7 +108,7 @@ def main():
 
     print(f"Found {len(items)} items "
           f"({total_seconds / 3600:.2f} h of source audio); "
-          f"skipped {skipped} (filters), {skipped_non_pl} no Polish chars")
+          f"skipped {skipped} (filters), {skipped_non_pl} wrong language")
 
     if args.shuffle:
         random.seed(42)

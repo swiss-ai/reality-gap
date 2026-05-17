@@ -34,6 +34,10 @@ def main():
                         "when --language=pl). Use --no-polish-filter to disable.")
     p.add_argument("--no-polish-filter", dest="polish_filter",
                    action="store_false")
+    p.add_argument("--skip-ids-from", type=Path, default=None,
+                   help="Path to an existing manifest JSON. Items with IDs "
+                        "matching anything in that file are skipped — used to "
+                        "extract the remainder of a dataset after a prior slice.")
     args = p.parse_args()
 
     # Polish-specific characters. A Polish sentence almost always contains
@@ -42,12 +46,19 @@ def main():
     # where MEPs speak English but the Polish stream picks them up.
     PL_CHARS = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
 
+    skip_ids = set()
+    if args.skip_ids_from is not None:
+        prior = json.load(open(args.skip_ids_from, "r", encoding="utf-8"))
+        skip_ids = {it["id"] for it in prior}
+        print(f"Loaded {len(skip_ids)} IDs to skip from {args.skip_ids_from}")
+
     print(f"Reading {args.granary_jsonl} ...")
     items = []
     skipped_short = 0
     skipped_long = 0
     skipped_other = 0
     skipped_non_pl = 0
+    skipped_done = 0
     total_seconds = 0.0
     with open(args.granary_jsonl, "r", encoding="utf-8") as f:
         for line in f:
@@ -73,9 +84,13 @@ def main():
                     c in PL_CHARS for c in text):
                 skipped_non_pl += 1
                 continue
+            cid = rec.get("utt_id") or rec.get("original_source_id")
+            if cid in skip_ids:
+                skipped_done += 1
+                continue
             est_duration = len(text) / args.cps
             items.append({
-                "id": rec.get("utt_id") or rec.get("original_source_id"),
+                "id": cid,
                 "text": text,
                 "language": args.language,
                 "source_duration": est_duration,
@@ -84,7 +99,8 @@ def main():
 
     print(f"Kept {len(items)} items (~{total_seconds/3600:.1f} h estimated). "
           f"Skipped: {skipped_short} too short, {skipped_long} too long, "
-          f"{skipped_non_pl} no Polish chars, {skipped_other} no text")
+          f"{skipped_non_pl} no Polish chars, {skipped_done} already done, "
+          f"{skipped_other} no text")
 
     if args.shuffle:
         random.seed(args.seed)
