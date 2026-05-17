@@ -61,14 +61,17 @@ pip install --quiet num2words "ruamel.yaml==0.18.6" "ruamel.yaml.clib==0.2.8" 2>
 # REF_DIR can be overridden via env to A/B different reference voices.
 REF_DIR="${REF_DIR:-outputs/reference_audio}"
 mkdir -p "$REF_DIR"
-if [ ! -f "${REF_DIR}/pl_speaker_0.wav" ] || [ ! -f "${REF_DIR}/pl_speaker_0.txt" ]; then
+# Speaker file prefix lets the same slurm cover non-Polish runs (zh_speaker_*,
+# etc.) without renaming files.
+SPEAKER_PREFIX="${SPEAKER_PREFIX:-pl_speaker}"
+if [ ! -f "${REF_DIR}/${SPEAKER_PREFIX}_0.wav" ] || [ ! -f "${REF_DIR}/${SPEAKER_PREFIX}_0.txt" ]; then
     echo "=== Extracting Polish reference audio + transcripts ==="
     python -c "
 from datasets import load_from_disk
 import soundfile as sf
 ds = load_from_disk('/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/pl_pl')
 for i in range(3):
-    base = '${REF_DIR}/pl_speaker_' + str(i)
+    base = '${REF_DIR}/${SPEAKER_PREFIX}_' + str(i)
     sf.write(base + '.wav', ds[i]['audio']['array'], ds[i]['audio']['sampling_rate'])
     text = ds[i].get('transcription') or ds[i].get('text') or ''
     open(base + '.txt', 'w', encoding='utf-8').write(text)
@@ -82,7 +85,7 @@ python scripts/benchmark_tts.py generate \
     --backend "${BACKEND}" \
     --language "${LANG}" \
     --sentences-file "${SENTENCES}" \
-    --reference-audio ${REF_DIR}/pl_speaker_0.wav ${REF_DIR}/pl_speaker_1.wav ${REF_DIR}/pl_speaker_2.wav \
+    --reference-audio ${REF_DIR}/${SPEAKER_PREFIX}_0.wav ${REF_DIR}/${SPEAKER_PREFIX}_1.wav ${REF_DIR}/${SPEAKER_PREFIX}_2.wav \
     --output-dir "${OUT_DIR}" \
     --device cuda
 
