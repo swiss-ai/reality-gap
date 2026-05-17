@@ -54,4 +54,20 @@ python scripts/shar_to_parquet.py \
     --parquet-out "$OUT_FILE"
 
 ls -lh "$OUT_FILE"
+
+# Self-verify — login nodes can't run python, so do it here where the
+# container + voxcpm2 venv are active.
+echo "=== Parquet sanity ==="
+python - <<PY
+import pyarrow.parquet as pq
+t = pq.read_table("$OUT_FILE")
+print(f"  rows           : {t.num_rows}")
+print(f"  columns        : {t.column_names}")
+print(f"  audio.bytes[0] : {len(t.column('audio')[0]['bytes'].as_py())} bytes")
+print(f"  audio.sr[0]    : {t.column('audio')[0]['sampling_rate'].as_py()} Hz")
+print(f"  id[0]          : {t.column('id')[0].as_py()}")
+print(f"  text[0][:80]   : {t.column('text')[0].as_py()[:80]!r}")
+print(f"  duration[0]    : {t.column('duration')[0].as_py():.2f}s")
+PY
+
 echo "Job $SLURM_JOB_ID (shard ${SHARD_IDX}/${TOTAL_SHARDS}) finished at $(date)"
