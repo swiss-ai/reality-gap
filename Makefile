@@ -183,6 +183,30 @@ f5:
 	touch .venv-f5/.build_complete
 
 
+# Qwen2.5-Omni-7B — Apache 2.0, multimodal LLM with built-in TTS voices.
+# Unlike VoxCPM2/F5/CosyVoice2, NO zero-shot voice cloning — picks among
+# built-in voices ("Chelsie" female, "Ethan" male). Native Chinese + English.
+# Requires transformers >= 4.52 for Qwen2_5OmniForConditionalGeneration class.
+# Pinned <= 4.54 to stay compatible with NGC 24.11 torch (see
+# feedback_transformers_pin memory).
+qwen_omni:
+	mv .venv-qwen_omni .venv-qwen_omni-old || true
+	rm -rf .venv-qwen_omni-old &
+
+	uv venv .venv-qwen_omni --system-site-packages
+
+	source .venv-qwen_omni/bin/activate && \
+	uv pip install --no-deps --no-build-isolation \
+	    git+https://github.com/pytorch/audio.git@release/2.6 && \
+	uv pip install --no-deps 'transformers==4.52.4' \
+	    'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    soundfile safetensors accelerate \
+	    qwen-omni-utils \
+	    einops regex tqdm packaging filelock pyyaml \
+	    librosa scipy && \
+	python -c "from transformers import Qwen2_5OmniForConditionalGeneration; print('Qwen2.5-Omni import OK')" && \
+	touch .venv-qwen_omni/.build_complete
+
 
 # xcodec2 with cuda
 xcodec2:

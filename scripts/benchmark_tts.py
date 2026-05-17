@@ -111,6 +111,18 @@ def _build_f5(args):
     )
 
 
+def _build_qwen_omni(args):
+    from speech_generation.backends.qwen_omni_tts import QwenOmniTTSBackend
+
+    # Qwen2.5-Omni uses built-in voices, not zero-shot cloning.
+    # speaker can be set via --checkpoint as "<model>:<voice>" if needed
+    # (rare); default voice is per-language ("Chelsie" for zh).
+    return QwenOmniTTSBackend(
+        checkpoint=args.checkpoint or "Qwen/Qwen2.5-Omni-7B",
+        device=args.device,
+    )
+
+
 # Non-commercial backends, kept for reference comparisons only.
 def _build_xtts(args):
     from speech_generation.backends.xtts_tts import XTTSTTSBackend
@@ -136,6 +148,7 @@ BACKENDS = {
     "piper":      _build_piper,        # MIT — Polish-native, fixed-voice, lightweight
     "parler":     _build_parler,       # Apache 2.0 — text-description-controlled
     "f5":         _build_f5,           # MIT (code + Sticzu Polish fine-tune weights)
+    "qwen_omni":  _build_qwen_omni,    # Apache 2.0 — multimodal LLM with built-in zh voices
 }
 
 # Available only with --allow-reference. License disqualifies these from
@@ -152,6 +165,7 @@ BACKEND_LICENSES = {
     "piper":      "MIT",
     "parler":     "Apache-2.0",
     "f5":         "MIT",
+    "qwen_omni":  "Apache-2.0",
     "xtts":       "Coqui-Public-Model-License (non-commercial)",
     "mms_tts":    "CC-BY-NC-4.0",
 }
@@ -564,29 +578,33 @@ def cmd_aggregate(args):
         json.dump({"summary": rows, "breakdown": breakdowns}, f, indent=2, ensure_ascii=False)
 
     print(
-        f"\n{'language':<6} {'backend':<14} {'license':<22} {'comm':>5} "
-        f"{'n_ok':>5} {'wer':>7} {'rtf':>6} {'agg_rtf':>8}"
+        f"\n{'lang':<5} {'backend':<14} {'license':<18} {'n_ok':>5} "
+        f"{'wer':>7} {'cer':>7} {'per':>7} {'rtf':>6} {'agg_rtf':>8}"
     )
-    print("-" * 80)
+    print("-" * 88)
     for r in rows:
-        comm = "yes" if r.get("commercial_usable") else "no"
         wer = r["wer_mean"] if r["wer_mean"] is not None else "—"
+        cer = r["cer_mean"] if r["cer_mean"] is not None else "—"
+        per = r["per_mean"] if r["per_mean"] is not None else "—"
         rtf = r["rtf_mean"] if r["rtf_mean"] is not None else "—"
         agg = r.get("aggregate_rtf") if r.get("aggregate_rtf") is not None else "—"
         print(
-            f"{r['language']:<6} {r['backend']:<14} "
-            f"{(r.get('license') or 'Unknown')[:22]:<22} {comm:>5} "
-            f"{r['n_ok']:>5} {wer:>7} {rtf:>6} {agg:>8}"
+            f"{r['language']:<5} {r['backend']:<14} "
+            f"{(r.get('license') or 'Unknown')[:18]:<18} "
+            f"{r['n_ok']:>5} {wer:>7} {cer:>7} {per:>7} {rtf:>6} {agg:>8}"
         )
 
     if breakdowns:
-        print(f"\nPer-category WER:")
-        print(f"{'language':<6} {'backend':<14} {'category':<16} {'n':>4} {'wer':>8}")
-        print("-" * 56)
+        print(f"\nPer-category WER/CER:")
+        print(f"{'lang':<5} {'backend':<14} {'category':<16} {'n':>4} "
+              f"{'wer':>7} {'cer':>7} {'per':>7}")
+        print("-" * 68)
         for b in breakdowns:
+            cer = b.get("cer_mean") if b.get("cer_mean") is not None else "—"
+            per = b.get("per_mean") if b.get("per_mean") is not None else "—"
             print(
-                f"{b['language']:<6} {b['backend']:<14} {b['category']:<16} "
-                f"{b['n']:>4} {b['wer_mean']:>8}"
+                f"{b['language']:<5} {b['backend']:<14} {b['category']:<16} "
+                f"{b['n']:>4} {b['wer_mean']:>7} {cer:>7} {per:>7}"
             )
 
     print(f"\nWrote {out_path}")
