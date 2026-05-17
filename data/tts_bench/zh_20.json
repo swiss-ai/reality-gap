@@ -1,0 +1,22 @@
+[
+  {"id": "zh_everyday_01", "text": "今天天气真好，我们去公园散步吧。", "language": "zh", "category": "everyday"},
+  {"id": "zh_everyday_02", "text": "等一下，我马上就来。", "language": "zh", "category": "everyday"},
+  {"id": "zh_question_01", "text": "你今天晚上有空一起吃饭吗？", "language": "zh", "category": "questions"},
+  {"id": "zh_question_02", "text": "请问图书馆怎么走？", "language": "zh", "category": "questions"},
+  {"id": "zh_news_01", "text": "据新华社报道，国务院将于下周公布新的经济刺激政策。", "language": "zh", "category": "news"},
+  {"id": "zh_news_02", "text": "本季度公司营收同比增长百分之十五点二三。", "language": "zh", "category": "news"},
+  {"id": "zh_tonal_01", "text": "妈妈骑马，马慢，妈妈骂马。", "language": "zh", "category": "tonal"},
+  {"id": "zh_tonal_02", "text": "四是四，十是十，十四是十四，四十是四十。", "language": "zh", "category": "tonal"},
+  {"id": "zh_places_01", "text": "我从北京出发，经过乌鲁木齐转机，最后到达喀什。", "language": "zh", "category": "proper_nouns"},
+  {"id": "zh_people_01", "text": "李雷和韩梅梅是高中同学。", "language": "zh", "category": "proper_nouns"},
+  {"id": "zh_numbers_01", "text": "总价是一千二百三十四元五角六分。", "language": "zh", "category": "numbers_dates"},
+  {"id": "zh_dates_01", "text": "二零二六年五月十七日下午三点半。", "language": "zh", "category": "numbers_dates"},
+  {"id": "zh_idiom_01", "text": "塞翁失马，焉知非福。", "language": "zh", "category": "idioms"},
+  {"id": "zh_idiom_02", "text": "千里之行，始于足下。", "language": "zh", "category": "idioms"},
+  {"id": "zh_loan_01", "text": "请把咖啡放在沙发旁边的桌子上，谢谢。", "language": "zh", "category": "loanwords"},
+  {"id": "zh_loan_02", "text": "我用浏览器登录了我的电子邮箱。", "language": "zh", "category": "loanwords"},
+  {"id": "zh_technical_01", "text": "人工智能模型需要大量高质量的训练数据。", "language": "zh", "category": "technical"},
+  {"id": "zh_technical_02", "text": "请检查服务器的内存使用情况，并优化数据库查询。", "language": "zh", "category": "technical"},
+  {"id": "zh_long_01", "text": "尽管天气预报说今天下午会下大雨，但是我们还是决定按照原计划去爬山，看看能不能赶在雨前回来。", "language": "zh", "category": "long_formal"},
+  {"id": "zh_literary_01", "text": "落霞与孤鹜齐飞，秋水共长天一色。", "language": "zh", "category": "long_formal"}
+]
