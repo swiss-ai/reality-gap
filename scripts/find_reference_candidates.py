@@ -189,7 +189,7 @@ def main():
                         "cps": round(cps, 2),
                         "text": text,
                     })
-                    print(f"  {name}.wav -- "
+                    print(f"  {name}{out_ext} -- "
                           f"'{text[:70]}{'...' if len(text) > 70 else ''}'")
                     idx += 1
         except Exception as e:
