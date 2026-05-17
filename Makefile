@@ -178,7 +178,7 @@ f5:
 	    requests cryptography cffi pycparser \
 	    botocore jmespath s3transfer urllib3 python-dateutil \
 	    regex tqdm packaging filelock pyyaml \
-	    'antlr4-python3-runtime==4.9.3' && \
+	    'antlr4-python3-runtime==4.9.3' pydub && \
 	python -c "from f5_tts.api import F5TTS; print('F5-TTS import OK')" && \
 	touch .venv-f5/.build_complete
 
