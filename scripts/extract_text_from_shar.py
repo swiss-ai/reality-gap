@@ -47,6 +47,10 @@ def main():
                    action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--no-polish-filter", dest="lang_filter",
                    action="store_false", help=argparse.SUPPRESS)
+    p.add_argument("--skip-ids-from", type=Path, default=None,
+                   help="Path to an existing manifest JSON. Items with IDs "
+                        "matching anything in that file are skipped — used to "
+                        "extract the remainder of a dataset after a prior slice.")
     args = p.parse_args()
 
     # Per-language predicates: True = looks like target language.
@@ -67,9 +71,16 @@ def main():
         raise SystemExit(f"No cuts.*.jsonl.gz files found under {args.shar_in}")
     print(f"Reading {len(cuts_files)} cuts files...")
 
+    skip_ids = set()
+    if args.skip_ids_from is not None:
+        prior = json.load(open(args.skip_ids_from, "r", encoding="utf-8"))
+        skip_ids = {it["id"] for it in prior}
+        print(f"Loaded {len(skip_ids)} IDs to skip from {args.skip_ids_from}")
+
     items = []
     skipped = 0
     skipped_non_pl = 0
+    skipped_done = 0
     total_seconds = 0.0
     for cuts_path in cuts_files:
         with gzip.open(cuts_path, "rt", encoding="utf-8") as f:
@@ -98,6 +109,9 @@ def main():
                 if args.lang_filter and pred is not None and not pred(text):
                     skipped_non_pl += 1
                     continue
+                if cut["id"] in skip_ids:
+                    skipped_done += 1
+                    continue
                 items.append({
                     "id": cut["id"],
                     "text": text,
@@ -108,7 +122,8 @@ def main():
 
     print(f"Found {len(items)} items "
           f"({total_seconds / 3600:.2f} h of source audio); "
-          f"skipped {skipped} (filters), {skipped_non_pl} wrong language")
+          f"skipped {skipped} (filters), {skipped_non_pl} wrong language, "
+          f"{skipped_done} already done")
 
     if args.shuffle:
         random.seed(42)
