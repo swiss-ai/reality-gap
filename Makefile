@@ -208,6 +208,48 @@ qwen_omni:
 	touch .venv-qwen_omni/.build_complete
 
 
+# IndexTTS (BiliBili) — Apache 2.0, zh-native voice cloning.
+# Repo: github.com/index-tts/index-tts. Minimal deps; weights pull lazily.
+indextts:
+	mv .venv-indextts .venv-indextts-old || true
+	rm -rf .venv-indextts-old &
+
+	uv venv .venv-indextts --system-site-packages
+
+	source .venv-indextts/bin/activate && \
+	uv pip install --no-deps --no-build-isolation \
+	    git+https://github.com/pytorch/audio.git@release/2.6 && \
+	uv pip install --no-deps git+https://github.com/index-tts/index-tts.git && \
+	uv pip install --no-deps soundfile safetensors accelerate \
+	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    sentencepiece protobuf einops regex tqdm packaging filelock pyyaml \
+	    librosa scipy omegaconf \
+	    'antlr4-python3-runtime==4.9.3' && \
+	python -c "from indextts.infer import IndexTTS; print('IndexTTS import OK')" && \
+	touch .venv-indextts/.build_complete
+
+
+# MeloTTS (MyShell) — MIT, multilingual incl. zh, built-in voices, lightweight.
+# No voice cloning. zh module needs jieba + pypinyin + cn2an for Chinese
+# number/punct handling at inference time.
+melotts:
+	mv .venv-melotts .venv-melotts-old || true
+	rm -rf .venv-melotts-old &
+
+	uv venv .venv-melotts --system-site-packages
+
+	source .venv-melotts/bin/activate && \
+	uv pip install --no-deps --no-build-isolation \
+	    git+https://github.com/pytorch/audio.git@release/2.6 && \
+	uv pip install --no-deps git+https://github.com/myshell-ai/MeloTTS.git && \
+	uv pip install --no-deps soundfile safetensors accelerate \
+	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
+	    pypinyin jieba cn2an num2words inflect anyascii \
+	    librosa scipy einops regex tqdm packaging filelock pyyaml && \
+	python -c "from melo.api import TTS; print('MeloTTS import OK')" && \
+	touch .venv-melotts/.build_complete
+
+
 # xcodec2 with cuda
 xcodec2:
 	mv .venv-xcodec2 .venv-xcodec2-old || true

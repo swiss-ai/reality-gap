@@ -123,6 +123,25 @@ def _build_qwen_omni(args):
     )
 
 
+def _build_indextts(args):
+    from speech_generation.backends.indextts_tts import IndexTTSBackend
+
+    return IndexTTSBackend(
+        checkpoint=args.checkpoint or "IndexTeam/IndexTTS-1.5",
+        device=args.device,
+    )
+
+
+def _build_melotts(args):
+    from speech_generation.backends.melotts_tts import MeloTTSBackend
+
+    # MeloTTS picks language from args, defaults handle pl/zh/en.
+    return MeloTTSBackend(
+        language=args.language,
+        device=args.device,
+    )
+
+
 # Non-commercial backends, kept for reference comparisons only.
 def _build_xtts(args):
     from speech_generation.backends.xtts_tts import XTTSTTSBackend
@@ -149,6 +168,8 @@ BACKENDS = {
     "parler":     _build_parler,       # Apache 2.0 — text-description-controlled
     "f5":         _build_f5,           # MIT (code + Sticzu Polish fine-tune weights)
     "qwen_omni":  _build_qwen_omni,    # Apache 2.0 — multimodal LLM with built-in zh voices
+    "indextts":   _build_indextts,     # Apache 2.0 — BiliBili, zh-native, voice cloning
+    "melotts":    _build_melotts,      # MIT — MyShell, multilingual, built-in voices
 }
 
 # Available only with --allow-reference. License disqualifies these from
@@ -166,6 +187,8 @@ BACKEND_LICENSES = {
     "parler":     "Apache-2.0",
     "f5":         "MIT",
     "qwen_omni":  "Apache-2.0",
+    "indextts":   "Apache-2.0",
+    "melotts":    "MIT",
     "xtts":       "Coqui-Public-Model-License (non-commercial)",
     "mms_tts":    "CC-BY-NC-4.0",
 }
