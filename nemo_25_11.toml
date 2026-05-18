@@ -1,0 +1,22 @@
+image = "/capstor/store/cscs/swissai/infra01/MLLM/containers/nvcr.io#nvidia+nemo+25.11.aarch64.sqsh"
+
+mounts = [
+    "/capstor",
+    "/iopsstor",
+    "/users/${USER}/benchmark-audio-tokenizer",
+    "/users/${USER}/.edf",
+    "/users/${USER}/.cache",
+    "/users/${USER}/.local/bin/uv",
+]
+
+workdir = "${HOME}/benchmark-audio-tokenizer"
+
+[annotations]
+com.hooks.aws_ofi_nccl.enabled = "false"
+com.hooks.cxi.enabled = "false"
+
+[env]
+NCCL_DEBUG = "INFO"
+CUDA_CACHE_DISABLE = "1"
+TORCH_NCCL_ASYNC_ERROR_HANDLING = "1"
+MPICH_GPU_SUPPORT_ENABLED = "0"
