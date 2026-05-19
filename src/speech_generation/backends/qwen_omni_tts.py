@@ -57,6 +57,13 @@ class QwenOmniTTSBackend(TTSBackend):
         if device:
             self.device = device
 
+        # NGC 24.11 ships torch 2.6.0a0+df5bbc09d1.nv24.11 — patched against
+        # CVE-2025-32434 but version string parses as <2.6, so transformers'
+        # check_torch_load_is_safe() blocks Qwen2.5-Omni's load_speakers().
+        # Bypass the check since NVIDIA's backport is safe.
+        import transformers.utils.import_utils as _iu
+        _iu.check_torch_load_is_safe = lambda: None
+
         from transformers import (
             Qwen2_5OmniForConditionalGeneration,
             Qwen2_5OmniProcessor,
