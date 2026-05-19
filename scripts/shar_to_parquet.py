@@ -224,8 +224,25 @@ def convert(shar_in: Path, parquet_out_dir: Path,
     total_rows = 0
     total_missing = 0
     total_mb = 0.0
+    skipped_existing = 0
     for idx, (cuts_path, tar_path) in pairs_to_process:
-        out_file = parquet_out_dir / f"train-{idx:05d}-of-{n_for_name:05d}.parquet"
+        # Deterministic per-input naming based on the source shard's path:
+        #   shard_NNNN/cuts.NNNNNN.jsonl.gz -> train-NNNN-NNNNNN.parquet
+        # Flat layout (no shard subdir) -> train-flat-NNNNNN.parquet
+        # This makes the script idempotent — rerunning with more synth shards
+        # available adds new parquets without renaming or duplicating existing
+        # ones. Supervisor's pipeline globs train-*.parquet so any suffix works.
+        cuts_m = re.match(r"cuts\.(\d+)\.jsonl\.gz$", cuts_path.name)
+        cuts_id = cuts_m.group(1) if cuts_m else f"{idx:06d}"
+        parent_name = cuts_path.parent.name
+        shard_m = re.match(r"shard_(\d+)$", parent_name)
+        shard_id = shard_m.group(1) if shard_m else "flat"
+        out_file = parquet_out_dir / f"train-{shard_id}-{cuts_id}.parquet"
+
+        if out_file.exists():
+            logger.info("Skip existing %s", out_file.name)
+            skipped_existing += 1
+            continue
         stats = _convert_one_shard(cuts_path, tar_path, out_file)
         total_rows += stats["n_rows"]
         total_missing += stats["n_missing_audio"]
@@ -233,6 +250,7 @@ def convert(shar_in: Path, parquet_out_dir: Path,
 
     return {
         "n_shards": len(pairs_to_process),
+        "n_skipped_existing": skipped_existing,
         "n_rows": total_rows,
         "n_missing_audio": total_missing,
         "parquet_total_mb": round(total_mb, 2),
