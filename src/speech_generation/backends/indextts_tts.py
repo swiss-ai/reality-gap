@@ -45,7 +45,6 @@ class IndexTTSBackend(TTSBackend):
         self._model = IndexTTS(
             model_dir=model_dir,
             cfg_path=cfg_path,
-            is_fp16=True,
         )
         logger.info("IndexTTS loaded: %s on %s", self.checkpoint, self.device)
 
