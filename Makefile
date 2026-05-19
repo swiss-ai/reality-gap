@@ -245,6 +245,11 @@ melotts:
 	uv pip install --no-deps soundfile safetensors accelerate \
 	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    pypinyin jieba cn2an num2words inflect anyascii \
+	    proces \
+	    pykakasi fugashi unidic-lite mecab-python3 \
+	    g2pkk jamo ko-pron \
+	    eng-to-ipa gruut \
+	    nltk tn pytorch-lightning loguru \
 	    librosa scipy einops regex tqdm packaging filelock pyyaml && \
 	python -c "from melo.api import TTS; print('MeloTTS import OK')" && \
 	touch .venv-melotts/.build_complete
