@@ -7,6 +7,10 @@ mounts = [
     "/users/${USER}/.edf",
     "/users/${USER}/.cache",
     "/users/${USER}/.local/bin/uv",
+    "/usr/lib64",
+    "/etc/slurm",
+    "/etc/munge",
+    "/var/run/munge",
 ]
 
 workdir = "${HOME}/benchmark-audio-tokenizer"
