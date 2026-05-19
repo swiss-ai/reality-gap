@@ -1,0 +1,35 @@
+defaults:
+  - /recipe/parquet_audio_text_direct@_here_
+  - /tokenizer/apertus_wavtok@_here_
+  - _self_
+
+# Synthetic Chinese ASR (VoxCPM2, AISHELL-3 speaker SSB0668) —
+# Emilia-YODAS ZH (isolated subset), ~41 h.
+
+name: mkwapniewska_zh_emilia_spk0668
+language: zh
+
+source:
+  path: /capstor/store/cscs/swissai/infra01/audio-datasets/synthesized/voxcpm2/zh_emilia_spk0668/data
+  files: "train-*.parquet"
+
+columns:
+  audio: audio
+  text: text
+  duration: duration
+  id: id
+  language_column: language
+  constant:
+    dataset: voxcpm2_zh_emilia_spk0668
+
+outputs:
+  shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/voxcpm2/zh_emilia_spk0668
+  tokenized_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/tokenized/voxcpm2/zh_emilia_spk0668
+  name: voxcpm2_zh_emilia_spk0668
+
+tokenization:
+  min_duration: 1.0
+  max_duration: 60.0
+
+conversion:
+  num_workers: 4
