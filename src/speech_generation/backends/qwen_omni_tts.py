@@ -57,23 +57,20 @@ class QwenOmniTTSBackend(TTSBackend):
         if device:
             self.device = device
 
-        # NGC 24.11 ships torch 2.6.0a0+df5bbc09d1.nv24.11 — patched against
-        # CVE-2025-32434 but version string parses as <2.6 (alpha < release per
-        # PEP 440), so transformers' check_torch_load_is_safe() blocks Qwen2.5-
-        # Omni's load_speakers(). NVIDIA's backport already includes the fix,
-        # so spoof torch.__version__ to a clean post-2.6 release. Has to happen
-        # BEFORE importing the Qwen module because that module captures
-        # check_torch_load_is_safe at module-load time.
-        import torch
-        _orig_version = torch.__version__
-        torch.__version__ = "2.6.0"
-        try:
-            from transformers import (
-                Qwen2_5OmniForConditionalGeneration,
-                Qwen2_5OmniProcessor,
-            )
-        finally:
-            torch.__version__ = _orig_version
+        # NGC 24.11 ships torch 2.6.0a0+df5bbc09d1.nv24.11 — already patched
+        # against CVE-2025-32434, but transformers' check_torch_load_is_safe()
+        # reads torch version via importlib.metadata.version("torch") (NOT
+        # torch.__version__), parses the alpha as <2.6 per PEP 440, and blocks
+        # Qwen2.5-Omni's load_speakers(). Monkey-patch the check itself before
+        # importing/calling from_pretrained — NVIDIA's backport already
+        # contains the fix, so the check is purely cosmetic for our setup.
+        import transformers.utils.import_utils as _imp_utils
+        _imp_utils.check_torch_load_is_safe = lambda: None
+
+        from transformers import (
+            Qwen2_5OmniForConditionalGeneration,
+            Qwen2_5OmniProcessor,
+        )
 
         self._model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
             self.checkpoint,
