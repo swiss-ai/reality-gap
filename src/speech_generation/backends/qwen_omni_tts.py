@@ -61,16 +61,21 @@ class QwenOmniTTSBackend(TTSBackend):
         # against CVE-2025-32434, but transformers' check_torch_load_is_safe()
         # reads torch version via importlib.metadata.version("torch") (NOT
         # torch.__version__), parses the alpha as <2.6 per PEP 440, and blocks
-        # Qwen2.5-Omni's load_speakers(). Monkey-patch the check itself before
-        # importing/calling from_pretrained — NVIDIA's backport already
-        # contains the fix, so the check is purely cosmetic for our setup.
-        import transformers.utils.import_utils as _imp_utils
-        _imp_utils.check_torch_load_is_safe = lambda: None
-
+        # Qwen2.5-Omni's load_speakers(). NVIDIA's backport already contains
+        # the fix, so we no-op the check.
+        #
+        # The qwen modeling module does `from ...import_utils import
+        # check_torch_load_is_safe`, binding a LOCAL reference. Patching only
+        # transformers.utils.import_utils doesn't touch that local — we have
+        # to import the qwen modeling module first, then patch its local ref.
         from transformers import (
             Qwen2_5OmniForConditionalGeneration,
             Qwen2_5OmniProcessor,
         )
+        import transformers.models.qwen2_5_omni.modeling_qwen2_5_omni as _qwen_mod
+        import transformers.utils.import_utils as _imp_utils
+        _qwen_mod.check_torch_load_is_safe = lambda: None
+        _imp_utils.check_torch_load_is_safe = lambda: None
 
         self._model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
             self.checkpoint,
