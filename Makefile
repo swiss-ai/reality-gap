@@ -248,7 +248,7 @@ melotts:
 	    proces deprecated \
 	    pykakasi fugashi unidic-lite mecab-python3 jaconv \
 	    g2pkk jamo ko-pron \
-	    eng-to-ipa gruut \
+	    eng-to-ipa gruut g2p_en \
 	    nltk tn pytorch-lightning loguru \
 	    librosa scipy einops regex tqdm packaging filelock pyyaml && \
 	python -c "from melo.api import TTS; print('MeloTTS import OK')" && \
