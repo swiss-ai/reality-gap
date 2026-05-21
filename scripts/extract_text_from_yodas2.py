@@ -108,44 +108,54 @@ def main():
                         data = json.loads(fobj.read())
                     except Exception:
                         continue
-                    if not isinstance(data, dict):
+                    # YODAS2 stores list of {audio_id, text: dict[seg_id → text]}.
+                    # Older single-channel layout could be a flat dict; accept both.
+                    if isinstance(data, list):
+                        entries = data
+                    elif isinstance(data, dict):
+                        entries = [{"audio_id": None, "text": data}]
+                    else:
                         continue
-                    for seg_id, text in data.items():
-                        if not isinstance(text, str):
+                    for entry in entries:
+                        text_dict = entry.get("text", {}) if isinstance(entry, dict) else None
+                        if not isinstance(text_dict, dict):
                             continue
-                        text = text.strip()
-                        if not text:
-                            continue
-                        parsed = parse_segment_id(seg_id)
-                        if parsed is None:
-                            counters["bad_seg_id"] += 1
-                            continue
-                        _, dur = parsed
-                        if dur < args.min_duration:
-                            counters["too_short_dur"] += 1
-                            continue
-                        if dur > args.max_duration:
-                            counters["too_long_dur"] += 1
-                            continue
-                        if len(text) < args.min_chars:
-                            counters["too_short_text"] += 1
-                            continue
-                        if len(text) > args.max_chars:
-                            counters["too_long_text"] += 1
-                            continue
-                        if args.lang_filter and pred is not None and not pred(text):
-                            counters["wrong_language"] += 1
-                            continue
-                        if seg_id in skip_ids:
-                            counters["already_done"] += 1
-                            continue
-                        items.append({
-                            "id": seg_id,
-                            "text": text,
-                            "language": args.language,
-                            "source_duration": dur,
-                        })
-                        total_seconds += dur
+                        for seg_id, text in text_dict.items():
+                            if not isinstance(text, str):
+                                continue
+                            text = text.strip()
+                            if not text:
+                                continue
+                            parsed = parse_segment_id(seg_id)
+                            if parsed is None:
+                                counters["bad_seg_id"] += 1
+                                continue
+                            _, dur = parsed
+                            if dur < args.min_duration:
+                                counters["too_short_dur"] += 1
+                                continue
+                            if dur > args.max_duration:
+                                counters["too_long_dur"] += 1
+                                continue
+                            if len(text) < args.min_chars:
+                                counters["too_short_text"] += 1
+                                continue
+                            if len(text) > args.max_chars:
+                                counters["too_long_text"] += 1
+                                continue
+                            if args.lang_filter and pred is not None and not pred(text):
+                                counters["wrong_language"] += 1
+                                continue
+                            if seg_id in skip_ids:
+                                counters["already_done"] += 1
+                                continue
+                            items.append({
+                                "id": seg_id,
+                                "text": text,
+                                "language": args.language,
+                                "source_duration": dur,
+                            })
+                            total_seconds += dur
                     if counters["n_text_files"] % 100 == 0:
                         print(f"  processed {counters['n_text_files']} text files, "
                               f"kept {len(items)} segs so far "
