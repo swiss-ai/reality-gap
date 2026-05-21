@@ -245,7 +245,7 @@ melotts:
 	uv pip install --no-deps soundfile safetensors accelerate \
 	    'transformers==4.50.0' 'tokenizers>=0.21,<0.22' 'huggingface_hub<1.0' \
 	    pypinyin jieba cn2an num2words inflect anyascii \
-	    proces \
+	    proces deprecated \
 	    pykakasi fugashi unidic-lite mecab-python3 jaconv \
 	    g2pkk jamo ko-pron \
 	    eng-to-ipa gruut \
