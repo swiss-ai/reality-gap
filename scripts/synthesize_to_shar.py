@@ -117,6 +117,22 @@ def load_reference(ref_audio_path: Optional[str]) -> tuple[Optional[torch.Tensor
     return wav, sr
 
 
+def precache_per_item_refs(items: list[dict]) -> dict:
+    """Walk items, collect distinct ref_wav paths, load each into a cache.
+    Returns {ref_wav_path: (audio_tensor, sr)} for fast per-item lookup.
+    """
+    distinct = {}
+    for it in items:
+        rw = it.get("ref_wav")
+        if rw and rw not in distinct:
+            wav, sr = torchaudio.load(rw)
+            if wav.ndim > 1:
+                wav = wav.mean(dim=0)
+            distinct[rw] = (wav, sr)
+    logger.info("[per-item-refs] cached %d distinct reference audios", len(distinct))
+    return distinct
+
+
 # ── Shar writing ─────────────────────────────────────────────────────
 def _write_cut(writer, sid: str, text: str, audio, sr: int, target_sr: int):
     """Resample if needed, encode to WAV, build MonoCut, write to SharWriter."""
@@ -153,6 +169,7 @@ def synthesize_and_write_shar(
     shard_size: int,
     target_sr: int,
     batch_size: int = 1,
+    ref_cache: Optional[dict] = None,
 ) -> dict:
     """Synthesize each utterance and emit a Lhotse Shar dataset.
 
@@ -161,12 +178,32 @@ def synthesize_and_write_shar(
     vllm-omni's continuous batching. batch_size=1 keeps the per-utt loop
     (Direct-Python and other non-batched backends).
 
+    Per-item reference voices: if items contain `ref_wav` and `ref_text`
+    fields, they override the global reference. `ref_cache` must contain
+    pre-loaded audio for each distinct `ref_wav` path. Items are sorted
+    by ref_wav before batching so consecutive items share refs and
+    batched calls only span one ref.
+
     Each entry becomes a Cut with one recording + one supervision (text).
     Cuts are streamed into a SharWriter so memory stays bounded for large runs.
     """
     from lhotse.shar import SharWriter
 
     output_shar.mkdir(parents=True, exist_ok=True)
+
+    # Per-item refs: sort so batches naturally group by ref.
+    has_per_item_refs = bool(items) and items[0].get("ref_wav") is not None
+    if has_per_item_refs:
+        items = sorted(items, key=lambda x: x.get("ref_wav", ""))
+        logger.info("[per-item-refs] sorted %d items by ref_wav for batching", len(items))
+
+    def _ref_for(item):
+        """Resolve (audio, sr, text) for an item: per-item if present, else global."""
+        rw = item.get("ref_wav")
+        if rw and ref_cache and rw in ref_cache:
+            wav, sr = ref_cache[rw]
+            return wav, sr, item.get("ref_text", reference_text)
+        return reference_audio, reference_audio_sr, reference_text
 
     stats = {
         "n_input": len(items),
@@ -175,6 +212,7 @@ def synthesize_and_write_shar(
         "total_audio_seconds": 0.0,
         "total_generation_seconds": 0.0,
         "batch_size": batch_size,
+        "per_item_refs": has_per_item_refs,
     }
 
     with SharWriter(
@@ -188,14 +226,15 @@ def synthesize_and_write_shar(
             for i, item in enumerate(items):
                 sid = item["id"]
                 text = item["text"]
+                ra, rs, rt = _ref_for(item)
                 t0 = time.time()
                 try:
                     out = backend.generate(
                         text=text,
-                        reference_audio=reference_audio,
-                        reference_audio_sr=reference_audio_sr,
+                        reference_audio=ra,
+                        reference_audio_sr=rs,
                         render_audio=True,
-                        ref_text=reference_text,
+                        ref_text=rt,
                     )
                     elapsed = time.time() - t0
                     if out.audio is None:
@@ -220,17 +259,30 @@ def synthesize_and_write_shar(
             return stats
 
         # Batched path — chunk items, dispatch each chunk in one request.
-        for batch_start in range(0, len(items), batch_size):
-            batch = items[batch_start:batch_start + batch_size]
+        # With per-item refs: split batches at ref boundaries so each batch
+        # shares a single ref (required: backend.generate_batch takes one ref).
+        batch_start = 0
+        while batch_start < len(items):
+            # Determine end of this batch: either batch_size cap, or where
+            # ref changes (per-item-refs mode), whichever is smaller.
+            batch_end = min(batch_start + batch_size, len(items))
+            if has_per_item_refs:
+                first_ref = items[batch_start].get("ref_wav")
+                for j in range(batch_start + 1, batch_end):
+                    if items[j].get("ref_wav") != first_ref:
+                        batch_end = j
+                        break
+            batch = items[batch_start:batch_end]
             texts = [it["text"] for it in batch]
+            ra, rs, rt = _ref_for(batch[0])
             t0 = time.time()
             try:
                 outs = backend.generate_batch(
                     texts=texts,
-                    reference_audio=reference_audio,
-                    reference_audio_sr=reference_audio_sr,
+                    reference_audio=ra,
+                    reference_audio_sr=rs,
                     render_audio=True,
-                    ref_text=reference_text,
+                    ref_text=rt,
                 )
                 batch_elapsed = time.time() - t0
                 batch_audio_s = 0.0
@@ -265,9 +317,10 @@ def synthesize_and_write_shar(
                 stats["n_failed"] += len(batch)
                 logger.error(
                     "[batch %d-%d/%d] FAILED: %s",
-                    batch_start, batch_start + len(batch), len(items), e,
+                    batch_start, batch_end, len(items), e,
                     exc_info=False,
                 )
+            batch_start = batch_end
 
     return stats
 
@@ -333,6 +386,11 @@ def main() -> None:
     logger.info("Loading reference audio: %s", args.reference_audio)
     ref_audio, ref_sr = load_reference(args.reference_audio)
 
+    # Per-item refs (multi-speaker): detect & pre-cache distinct ref wavs.
+    ref_cache = None
+    if items and items[0].get("ref_wav"):
+        ref_cache = precache_per_item_refs(items)
+
     t_start = time.time()
     stats = synthesize_and_write_shar(
         backend=backend,
@@ -344,6 +402,7 @@ def main() -> None:
         shard_size=args.shard_size,
         target_sr=args.target_sr,
         batch_size=args.batch_size,
+        ref_cache=ref_cache,
     )
     stats["wall_seconds"] = round(time.time() - t_start, 2)
     stats["shard_idx"] = args.shard_idx
