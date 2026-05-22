@@ -33,6 +33,10 @@ declare -A SHARDS=(
   [pl_mls_v2]=4
   [pl_yodas2]=32
   [pl_cv25]=8
+  [pl_fineweb2_28kh]=128
+)
+declare -A WALLTIMES=(
+  [pl_fineweb2_28kh]=06:00:00
 )
 for SET in "${!SHARDS[@]}"; do
   IN="data/manifests/${SET}.json"
@@ -58,8 +62,11 @@ for SET in "${!SHARDS[@]}"; do
     echo "[skip-chain] $MAN missing"; continue
   fi
   ARRAY_HI=$((${SHARDS[$SET]} - 1))
+  WT="${WALLTIMES[$SET]:-}"
+  TIME_ARG=""
+  [ -n "$WT" ] && TIME_ARG="--time=$WT"
   EXP="ALL,INPUT=${MAN},OUT_DIR=${SYNTH_ROOT}/${SET}_K50,REF_WAV=${REF_DEFAULT_WAV},REF_TXT=${REF_DEFAULT_TXT}"
-  SYNTH_JOB=$(sbatch --parsable --dependency=afterok:$SMOKE_JOB --array=0-${ARRAY_HI} --export="$EXP" scripts/synthesize_to_shar_nanovllm.slurm)
+  SYNTH_JOB=$(sbatch --parsable --dependency=afterok:$SMOKE_JOB --array=0-${ARRAY_HI} $TIME_ARG --export="$EXP" scripts/synthesize_to_shar_nanovllm.slurm)
   echo "[chain] ${SET}_K50 synth (array=0-${ARRAY_HI}): $SYNTH_JOB"
 
   PQ="ALL,SRC=${SYNTH_ROOT},OUT=${PARQ_ROOT},SETS=${SET}_K50"
