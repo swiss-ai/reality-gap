@@ -1,0 +1,10 @@
+[
+  {"id": "zh_everyday_01", "text": "今天天气真好，我们去公园散步吧。", "language": "zh", "category": "everyday"},
+  {"id": "zh_news_01", "text": "据新华社报道，国务院将于下周公布新的经济刺激政策。", "language": "zh", "category": "news"},
+  {"id": "zh_tech_01", "text": "软件的最新版本需要更新。", "language": "zh", "category": "tech"},
+  {"id": "zh_dates_01", "text": "二零二四年十二月二十五日是圣诞节。", "language": "zh", "category": "dates"},
+  {"id": "zh_tonal_01", "text": "妈妈骑马，马慢，妈妈骂马。", "language": "zh", "category": "tonal"},
+  {"id": "zh_question_01", "text": "请问图书馆几点关门？", "language": "zh", "category": "question"},
+  {"id": "zh_ai_01", "text": "人工智能技术正在快速发展。", "language": "zh", "category": "tech"},
+  {"id": "zh_literary_01", "text": "红楼梦是中国四大古典名著之一。", "language": "zh", "category": "literary"}
+]

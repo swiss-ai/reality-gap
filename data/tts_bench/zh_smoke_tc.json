@@ -1,0 +1,10 @@
+[
+  {"id": "zh_everyday_01", "text": "今天天氣真好，我們去公園散步吧。", "language": "zh", "category": "everyday"},
+  {"id": "zh_news_01", "text": "據新華社報導，國務院將於下週公佈新的經濟刺激政策。", "language": "zh", "category": "news"},
+  {"id": "zh_tech_01", "text": "軟件的最新版本需要更新。", "language": "zh", "category": "tech"},
+  {"id": "zh_dates_01", "text": "二零二四年十二月二十五日是聖誕節。", "language": "zh", "category": "dates"},
+  {"id": "zh_tonal_01", "text": "媽媽騎馬，馬慢，媽媽罵馬。", "language": "zh", "category": "tonal"},
+  {"id": "zh_question_01", "text": "請問圖書館幾點關門？", "language": "zh", "category": "question"},
+  {"id": "zh_ai_01", "text": "人工智能技術正在快速發展。", "language": "zh", "category": "tech"},
+  {"id": "zh_literary_01", "text": "紅樓夢是中國四大古典名著之一。", "language": "zh", "category": "literary"}
+]
