@@ -31,23 +31,23 @@ from pathlib import Path
 
 
 def parse_spk_info(path):
-    """AISHELL-3 spk-info.txt: tab/space-separated, fields vary.
-    Common layout: <spk_id> <gender> <age> <region>
-    Returns dict: spk_id -> {gender, ...}.
+    """AISHELL-3 spk-info.txt: tab-separated <spk_id>\\t<age>\\t<gender>\\t<accent>.
+    Age groups: A=<14, B=14-25, C=26-40, D=>41. Gender: 'male'/'female'.
     """
     out = {}
     with open(path) as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#") or line.lower().startswith("speaker"):
+            if not line or line.startswith("#"):
                 continue
-            parts = line.split()
-            if len(parts) < 2:
+            parts = line.split("\t")
+            if len(parts) < 3:
                 continue
             spk = parts[0]
-            gender_field = parts[1].lower()
+            age = parts[1]
+            gender_field = parts[2].lower()
             gender = "M" if gender_field.startswith("m") else ("F" if gender_field.startswith("f") else "?")
-            out[spk] = {"gender": gender}
+            out[spk] = {"gender": gender, "age": age}
     return out
 
 
@@ -63,8 +63,8 @@ def main():
     p.add_argument("--k", type=int, default=50)
     p.add_argument("--cps-percentile", type=int, default=50,
                    help="Keep only speakers in slowest X percentile by cps")
-    p.add_argument("--min-duration-sec", type=float, default=1800.0,
-                   help="Drop speakers with < this much total speech (default 30 min)")
+    p.add_argument("--min-duration-sec", type=float, default=600.0,
+                   help="Drop speakers with < this much total speech (default 10 min)")
     p.add_argument("--anchor-spk", default="SSB0668",
                    help="Force-include this speaker (K=1 baseline anchor)")
     p.add_argument("--seed", type=int, default=42)
