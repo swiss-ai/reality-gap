@@ -81,7 +81,8 @@ def main():
 
     by_spk = defaultdict(list)
     for it in items:
-        spk = it["id"].split("_")[0]
+        # AISHELL-3 IDs: SSB<4digit-spk><4digit-utt>[-segIdx] → speaker = first 7 chars
+        spk = it["id"][:7]
         by_spk[spk].append(it)
     print(f"[group] {len(by_spk)} unique speakers in manifest")
 
@@ -154,7 +155,9 @@ def main():
         durs = sorted(i["source_duration"] for i in s["items"])
         median_dur = durs[len(durs) // 2]
         best = min(s["items"], key=lambda i: abs(i["source_duration"] - median_dur))
-        wav_path = args.wav_root / spk / f"{best['id']}.wav"
+        # Strip Lhotse segment suffix "-N" from id to get base AISHELL-3 utt name
+        base_utt = best["id"].rsplit("-", 1)[0] if "-" in best["id"] else best["id"]
+        wav_path = args.wav_root / spk / f"{base_utt}.wav"
         out_speakers.append({
             "spk_id": spk,
             "gender": s["gender"],
