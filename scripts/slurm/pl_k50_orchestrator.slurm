@@ -40,7 +40,7 @@ declare -A SHARDS=(
   [pl_fineweb2_28kh]=128
 )
 declare -A WALLTIMES=(
-  [pl_fineweb2_28kh]=06:00:00
+  [pl_fineweb2_28kh]=01:00:00
 )
 for SET in "${!SHARDS[@]}"; do
   IN="data/manifests/${SET}.json"

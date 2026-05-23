@@ -30,7 +30,7 @@ PARQ_ROOT=/capstor/scratch/cscs/mkwapniewska/parquet
 
 SET=zh_fineweb2_22kh
 SHARDS=128
-WALLTIME=06:00:00
+WALLTIME=01:00:00
 
 IN="data/manifests/${SET}.json"
 OUT="data/manifests/${SET}_K50.json"

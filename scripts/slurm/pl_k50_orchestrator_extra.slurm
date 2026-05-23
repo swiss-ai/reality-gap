@@ -35,7 +35,7 @@ declare -A SHARDS=(
   [pl_voxpopuli_full]=768
 )
 declare -A WALLTIMES=(
-  [pl_voxpopuli_full]=12:00:00
+  [pl_voxpopuli_full]=01:00:00
 )
 
 for SET in "${!SHARDS[@]}"; do
