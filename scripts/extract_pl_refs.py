@@ -13,10 +13,12 @@ Usage:
 """
 
 import argparse
+import io
 import json
 import tarfile
 from pathlib import Path
 
+import soundfile as sf
 import zstandard as zstd
 
 
@@ -37,23 +39,24 @@ def main():
     if not archive.exists():
         raise SystemExit(f"Archive not found: {archive}")
 
-    # Map clip filename → output mp3 path for items that don't already have refs.
-    # NOTE: write raw mp3 bytes; the synth orchestrator's torchaudio.load() decodes
-    # at runtime via torchcodec's libav backend — no ffmpeg binary required.
+    # Map clip filename → output wav path for items that don't already have refs.
+    # Decode mp3 → WAV via soundfile (libsndfile, no ffmpeg binary needed).
+    # Synth pipeline's torchaudio.load() then reads WAV cleanly without any
+    # mp3-decoder dependency at synth-time.
     want = {}
     for spk in pool["speakers"]:
         if spk["source"] == "anchor" and spk.get("ref_wav"):
             continue  # anchor wav already exists, don't re-extract
         clip = spk["ref_clip_name"]
-        ext = Path(clip).suffix.lstrip(".") or "mp3"
-        out_name = f"{spk['spk_id']}__{Path(clip).stem}.{ext}"
+        out_name = f"{spk['spk_id']}__{Path(clip).stem}.wav"
         want[clip] = (spk, args.out_dir / out_name)
 
-    print(f"[want] extracting {len(want)} files from {archive}")
+    print(f"[want] extracting + decoding {len(want)} mp3→wav from {archive}")
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     dctx = zstd.ZstdDecompressor()
     found = 0
+    failed = []
     with open(archive, "rb") as zfh, dctx.stream_reader(zfh) as stream:
         with tarfile.open(fileobj=stream, mode="r|") as tf:
             for m in tf:
@@ -61,11 +64,17 @@ def main():
                 if fname not in want:
                     continue
                 spk, out_path = want[fname]
-                out_path.write_bytes(tf.extractfile(m).read())
-                spk["ref_wav"] = str(out_path)
-                found += 1
-                if found % 5 == 0 or found == len(want):
-                    print(f"  [{found}/{len(want)}] {fname} → {out_path.name}")
+                mp3_bytes = tf.extractfile(m).read()
+                try:
+                    samples, sr = sf.read(io.BytesIO(mp3_bytes))
+                    sf.write(str(out_path), samples, sr, subtype="PCM_16")
+                    spk["ref_wav"] = str(out_path)
+                    found += 1
+                    if found % 5 == 0 or found == len(want):
+                        print(f"  [{found}/{len(want)}] {fname} → {out_path.name} (sr={sr})")
+                except Exception as e:
+                    failed.append((fname, str(e)[:200]))
+                    print(f"  [fail] {fname}: {e}")
                 if found >= len(want):
                     break
 
