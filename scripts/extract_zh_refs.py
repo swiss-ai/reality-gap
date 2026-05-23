@@ -58,12 +58,15 @@ def main():
         raise SystemExit(f"No recording tars found under {args.shar_dir}")
     print(f"[tars] {len(tars)} archives to scan")
 
+    AUDIO_EXTS = {".flac", ".wav", ".opus", ".mp3", ".ogg"}
     found = 0
     for tar_path in tars:
         with tarfile.open(tar_path, mode="r") as tf:
             for m in tf:
                 if not m.isfile():
                     continue
+                if Path(m.name).suffix.lower() not in AUDIO_EXTS:
+                    continue  # skip cuts .json side files
                 # Strip directory + extension to get raw cut id.
                 name = Path(m.name).name
                 # Try both forms: full name, and stem (without ext)
