@@ -13,9 +13,7 @@ Usage:
 """
 
 import argparse
-import io
 import json
-import subprocess
 import tarfile
 from pathlib import Path
 
@@ -39,16 +37,19 @@ def main():
     if not archive.exists():
         raise SystemExit(f"Archive not found: {archive}")
 
-    # Map clip filename → output wav path for items that don't already have refs.
+    # Map clip filename → output mp3 path for items that don't already have refs.
+    # NOTE: write raw mp3 bytes; the synth orchestrator's torchaudio.load() decodes
+    # at runtime via torchcodec's libav backend — no ffmpeg binary required.
     want = {}
     for spk in pool["speakers"]:
         if spk["source"] == "anchor" and spk.get("ref_wav"):
             continue  # anchor wav already exists, don't re-extract
         clip = spk["ref_clip_name"]
-        wav_name = f"{spk['spk_id']}__{Path(clip).stem}.wav"
-        want[clip] = (spk, args.out_dir / wav_name)
+        ext = Path(clip).suffix.lstrip(".") or "mp3"
+        out_name = f"{spk['spk_id']}__{Path(clip).stem}.{ext}"
+        want[clip] = (spk, args.out_dir / out_name)
 
-    print(f"[want] extracting {len(want)} mp3 → wav from {archive}")
+    print(f"[want] extracting {len(want)} files from {archive}")
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     dctx = zstd.ZstdDecompressor()
@@ -56,27 +57,15 @@ def main():
     with open(archive, "rb") as zfh, dctx.stream_reader(zfh) as stream:
         with tarfile.open(fileobj=stream, mode="r|") as tf:
             for m in tf:
-                # CV tars contain clip files; member.name may include a leading dir like "pl/clips/<clip>.mp3"
                 fname = Path(m.name).name
                 if fname not in want:
                     continue
-                spk, out_wav = want[fname]
-                mp3_bytes = tf.extractfile(m).read()
-                # Decode mp3 → wav using ffmpeg (NGC container should have it).
-                proc = subprocess.run(
-                    ["ffmpeg", "-loglevel", "error", "-y",
-                     "-f", "mp3", "-i", "pipe:0",
-                     "-ar", str(args.target_sr), "-ac", "1",
-                     "-f", "wav", str(out_wav)],
-                    input=mp3_bytes, capture_output=True,
-                )
-                if proc.returncode != 0:
-                    print(f"[fail] {fname}: {proc.stderr.decode(errors='ignore')[:200]}")
-                    continue
-                spk["ref_wav"] = str(out_wav)
+                spk, out_path = want[fname]
+                out_path.write_bytes(tf.extractfile(m).read())
+                spk["ref_wav"] = str(out_path)
                 found += 1
                 if found % 5 == 0 or found == len(want):
-                    print(f"  [{found}/{len(want)}] {fname} → {out_wav.name}")
+                    print(f"  [{found}/{len(want)}] {fname} → {out_path.name}")
                 if found >= len(want):
                     break
 
