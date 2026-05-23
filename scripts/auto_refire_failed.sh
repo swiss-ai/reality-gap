@@ -39,9 +39,9 @@ else
     if [ ! -f "$LOG" ]; then
       echo "  [skip] no log for $FULL"; continue
     fi
-    INPUT=$(grep -oP 'INPUT\s*=\s*\K\S+' "$LOG" | head -1)
-    OUT_DIR=$(grep -oP 'OUT_DIR\s*=\s*\K\S+' "$LOG" | head -1)
-    NUM_SHARDS=$(grep -oP 'shard [0-9]+/\K[0-9]+' "$LOG" | head -1)
+    INPUT=$(grep -oP 'INPUT\s*=\s*\K\S+' "$LOG" 2>/dev/null | head -1 || true)
+    OUT_DIR=$(grep -oP 'OUT_DIR\s*=\s*\K\S+' "$LOG" 2>/dev/null | head -1 || true)
+    NUM_SHARDS=$(grep -oP 'shard [0-9]+/\K[0-9]+' "$LOG" 2>/dev/null | head -1 || true)
     if [ -z "$INPUT" ] || [ -z "$OUT_DIR" ] || [ -z "$NUM_SHARDS" ]; then
       echo "  [skip] cannot parse $LOG"; continue
     fi
@@ -78,18 +78,18 @@ echo "Step 2: Resubmit DEAD parquets (DependencyNeverSatisfied)"
 echo "=================================================="
 
 mapfile -t DEAD_PARQ < <(squeue --me -t PD -h -o "%i %r" 2>/dev/null \
-                         | awk '$2=="DependencyNeverSatisfied" {print $1}')
+                         | awk '$2=="DependencyNeverSatisfied" {print $1}' || true)
 
 echo "Found ${#DEAD_PARQ[@]} dead-dep jobs"
 
 for J in "${DEAD_PARQ[@]}"; do
-  NAME=$(scontrol show job "$J" 2>/dev/null | grep -oP 'JobName=\K\S+' | head -1)
+  NAME=$(scontrol show job "$J" 2>/dev/null | grep -oP 'JobName=\K\S+' 2>/dev/null | head -1 || true)
   # Only handle shar_to_parquet jobs (not synth or orchestrator)
   if [[ "$NAME" != *parq* ]] && [[ "$NAME" != *shar_to_parquet* ]]; then
     echo "  [skip] $J ($NAME) — not a parquet job"; continue
   fi
   # Extract SETS from env vars (shar_to_parquet uses SETS=...)
-  SET=$(scontrol show job "$J" 2>/dev/null | grep -oP 'SETS=\K[^,]+' | head -1)
+  SET=$(scontrol show job "$J" 2>/dev/null | grep -oP 'SETS=\K[^,]+' 2>/dev/null | head -1 || true)
   if [ -z "$SET" ]; then
     echo "  [skip] $J — cannot find SETS"; continue
   fi
