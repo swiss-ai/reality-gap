@@ -48,10 +48,12 @@ def main():
     with open(args.ref_pool) as f:
         pool = json.load(f)
 
-    speakers = pool["speakers"]
+    speakers = [s for s in pool["speakers"] if s.get("ref_wav")]
+    dropped = len(pool["speakers"]) - len(speakers)
     K = len(speakers)
     print(f"[manifest] {len(manifest):,} items")
-    print(f"[pool] K={K} speakers from {pool.get('ref_pool_id', '?')}")
+    print(f"[pool] K={K} usable speakers from {pool.get('ref_pool_id', '?')}"
+          + (f" ({dropped} dropped: null ref_wav)" if dropped else ""))
 
     if args.max_items:
         manifest = manifest[:args.max_items]

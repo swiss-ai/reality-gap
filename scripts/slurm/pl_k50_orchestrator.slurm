@@ -20,6 +20,10 @@
 # available (granary chunks, fineweb2 extracts, etc.).
 
 set -euo pipefail
+
+# libjson-c.so.5 workaround for sbatch-from-container (pyxis SPANK plugin needs it).
+export LD_LIBRARY_PATH="/capstor/scratch/cscs/${USER:-mkwapniewska}/libfix:${LD_LIBRARY_PATH:-}"
+
 cd "/users/$(whoami)/benchmark-audio-tokenizer"
 
 POOL=references/pl_K50_seed42_cps30.json

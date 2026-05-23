@@ -16,6 +16,10 @@
 # built — only the manifest is gated on the upstream extract.
 
 set -euo pipefail
+
+# libjson-c.so.5 workaround for sbatch-from-container (pyxis SPANK plugin needs it).
+export LD_LIBRARY_PATH="/capstor/scratch/cscs/${USER:-mkwapniewska}/libfix:${LD_LIBRARY_PATH:-}"
+
 cd "/users/$(whoami)/benchmark-audio-tokenizer"
 
 POOL=references/zh_K50_seed42_cps70.json
