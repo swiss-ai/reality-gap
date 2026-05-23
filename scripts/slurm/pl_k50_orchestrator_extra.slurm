@@ -17,7 +17,7 @@
 # + submits synth+parquet chains directly.
 
 set -euo pipefail
-cd ~/PycharmProjects/DataScienceLab/benchmark-audio-tokenizer
+cd "/users/$(whoami)/benchmark-audio-tokenizer"
 
 POOL=references/pl_K50_seed42_cps30.json
 REF_DEFAULT_WAV=outputs/reference_audio_spk1636/pl_speaker_0.wav

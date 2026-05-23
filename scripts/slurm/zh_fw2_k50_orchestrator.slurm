@@ -16,7 +16,7 @@
 # built — only the manifest is gated on the upstream extract.
 
 set -euo pipefail
-cd ~/PycharmProjects/DataScienceLab/benchmark-audio-tokenizer
+cd "/users/$(whoami)/benchmark-audio-tokenizer"
 
 POOL=references/zh_K50_seed42_cps70.json
 REF_DEFAULT_WAV=outputs/reference_audio_zh/zh_speaker_0.wav
