@@ -11,6 +11,9 @@ set -euo pipefail
 
 HOURS=${1:-12}
 DRY_RUN=${DRY_RUN:-0}
+# Optional glob pattern to limit refires to a subset of OUT_DIRs (matched against
+# basename). e.g. TARGET_PATTERN=fineweb2 to only refire fineweb2 sets.
+TARGET_PATTERN=${TARGET_PATTERN:-}
 
 SS=/capstor/scratch/cscs/mkwapniewska/synth
 PP=/capstor/scratch/cscs/mkwapniewska/parquet
@@ -88,6 +91,11 @@ else
       echo "  [skip] cannot parse $LOG"; continue
     fi
     IDX="${FULL#*_}"
+    # Optional target-pattern filter (e.g. limit refires to fineweb2 sets)
+    if [ -n "$TARGET_PATTERN" ] && [[ "$OUT_DIR" != *${TARGET_PATTERN}* ]]; then
+      echo "  [skip-filter] $FULL — $(basename "$OUT_DIR") doesn't match '$TARGET_PATTERN'"
+      continue
+    fi
     # Skip if this (OUT_DIR, idx) is already covered by a success or pending retry
     if [ -n "${HANDLED["${OUT_DIR}|${IDX}"]:-}" ]; then
       echo "  [skip] $FULL — ${HANDLED["${OUT_DIR}|${IDX}"]} (dedup)"
@@ -139,6 +147,9 @@ for J in "${DEAD_PARQ[@]}"; do
   SET=$(scontrol show job "$J" 2>/dev/null | grep -oP 'SETS=\K[^,]+' 2>/dev/null | head -1 || true)
   if [ -z "$SET" ]; then
     echo "  [skip] $J — cannot find SETS"; continue
+  fi
+  if [ -n "$TARGET_PATTERN" ] && [[ "$SET" != *${TARGET_PATTERN}* ]]; then
+    echo "  [skip-filter] $J ($SET) doesn't match '$TARGET_PATTERN'"; continue
   fi
   echo ""
   echo "[parquet] $SET  (was $J)"
