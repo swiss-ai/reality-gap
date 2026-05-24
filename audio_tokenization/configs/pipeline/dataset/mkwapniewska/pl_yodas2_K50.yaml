@@ -1,0 +1,35 @@
+defaults:
+  - /recipe/parquet_audio_text_direct@_here_
+  - /tokenizer/apertus_wavtok@_here_
+  - _self_
+
+# Synthetic Polish ASR (VoxCPM2, K=50 multi-speaker pool, seed=42, cps30) —
+# YODAS2 Polish subset, ~620 h synth.
+
+name: mkwapniewska_pl_yodas2_K50
+language: pl
+
+source:
+  path: /capstor/store/cscs/swissai/infra01/audio-datasets/synthesized/voxcpm2/pl_yodas2_K50/data
+  files: "train-*.parquet"
+
+columns:
+  audio: audio
+  text: text
+  duration: duration
+  id: id
+  language_column: language
+  constant:
+    dataset: voxcpm2_pl_yodas2_K50
+
+outputs:
+  shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/voxcpm2/pl_yodas2_K50
+  tokenized_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/tokenized/voxcpm2/pl_yodas2_K50
+  name: voxcpm2_pl_yodas2_K50
+
+tokenization:
+  min_duration: 1.0
+  max_duration: 60.0
+
+conversion:
+  num_workers: 8
