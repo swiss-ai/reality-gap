@@ -9,6 +9,8 @@ Synthesis was done with **VoxCPM2** (Apache 2.0, OpenBMB) using
 Per-set tokenized outputs (.bin/.idx, Megatron format) live under
 `/capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/tokenized/voxcpm2/`.
 
+**Real-audio source mapping** (for ablation training on the same utterances): see `_real_audio_manifests/MANIFEST.json` inside the delivery dir. For each synth set it lists the original real-audio source path on cluster + per-set `<set>_ids.txt` (one synth id per line). See [Real-audio source mapping](#real-audio-source-mapping) below.
+
 ---
 
 ## Synthesis modes
@@ -159,6 +161,49 @@ Notes:
 - `audio.bytes` are 24 kHz native (no resampling — matches VoxCPM2 output).
 - No `text_tokens` column — supervisor's pipeline tokenizes from `text` downstream.
 - Each row is one independent clip (5-30s); supervisor's interleaver weaves rows at chunk boundaries.
+
+---
+
+## Real-audio source mapping
+
+For each synth set, the **real-audio source corpus** on cluster is documented in `_real_audio_manifests/MANIFEST.json` alongside the synth parquets. This lets you train a comparison ASR/codec model on the same utterances using their original recordings.
+
+**Layout under `_real_audio_manifests/`:**
+
+```
+_real_audio_manifests/
+├── MANIFEST.json                — top-level map: set → {source_path, source_format, license, n_ids, ids_file}
+├── pl_cv25_K50_ids.txt          — one synth id per line (the utterances synthesized for this set)
+├── pl_voxpopuli_full_K50_ids.txt
+├── pl_mls_v2_K50_ids.txt
+├── …                            — one *_ids.txt per delivered synth set
+```
+
+**`MANIFEST.json` entry shape:**
+
+```json
+{
+  "pl_voxpopuli_full_K50": {
+    "source_path": "/capstor/store/cscs/swissai/infra01/audio-datasets/SHAR/stage_2/voxpopuli_asr/pl",
+    "source_format": "lhotse_shar",
+    "license": "CC0-1.0",
+    "notes": "VoxPopuli pl ASR raw. synth id == recording_id.",
+    "n_ids": 2042340,
+    "ids_file": "_real_audio_manifests/pl_voxpopuli_full_K50_ids.txt"
+  },
+  …
+}
+```
+
+**`source_format` values + how to load:**
+
+| Format | Storage | How to look up an id |
+|---|---|---|
+| `lhotse_shar` | `cuts.NNNNNN.jsonl.gz` + `recording.NNNNNN.tar` | Standard Lhotse `SharReader`; synth id matches Lhotse `cut.id` (or its prefix — see VoxPopuli note below). |
+| `common_voice` | Parquet (`processed/commonvoice25/<lang>/`) + tsv | Match synth id (e.g. `common_voice_pl_20867142`) against the `path`/clip-id column. |
+| `hf_raw` | HF dataset cache (tars + jsonl manifests) | Synth id matches the HF row's `id` field (Emilia: `ZH_<vid>_W<seq>`; YODAS2: `<videoID>-<shardN>-<startms>-<endms>`). |
+| `granary_raw` | Granary's curated parquet/json layout under `raw/granary/nvidia-granary/<lang>/` | Synth id matches Granary's per-utterance id (parseable: `pl000_<row>_<videoID>_<…>` for YODAS subset, `<date>-<time>-<committee>_pl_<seg>` for VoxPopuli subset). |
+| `text_only` | n/a | FineWeb-2 — no real-audio counterpart; `source_path` is `null`. |
 
 ---
 
