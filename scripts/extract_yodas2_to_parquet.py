@@ -64,6 +64,14 @@ def main():
                     help="Rows per output parquet shard")
     ap.add_argument("--max-items", type=int, default=None,
                     help="Cap total emitted rows (for testing)")
+    ap.add_argument("--start-chunk", type=int, default=0,
+                    help="Skip first N chunks (resume from chunk N). "
+                         "Chunks are sorted alphabetically by chunk_id.")
+    ap.add_argument("--end-chunk", type=int, default=None,
+                    help="Process up to (but not including) chunk index N.")
+    ap.add_argument("--shard-offset", type=int, default=0,
+                    help="Start parquet shard numbering at this offset "
+                         "(avoid overwriting existing shards from a prior run).")
     args = ap.parse_args()
 
     if args.min_chars is None:
@@ -73,7 +81,7 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     rows = []
-    shard_idx = 0
+    shard_idx = args.shard_offset
     total_dur_s = 0.0
     stats = {"chunks_seen": 0, "kept": 0, "skipped_dur": 0, "skipped_text": 0,
              "skipped_lang": 0, "no_audio_in_chunk": 0, "bad_seg_id": 0,
@@ -118,8 +126,12 @@ def main():
             audio_by_chunk[chunk_id] = m
     print(f"Found {len(text_by_chunk)} text chunks, {len(audio_by_chunk)} audio chunks", flush=True)
 
-    common = sorted(set(text_by_chunk) & set(audio_by_chunk))
-    print(f"Processing {len(common)} chunks with both text + audio", flush=True)
+    common_all = sorted(set(text_by_chunk) & set(audio_by_chunk))
+    end = args.end_chunk if args.end_chunk is not None else len(common_all)
+    common = common_all[args.start_chunk:end]
+    print(f"Total chunks with both text + audio: {len(common_all)}", flush=True)
+    print(f"Processing chunks [{args.start_chunk}:{end}] = {len(common)} chunks", flush=True)
+    print(f"Shard numbering starts at train-{args.shard_offset:05d}.parquet", flush=True)
 
     for chunk_id in common:
         stats["chunks_seen"] += 1
