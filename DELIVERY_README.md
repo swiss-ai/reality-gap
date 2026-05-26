@@ -44,7 +44,8 @@ Quick reference for which K=1 set corresponds to which K=50 set per source corpu
 | YODAS2 pl | `pl_yodas2_spk1636` | `pl_yodas2_K50` |
 | Granary YODAS pl | `pl_granary_yodas_spk1636` | — (none, ~7 h slice, K=1 only) |
 | Granary YTC pl | `pl_granary_ytc_spk1636` | `pl_granary_ytc_K50` |
-| FineWeb-2 pl (text-only) | — | `pl_fineweb2_10kh_K50` *(synth in flight)* |
+| FineWeb-2 pl — batch 1 (text-only) | — | `pl_fineweb2_10kh_K50` |
+| FineWeb-2 pl — batch 2 (text-only) | — | `pl_fineweb2_10kh_b_K50` |
 
 **Note on VoxPopuli pl:** the K=1 deliveries (`pl_voxpopuli_1kh_spk1636` + `pl_voxpopuli_rest_spk1636`) use **Granary's curated text normalization** of the VoxPopuli pl ASR audio. The K=50 delivery (`pl_voxpopuli_full_K50`) uses **raw VoxPopuli ASR text**. Same underlying audio source corpus, two different text-cleanup variants — pair these as an additional text-normalization ablation handle if useful. (Naming note: these two sets were originally `pl_granary_1kh_spk1636` / `pl_granary_rest_spk1636`; renamed for consistency with the K=50 sibling.)
 
@@ -63,7 +64,8 @@ Quick reference for which K=1 set corresponds to which K=50 set per source corpu
 | WenetSpeech — 1kh slice | `zh_wenetspeech_1kh_spk0668` | `zh_wenetspeech_full_K50` ↓ |
 | WenetSpeech — rest (>1kh) | `zh_wenetspeech_rest_spk0668` | `zh_wenetspeech_full_K50` ↑ |
 | YODAS2 zh | `zh_yodas2_spk0668` | `zh_yodas2_K50` |
-| FineWeb-2 zh (text-only) | — | `zh_fineweb2_10kh_K50` *(synth in flight)* |
+| FineWeb-2 zh — batch 1 (text-only) | — | `zh_fineweb2_10kh_K50` |
+| FineWeb-2 zh — batch 2 (text-only, partial) | — | `zh_fineweb2_10kh_b_K50` |
 
 ---
 
@@ -75,7 +77,8 @@ Synth-hour totals computed from `duration` column over delivered parquets, 2026-
 |---|---|---|---|---|---|---|
 | `pl_cv25_K50` | Common Voice 25 pl | CC0-1.0 | K=50 | 142.0 | 121,857 | ✓ |
 | `pl_cv25_spk1636` | Common Voice 25 pl | CC0-1.0 | K=1 | 111.1 | 91,393 | ✓ |
-| `pl_fineweb2_10kh_K50` | FineWeb-2 pl (text-only) | ODC-By | K=50 | _pending_ | _pending_ | ⏳ synth in flight |
+| `pl_fineweb2_10kh_K50` | FineWeb-2 pl — batch 1 (text-only) | ODC-By | K=50 | 10,565.7 | 4,588,334 | ✓ |
+| `pl_fineweb2_10kh_b_K50` | FineWeb-2 pl — batch 2 (text-only, dedup vs batch 1) | ODC-By | K=50 | 10,005.4 | 4,495,846 | ✓ |
 | `pl_granary_yodas_spk1636` | Granary YODAS pl | CC-BY 3.0 | K=1 | 6.6 | 3,239 | ✓ |
 | `pl_granary_ytc_K50` | Granary YTC pl | CC-BY 3.0 | K=50 | 10.2 | 2,922 | ✓ |
 | `pl_granary_ytc_spk1636` | Granary YTC pl | CC-BY 3.0 | K=1 | 8.9 | 2,647 | ✓ |
@@ -87,10 +90,11 @@ Synth-hour totals computed from `duration` column over delivered parquets, 2026-
 | `pl_yodas2_K50` | YODAS2 pl | CC-BY 3.0 | K=50 | 650.9 | 490,986 | ✓ |
 | `pl_yodas2_spk1636` | YODAS2 pl | CC-BY 3.0 | K=1 | 613.2 | 490,387 | ✓ |
 
-**Polish totals (excluding pending FineWeb-2 text-only):**
-- **K=50 audio: 12,267.7 h** (5 sets)
-- **K=1 audio: 13,613.2 h** (7 sets)
-- Once `pl_fineweb2_10kh_K50` synth completes, total Polish ≈ **36 kh**.
+**Polish totals:**
+- **K=50 audio (paired): 12,267.7 h** (5 sets — cv25, granary_ytc, mls_v2, voxpopuli_full, yodas2)
+- **K=50 text-only (FineWeb-2): 20,571.1 h** (2 batches: 10,565.7 + 10,005.4)
+- **K=1 audio (paired): 13,613.2 h** (7 sets)
+- **Polish grand total: ~46.5 kh** (32.8 kh K=50 + 13.6 kh K=1) across 14 sets
 
 **Polish source notes:**
 
@@ -120,17 +124,19 @@ Synth-hour totals computed from `duration` column over delivered parquets, 2026-
 | `zh_emilia_full_K50` | Emilia-YODAS ZH (full extract) | CC-BY 4.0 | K=50 | 318.2 | 110,156 | ✓ |
 | `zh_emilia_full_spk0668` | Emilia-YODAS ZH (full extract) | CC-BY 4.0 | K=1 | 310.8 | 110,156 | ✓ |
 | `zh_emilia_spk0668` | Emilia-YODAS ZH (cluster subset) | CC-BY 4.0 | K=1 | 45.6 | 19,064 | ✓ |
-| `zh_fineweb2_10kh_K50` | FineWeb-2 zh (text-only) | ODC-By | K=50 | _pending_ | _pending_ | ⏳ synth in flight |
+| `zh_fineweb2_10kh_K50` | FineWeb-2 zh — batch 1 (text-only) | ODC-By | K=50 | 12,167.0 | 4,129,427 | ✓ |
+| `zh_fineweb2_10kh_b_K50` | FineWeb-2 zh — batch 2 (text-only, dedup vs batch 1, partial) | ODC-By | K=50 | 3,414.0 | 1,242,600 | ✓ partial — synth cancelled mid-run |
 | `zh_wenetspeech_1kh_spk0668` | WenetSpeech 1kh slice | Apache 2.0 (CC-BY-derived) | K=1 | 1,082.6 | 1,014,667 | ✓ |
 | `zh_wenetspeech_full_K50` | WenetSpeech full | Apache 2.0 (CC-BY-derived) | K=50 | 11,685.6 | 13,306,267 | ✓ |
 | `zh_wenetspeech_rest_spk0668` | WenetSpeech rest (>1kh) | Apache 2.0 (CC-BY-derived) | K=1 | 6,760.7 | 6,341,128 | ✓ |
 | `zh_yodas2_K50` | YODAS2 zh | CC-BY 3.0 | K=50 | 271.8 | 250,239 | ✓ |
 | `zh_yodas2_spk0668` | YODAS2 zh | CC-BY 3.0 | K=1 | 256.9 | 250,239 | ✓ |
 
-**Chinese totals (excluding pending FineWeb-2 text-only):**
-- **K=50 audio: 12,775.4 h** (9 sets)
-- **K=1 audio: 8,922.2 h** (11 sets — note K=1 wenetspeech is 1kh + rest = 7,843 h vs K=50 full = 11,686 h; different filtering / scoping between manifests)
-- Once `zh_fineweb2_10kh_K50` completes, total Chinese ≈ **32 kh**.
+**Chinese totals:**
+- **K=50 audio (paired): 12,775.4 h** (9 sets)
+- **K=50 text-only (FineWeb-2): 15,581.0 h** (2 batches: 12,167.0 + 3,414.0; batch 2 is ~34% of target because synth was cancelled mid-run to free cluster capacity for delivery)
+- **K=1 audio (paired): 8,922.2 h** (11 sets — note K=1 wenetspeech is 1kh + rest = 7,843 h vs K=50 full = 11,686 h; different filtering / scoping between manifests)
+- **Chinese grand total: ~37.3 kh** (28.4 kh K=50 + 8.9 kh K=1) across 22 sets
 
 **Chinese source notes:**
 
