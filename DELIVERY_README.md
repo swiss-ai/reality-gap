@@ -179,11 +179,27 @@ For each synth set, the **real-audio source corpus** on cluster is documented in
 ```
 _real_audio_manifests/
 ├── MANIFEST.json                — top-level map: set → {source_path, source_format, license, n_ids, ids_file}
-├── pl_cv25_K50_ids.txt          — one synth id per line (the utterances synthesized for this set)
-├── pl_voxpopuli_full_K50_ids.txt
-├── pl_mls_v2_K50_ids.txt
-├── …                            — one *_ids.txt per delivered synth set
+├── <set>_ids.txt                — one synth id per line, the utterances synthesized for this set (one file per delivered set)
+├── sources/                     — symlinks to the RAW audio source dirs on cluster
+│   ├── pl_cv25_K50              → /capstor/.../processed/commonvoice25/pl
+│   ├── pl_voxpopuli_full_K50    → /capstor/.../SHAR/stage_2/voxpopuli_asr/pl
+│   └── …                        — one symlink per audio-paired synth set
+└── tokenized/                   — symlinks to the TOKENIZED real audio on cluster
+    ├── pl_cv25__transcribe_real → /capstor/.../reality_gap/tokenized/real/transcribe/pl_cv25_real
+    ├── pl_yodas2__transcribe_real → /capstor/.../reality_gap/tokenized/real/transcribe/pl_yodas2_real
+    ├── zh_aishell1_K50          → /capstor/.../tokenized/transcribe/aishell_1_3
+    ├── pl_voxpopuli_1kh_spk1636 → /capstor/.../tokenized/interleave/voxpopuli_interleave/pl
+    └── …                        — symlinks named per synth_set or per corpus__form_real
 ```
+
+**Using the symlinks** — they're standard POSIX symlinks. Open the path and Linux follows automatically; PyArrow, Lhotse, Megatron, training pipelines all work transparently. Don't need to do anything special. If copying off-cluster, use `cp -RL` or `rsync -L` to follow symlinks; otherwise reading in-place just works.
+
+**Naming convention for tokenized/ symlinks:**
+- `<set>__transcribe_real` → we re-tokenized this corpus ourselves; format matches our synth tokenize exactly (rank-sharded `rank_NNNN_chunk_NNNN.{bin,idx}`).
+- `<synth_set>` (no suffix) → points at supervisor's pre-existing tokenize for this corpus.
+  - If target is `tokenized/transcribe/…` — same paired audio+text format as our synth tokenize.
+  - If target is `tokenized/interleave/<corpus>/…` — separate streams in `stage2/{transcribe,offset_0,offset_1}.{bin,idx}` (audio tokens at `offset_*.bin`, text at `transcribe.bin`). The "interleave" label refers to the supervisor's downstream materialize step, not the storage format — for audio-token comparison no re-tokenize is needed.
+  - If target is `tokenized/audio_only/…` — audio-only Megatron .bin/.idx (no paired text).
 
 **`MANIFEST.json` entry shape:**
 
