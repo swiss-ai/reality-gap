@@ -8,6 +8,7 @@ Synthesis was done with **VoxCPM2** (Apache 2.0, OpenBMB) using
 
 Per-set tokenized outputs (.bin/.idx, Megatron format) live under
 `/capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/tokenized/voxcpm2/`.
+Each delivered set also has a `tokenized` symlink inside its own dir (e.g. `voxcpm2/pl_cv25_K50/tokenized → .../tokenized/voxcpm2/pl_cv25_K50/transcribe/voxcpm2_pl_cv25_K50/`) so synth parquet (`data/`) and synth tokens (`tokenized/`) sit side by side per set.
 
 **Real-audio source mapping** (for ablation training on the same utterances): see `_real_audio_manifests/MANIFEST.json` inside the delivery dir. For each synth set it lists the original real-audio source path on cluster + per-set `<set>_ids.txt` (one synth id per line). See [Real-audio source mapping](#real-audio-source-mapping) below.
 
@@ -192,7 +193,7 @@ _real_audio_manifests/
     └── …                        — symlinks named per synth_set or per corpus__form_real
 ```
 
-**Using the symlinks** — they're standard POSIX symlinks. Open the path and Linux follows automatically; PyArrow, Lhotse, Megatron, training pipelines all work transparently. Don't need to do anything special. If copying off-cluster, use `cp -RL` or `rsync -L` to follow symlinks; otherwise reading in-place just works.
+**Using the symlinks** — they're standard POSIX symlinks. Open the path and Linux follows automatically; PyArrow, Lhotse, Megatron, training pipelines all work transparently. If copying off-cluster, use `cp -RL` or `rsync -L` to follow symlinks; otherwise reading in-place just works.
 
 **Naming convention for tokenized/ symlinks:**
 - `<set>__transcribe_real` → we re-tokenized this corpus ourselves; format matches our synth tokenize exactly (rank-sharded `rank_NNNN_chunk_NNNN.{bin,idx}`).
