@@ -10,8 +10,7 @@ name: mkwapniewska_zh_yodas2_real
 language: zh
 
 source:
-  path: /capstor/store/cscs/swissai/infra01/audio-datasets/raw/hf___espnet___yodas2/data
-  files: "zh000.tar.zst"
+  path: /capstor/store/cscs/swissai/infra01/audio-datasets/raw/hf___espnet___yodas2/data/zh000.tar.zst
 
 outputs:
   shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/real/zh_yodas2_real
