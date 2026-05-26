@@ -1,0 +1,33 @@
+defaults:
+  - /recipe/wds_audio_only@_here_
+  - /tokenizer/apertus_wavtok@_here_
+  - _self_
+
+# Real-audio YODAS2 pl — webdataset tar.zst format from HF cache.
+# Pairs with our synth `pl_yodas2_K50` and `pl_yodas2_spk1636`.
+# wds recipe is audio-only (no text); use to get audio tokens for codec
+# round-trip / reality-gap comparison against the synth.
+
+name: mkwapniewska_pl_yodas2_real
+language: pl
+
+source:
+  path: /capstor/store/cscs/swissai/infra01/audio-datasets/raw/hf___espnet___yodas2/data
+  files: "pl000.tar.zst"
+
+outputs:
+  shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/real/pl_yodas2_real
+  tokenized_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/tokenized/real
+  name: pl_yodas2_real
+
+conversion:
+  num_workers: 64
+  shard_size: 5000
+  read_batch_size: 256
+  mp_start_method: fork
+
+tokenization:
+  min_duration: 2.0
+  max_duration: 200.0
+  max_batch_duration: 2000.0
+  checkpoint_interval_batches: 2000

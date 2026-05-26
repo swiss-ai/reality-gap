@@ -1,0 +1,53 @@
+defaults:
+  - /recipe/parquet_audio_text_direct@_here_
+  - /tokenizer/apertus_wavtok@_here_
+  - _self_
+
+# Real-audio Polish Common Voice 25 — train + validated_extra splits.
+# Uses the cooldown view dir (symlinks back to canonical commonvoice25/pl/)
+# but narrows to pl/ only so the output is a single-language tokenized set
+# that pairs with our synth `pl_cv25_K50` and `pl_cv25_spk1636`.
+
+name: mkwapniewska_pl_cv25_real
+language: pl
+
+source:
+  path: /capstor/store/cscs/swissai/infra01/audio-datasets/processed/commonvoice25_cooldown
+  files: "pl/*.parquet"
+
+columns:
+  audio: audio_bytes
+  text: sentence
+  id: clip_id
+  language_column: locale
+  keep:
+    - client_id
+    - accents
+    - age
+    - gender
+    - segment
+    - sentence_domain
+    - sentence_id
+    - up_votes
+    - down_votes
+    - variant
+    - split
+  constant:
+    dataset: commonvoice25_pl
+
+outputs:
+  shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/real/pl_cv25_real
+  tokenized_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/tokenized/real
+  name: pl_cv25_real
+
+conversion:
+  num_workers: 64
+  shard_size: 5000
+  read_batch_size: 64
+  mp_start_method: fork
+
+tokenization:
+  min_duration: 2.0
+  max_duration: 200.0
+  max_batch_duration: 2000.0
+  checkpoint_interval_batches: 2000
