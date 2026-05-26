@@ -1,20 +1,27 @@
 defaults:
-  - /recipe/wds_audio_only@_here_
+  - /recipe/parquet_audio_text_direct@_here_
   - /tokenizer/apertus_wavtok@_here_
   - _self_
 
-# Real-audio YODAS2 pl — webdataset tar.zst format from HF cache.
-# Pairs with our synth `pl_yodas2_K50` and `pl_yodas2_spk1636`.
-# wds recipe is audio-only (no text); use to get audio tokens for codec
-# round-trip / reality-gap comparison against the synth.
+# Real-audio YODAS2 pl — extracted per-segment via scripts/extract_yodas2_to_parquet.py
+# (slices video-level wavs from the nested tar.gz using start_cs/end_cs timestamps
+# in the YODAS2 segment_id). Pairs with our synth `pl_yodas2_K50` / `_spk1636`.
 
 name: mkwapniewska_pl_yodas2_real
 language: pl
 
 source:
-  # decompressed from raw/hf___espnet___yodas2/data/pl000.tar.zst — tarfile module
-  # doesn't support .zst directly, so we use the .tar form on scratch.
-  path: /capstor/scratch/cscs/mkwapniewska/yodas2_decompressed/pl000.tar
+  path: /capstor/scratch/cscs/mkwapniewska/yodas2_parquet/pl
+  files: "train-*.parquet"
+
+columns:
+  audio: audio
+  text: text
+  duration: duration
+  id: id
+  language_column: language
+  constant:
+    dataset: yodas2_pl_real
 
 outputs:
   shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/real/pl_yodas2_real
@@ -22,13 +29,12 @@ outputs:
   name: pl_yodas2_real
 
 conversion:
-  num_workers: 64
+  num_workers: 32
   shard_size: 5000
-  read_batch_size: 256
-  mp_start_method: fork
+  read_batch_size: 64
 
 tokenization:
   min_duration: 2.0
-  max_duration: 200.0
+  max_duration: 30.0
   max_batch_duration: 2000.0
   checkpoint_interval_batches: 2000
