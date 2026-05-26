@@ -12,7 +12,9 @@ name: mkwapniewska_pl_yodas2_real
 language: pl
 
 source:
-  path: /capstor/store/cscs/swissai/infra01/audio-datasets/raw/hf___espnet___yodas2/data/pl000.tar.zst
+  # decompressed from raw/hf___espnet___yodas2/data/pl000.tar.zst — tarfile module
+  # doesn't support .zst directly, so we use the .tar form on scratch.
+  path: /capstor/scratch/cscs/mkwapniewska/yodas2_decompressed/pl000.tar
 
 outputs:
   shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/real/pl_yodas2_real
