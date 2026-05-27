@@ -12,9 +12,10 @@ defaults:
 name: mkwapniewska_zh_emilia_real
 language: zh
 
-source:
-  path: /capstor/store/cscs/swissai/infra01/audio-datasets/raw/Emilia-YODAS/ZH
-  files: "ZH-B*.tar"
+convert:
+  input:
+    wds_shards:
+      - /capstor/store/cscs/swissai/infra01/audio-datasets/raw/Emilia-YODAS/ZH/ZH-B*.tar
 
 columns:
   audio: audio
