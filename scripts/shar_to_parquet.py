@@ -235,7 +235,9 @@ def convert(shar_in: Path, parquet_out_dir: Path,
         cuts_m = re.match(r"cuts\.(\d+)\.jsonl\.gz$", cuts_path.name)
         cuts_id = cuts_m.group(1) if cuts_m else f"{idx:06d}"
         parent_name = cuts_path.parent.name
-        shard_m = re.match(r"shard_(\d+)$", parent_name)
+        # Match both our synth `shard_NNNN/` layout and Lhotse's `worker_NN/` layout
+        # (used by MLS, etc.). Each parent dir gets a unique prefix in the output filename.
+        shard_m = re.match(r"(?:shard|worker)_(\d+)$", parent_name)
         shard_id = shard_m.group(1) if shard_m else "flat"
         out_file = parquet_out_dir / f"train-{shard_id}-{cuts_id}.parquet"
 
