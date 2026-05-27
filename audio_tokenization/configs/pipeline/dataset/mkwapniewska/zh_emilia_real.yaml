@@ -1,0 +1,42 @@
+defaults:
+  - /recipe/wds_audio_only@_here_
+  - /tokenizer/apertus_wavtok@_here_
+  - _self_
+
+# Real-audio Emilia ZH — re-tokenize from the WDS tars we synthesized from.
+# Pairs with our synth zh_emilia_full_K50 / zh_emilia_full_spk0668 / zh_emilia_spk0668.
+# Audio-only (no paired text) because Emilia's text/audio alignment lives in the
+# .json sidecar and the audio_text_direct WDS recipe doesn't exist on this branch.
+# Reality-gap comparison only needs audio tokens on both sides — fine here.
+
+name: mkwapniewska_zh_emilia_real
+language: zh
+
+source:
+  path: /capstor/store/cscs/swissai/infra01/audio-datasets/raw/Emilia-YODAS/ZH
+  files: "ZH-B*.tar"
+
+columns:
+  audio: audio
+  text: null
+  duration: null
+  id: null
+  language_column: null
+  constant:
+    dataset: emilia_zh_real
+
+outputs:
+  shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/real/zh_emilia_real
+  tokenized_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/tokenized/real
+  name: zh_emilia_real
+
+conversion:
+  num_workers: 32
+  shard_size: 5000
+  read_batch_size: 64
+
+tokenization:
+  min_duration: 2.0
+  max_duration: 30.0
+  max_batch_duration: 2000.0
+  checkpoint_interval_batches: 2000
