@@ -110,7 +110,9 @@ def safe_replace(table: pa.Table, dest: Path):
         raise RuntimeError(
             f"REFUSE: {dest} is a symlink. Won't write through it.")
 
-    tmp = Path(tempfile.mkstemp(suffix=".parquet", prefix="cv25_restore_")[1])
+    # Write tmp next to dest so the atomic-rename stays on the same filesystem
+    # (and so it survives a node-local /tmp clean).
+    tmp = dest.with_name(dest.name + ".restore_tmp")
     try:
         pq.write_table(table, tmp, compression="snappy")
         # Verify the tmp read-back matches target schema
@@ -149,7 +151,14 @@ def main():
         print(f"  [{i}] {f.name}: {f.type}")
 
     if args.dry_run:
-        tmp = Path(f"/tmp/cv25_{args.lang.replace('-', '_')}_test_RESTORED.parquet")
+        # /tmp is node-local on Clariden — write to shared scratch so the verify
+        # job (on a different node) can read it.
+        out_dir = Path(os.environ.get(
+            "SCRATCH",
+            f"/capstor/scratch/cscs/{os.environ.get('USER', 'unknown')}"
+        )) / "cv25_restore_dryrun"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        tmp = out_dir / f"cv25_{args.lang.replace('-', '_')}_test_RESTORED.parquet"
         pq.write_table(table, tmp, compression="snappy")
         print(f"\nDRY RUN — wrote to {tmp} ({tmp.stat().st_size / 1024 / 1024:.1f} MB)")
         print("Verify it by hand, then re-run without --dry-run to atomic-replace the store file.")
