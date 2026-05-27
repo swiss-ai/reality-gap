@@ -1,0 +1,40 @@
+defaults:
+  - /recipe/parquet_audio_text_direct@_here_
+  - /tokenizer/apertus_wavtok@_here_
+  - _self_
+
+# Real-audio MLS Polish — re-tokenize from the existing Lhotse Shar
+# at SHAR/stage_2/mls_v2/mls_polish_train, converted to parquet matching
+# our synth schema. Pairs with our synth `pl_mls_v2_K50` and `pl_mls_spk1636`.
+
+name: mkwapniewska_pl_mls_real
+language: pl
+
+source:
+  path: /capstor/scratch/cscs/mkwapniewska/mls_pl_parquet
+  files: "train-*.parquet"
+
+columns:
+  audio: audio
+  text: text
+  duration: duration
+  id: id
+  language_column: language
+  constant:
+    dataset: mls_pl_real
+
+outputs:
+  shar_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/SHAR/real/pl_mls_real
+  tokenized_dir: /capstor/store/cscs/swissai/infra01/audio-datasets/reality_gap/tokenized/real
+  name: pl_mls_real
+
+conversion:
+  num_workers: 32
+  shard_size: 5000
+  read_batch_size: 64
+
+tokenization:
+  min_duration: 2.0
+  max_duration: 30.0
+  max_batch_duration: 2000.0
+  checkpoint_interval_batches: 2000
