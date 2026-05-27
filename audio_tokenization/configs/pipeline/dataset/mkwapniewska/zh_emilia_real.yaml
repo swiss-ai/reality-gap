@@ -1,28 +1,25 @@
 defaults:
-  - /recipe/wds_audio_only@_here_
+  - /recipe/parquet_audio_text_direct@_here_
   - /tokenizer/apertus_wavtok@_here_
   - _self_
 
-# Real-audio Emilia ZH — re-tokenize from the WDS tars we synthesized from.
+# Real-audio Emilia ZH — extracted from WDS tars by scripts/extract_emilia_to_parquet.py
+# (each tar contains flat <key>.mp3 + <key>.json pairs; sidecar JSON carries text + duration).
 # Pairs with our synth zh_emilia_full_K50 / zh_emilia_full_spk0668 / zh_emilia_spk0668.
-# Audio-only (no paired text) because Emilia's text/audio alignment lives in the
-# .json sidecar and the audio_text_direct WDS recipe doesn't exist on this branch.
-# Reality-gap comparison only needs audio tokens on both sides — fine here.
 
 name: mkwapniewska_zh_emilia_real
 language: zh
 
-convert:
-  input:
-    wds_shards:
-      - /capstor/store/cscs/swissai/infra01/audio-datasets/raw/Emilia-YODAS/ZH/ZH-B*.tar
+source:
+  path: /capstor/scratch/cscs/mkwapniewska/emilia_zh_parquet
+  files: "train-*.parquet"
 
 columns:
   audio: audio
-  text: null
-  duration: null
-  id: null
-  language_column: null
+  text: text
+  duration: duration
+  id: id
+  language_column: language
   constant:
     dataset: emilia_zh_real
 
