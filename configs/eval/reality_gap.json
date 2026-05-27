@@ -13,7 +13,7 @@
     {
       "name": "fleurs_zh",
       "kind": "arrow",
-      "path": "/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/cmn_hans_cn"
+      "path": "/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/cmn_hans_cn_full"
     },
     {
       "name": "cv25_pl",
