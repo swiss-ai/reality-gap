@@ -1,0 +1,29 @@
+{
+  "_comment": "Reality-gap eval manifest. Same 4 PL/ZH public test sets run against each checkpoint (synth-trained vs real-trained baseline). Reality gap = WER(synth-trained) - WER(real-trained) per set. Run scripts/prep_eval_test_sets.sh once before first use to stage the CV25 test parquets.",
+  "task": "transcribe",
+  "audio_column": "audio",
+  "num_samples": 50,
+  "output_root": "results/inference_eval",
+  "datasets": [
+    {
+      "name": "fleurs_pl",
+      "kind": "arrow",
+      "path": "/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/pl_pl"
+    },
+    {
+      "name": "fleurs_zh",
+      "kind": "arrow",
+      "path": "/capstor/store/cscs/swissai/infra01/audio-datasets/benchmark/fleurs_cache/cmn_hans_cn"
+    },
+    {
+      "name": "cv25_pl",
+      "kind": "parquet",
+      "path": "/capstor/scratch/cscs/mkwapniewska/eval_test_sets/cv25_pl"
+    },
+    {
+      "name": "cv25_zh",
+      "kind": "parquet",
+      "path": "/capstor/scratch/cscs/mkwapniewska/eval_test_sets/cv25_zh"
+    }
+  ]
+}
