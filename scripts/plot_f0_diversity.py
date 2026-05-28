@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Quick F0 diversity comparison: K=50 vs K=1 synth on matched ids.
+"""F0 diversity comparison: K=50 vs K=1 synth on matched ids.
 
-Loads N random samples from both K=50 and K=1 versions of the SAME synth set
-(matched by id so the text is identical), extracts F0 per WAV via
-librosa.pyin (more accurate than piptrack for voiced/unvoiced), pools F0 values
-across all samples per K-config, plots overlapping histograms.
+Loads N matched-id pairs (same source utterance synthesized at K=1 and K=50),
+extracts F0 via librosa.pyin (voicing-aware), pools voiced F0 across samples,
+plots overlapping density histograms.
 
-Story: K=50 should have a noticeably wider F0 distribution than K=1
-(spk1636 = single reference voice, K=50 = 50-voice stratified pool).
+Publication-ready output: no title, 13pt fonts, vector PDF, K=1 vs K=50
+labelled with σ only. fmin=80 Hz suppresses the pyin voicing-detection
+floor artifact (anything <80 Hz is below human-speech F0 range — silence
+or noise picked up as F0 candidates).
 """
 import argparse, glob, io, os, random
 from pathlib import Path
@@ -20,8 +21,6 @@ import matplotlib.pyplot as plt
 
 
 def load_n_audio_by_id(parquet_dir: str, n: int, ids_filter: set | None = None):
-    """Read up to n {id, audio} pairs from a directory of parquets. Optionally
-    keep only ids in ids_filter."""
     files = sorted(glob.glob(f"{parquet_dir}/*.parquet"))
     out = []
     for f in files:
@@ -36,8 +35,9 @@ def load_n_audio_by_id(parquet_dir: str, n: int, ids_filter: set | None = None):
     return out
 
 
-def f0_pool(samples, sr_target=22050, fmin=50, fmax=400) -> np.ndarray:
-    """Run pyin on each audio sample; pool voiced F0 values across all samples."""
+def f0_pool(samples, sr_target=22050, fmin=80, fmax=400) -> np.ndarray:
+    """Pool voiced F0 values across samples. fmin=80 Hz suppresses the
+    pyin voicing-detection floor (below human F0 range)."""
     all_f0 = []
     for sid, abytes in samples:
         try:
@@ -61,15 +61,14 @@ def f0_pool(samples, sr_target=22050, fmin=50, fmax=400) -> np.ndarray:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--k50-dir", required=True, help="Parquet dir for K=50 synth")
-    ap.add_argument("--k1-dir", required=True, help="Parquet dir for K=1 synth")
-    ap.add_argument("--n-samples", type=int, default=50,
-                    help="Number of matched-id pairs to use")
+    ap.add_argument("--k50-dir", required=True)
+    ap.add_argument("--k1-dir", required=True)
+    ap.add_argument("--n-samples", type=int, default=50)
     ap.add_argument("--lang-label", default="pl")
-    ap.add_argument("--out", required=True, help="Output PNG path")
+    ap.add_argument("--out", required=True,
+                    help="Output path; .pdf for vector (recommended for publication)")
     args = ap.parse_args()
 
-    # Pick N ids that exist in BOTH dirs (use K=50's first parquet's first N as candidates)
     print(f"Sampling {args.n_samples} ids common to both sets...")
     k50_first = sorted(glob.glob(f"{args.k50_dir}/*.parquet"))[0]
     pf = pq.ParquetFile(k50_first)
@@ -100,22 +99,37 @@ def main():
     f0_k1 = f0_pool(k1)
     print(f"  {len(f0_k1)} voiced frames; mean={np.mean(f0_k1):.1f} Hz, std={np.std(f0_k1):.1f}")
 
-    # Plot overlapping histograms
-    plt.figure(figsize=(8, 4.5))
-    bins = np.linspace(50, 400, 60)
-    plt.hist(f0_k1, bins=bins, alpha=0.55, label=f"K=1  (n={len(k1)} clips, σ={np.std(f0_k1):.0f} Hz)",
-             color="#d62728", density=True)
-    plt.hist(f0_k50, bins=bins, alpha=0.55, label=f"K=50 (n={len(k50)} clips, σ={np.std(f0_k50):.0f} Hz)",
-             color="#1f77b4", density=True)
-    plt.xlabel("Fundamental frequency F0 (Hz)")
-    plt.ylabel("Density")
-    plt.title(f"VoxCPM2 synth pitch diversity — {args.lang_label.upper()} (matched ids)")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(args.out, dpi=140)
-    print(f"\nWrote {args.out}")
+    # Publication style — larger fonts, no title, vector-friendly
+    plt.rcParams.update({
+        "font.size": 13,
+        "axes.labelsize": 14,
+        "axes.titlesize": 14,
+        "legend.fontsize": 12,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 12,
+        "figure.dpi": 150,
+    })
+
+    fig, ax = plt.subplots(figsize=(5.5, 3.6))
+    bins = np.linspace(80, 400, 60)
+    ax.hist(f0_k1, bins=bins, alpha=0.55,
+            label=f"K=1  (σ={np.std(f0_k1):.0f} Hz)",
+            color="#d62728", density=True)
+    ax.hist(f0_k50, bins=bins, alpha=0.55,
+            label=f"K=50 (σ={np.std(f0_k50):.0f} Hz)",
+            color="#1f77b4", density=True)
+    ax.set_xlabel("Fundamental frequency F0 (Hz)")
+    ax.set_ylabel("Density")
+    ax.legend(frameon=False)
+    ax.grid(alpha=0.3, linewidth=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, bbox_inches="tight")
+    print(f"\nWrote {out}")
 
 
 if __name__ == "__main__":
