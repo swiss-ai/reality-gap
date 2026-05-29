@@ -1,8 +1,13 @@
 {
-  "_comment": "Reality-gap eval manifest. Same 4 PL/ZH public test sets run against each checkpoint (synth-trained vs real-trained baseline). Reality gap = WER(synth-trained) - WER(real-trained) per set. Run scripts/prep_eval_test_sets.sh once before first use to stage the CV25 test parquets.",
+  "_comment": "Reality-gap eval manifest. Four PL/ZH public test sets run against each checkpoint (synth-trained vs real-trained baseline). Reality gap = WER(synth-trained) - WER(real-trained) per set.",
+  "_notes": [
+    "FLEURS pl_pl: only 100 rows on cluster (no _full variant available); small sample, treat as a lower-statistical-power signal.",
+    "FLEURS cmn_hans_cn_full: 945 rows.",
+    "CV25 PL + ZH-CN: schema was inadvertently rewritten 2026-05-27 (audio bytes + transcripts + clip_ids preserved 1:1; demographic columns lost). Functional for ASR eval."
+  ],
   "task": "transcribe",
   "audio_column": "audio",
-  "num_samples": 50,
+  "num_samples": 1000,
   "output_root": "results/inference_eval",
   "datasets": [
     {
