@@ -103,6 +103,19 @@ Reference voice selection considered consent expectations per source:
   not consent to AI training); VoxPopuli (where labeled speaker metadata
   was missing — would require additional pipeline work).
 
+## Corpus availability caveat — Polish vs Chinese
+
+| | source h (real audio) | K=1 synth | K=50 synth | FineWeb-2 K=50 (text-only) |
+|---|---|---|---|---|
+| Polish | ~16.7 k h | ~13.2 k h | ~18.4 k h | ~28 k h |
+| Chinese | ~10.7 k h | ~9.1 k h | ~12.5 k h | ~22 k h |
+
+The Chinese delivery is corpus-limited compared to Polish. We exhausted the cluster's ZH ASR corpora (WenetSpeech, AISHELL-1/3/4, CV24/25, YODAS2, Emilia-YODAS ZH) for a total of ~10.7 k h source. Polish, with VoxPopuli's 16k h alone plus MLS/CV/YODAS2, is larger.
+
+This asymmetry should be interpreted carefully in the ablation: ZH models trained on less synthetic data may show different scaling behavior than PL models purely due to data availability, not synthesis quality. The PL-side curve will likely saturate later (more data to plateau) while ZH may plateau earlier or show different per-hour-of-data behavior.
+
+Additional ZH could be sourced by downloading Emilia full (vs the YODAS subset we have), MagicData, or KeSpeech from HuggingFace, but none are currently on the cluster and would require new download + processing pipelines.
+
 ## Open items
 
 1. PL gender imbalance (5F): could widen to cps50 percentile (~71 speakers in
@@ -113,3 +126,21 @@ Reference voice selection considered consent expectations per source:
 3. VoxPopuli pl extension (~700 MEPs) is deferred future work. Would require
    downloading VoxPopuli's labeled metadata from HF (~36 MB TSV) and an
    ffmpeg-based clip extractor from raw .ogg sessions.
+
+## Performance notes
+
+ZH smoke (2026-05-23, 989 items, K=50, B=32): **aggregate RTF 0.0276**,
+989/989 succeeded, per-item refs verified working. Compared to K=1 baseline
+RTF 0.018 → K=50 is ~53% slower per item due to per-item reference switching
+inside the synth orchestrator.
+
+**Considered optimization (rejected):** pre-partitioning the manifest into
+50 single-speaker sub-manifests would eliminate ref-switching inside each
+shard. Estimated gain: 2-5% per shard. Cost: (a) sharding logic becomes
+50×M (speaker × chunk) — fundamental rewrite of the array structure;
+(b) wenetspeech_full's 13M items / 50 speakers = ~266k items per shard
+which exceeds the 12h walltime cap; (c) small sets (aishell4_L = 2 shards
+currently) would balloon to 50 shards, 25× more queue churn for negligible
+real-time gain; (d) SLURM startup overhead (~3-5 min/shard for container
+load) amortizes worse with smaller shards. Marginal speedup not worth the
+restructuring cost given delivery deadline. Decision logged 2026-05-23.
