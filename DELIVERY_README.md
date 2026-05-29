@@ -202,6 +202,11 @@ _real_audio_manifests/
   - If target is `tokenized/interleave/<corpus>/…` — separate streams in `stage2/{transcribe,offset_0,offset_1}.{bin,idx}` (audio tokens at `offset_*.bin`, text at `transcribe.bin`). The "interleave" label refers to the supervisor's downstream materialize step, not the storage format — for audio-token comparison no re-tokenize is needed.
   - If target is `tokenized/audio_only/…` — audio-only Megatron .bin/.idx (no paired text).
 
+**Language purity:** all tokenized symlinks point at single-language data.
+- `pl_cv25_*`, `pl_mls_*`, `pl_yodas2_*`, `zh_yodas2_*` → we re-tokenized PL-only / ZH-only ourselves (paths under `tokenized/real/transcribe/<set>_real/`). Direct single-language match against our synth.
+- All other corpora are either naturally single-language (`aishell_*`, `wenetspeech`, `commonvoice_zh_CN`, `granary_ytc_asr`) or have a per-language subdir (`voxpopuli_interleave/pl`).
+- **`pl_granary_yodas_spk1636` (6.6 h, smallest set in the delivery)** has no language-pure tokenized counterpart on the cluster — Granary's tokenized YODAS combines all 25 supported languages. We did NOT create a symlink for this synth set; supervisor can choose to skip the comparison for this tiny set or filter Granary's multi-lang output at training time.
+
 **`MANIFEST.json` entry shape:**
 
 ```json
